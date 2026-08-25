@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" role="img" aria-labelledby="title desc">
+  <title id="title">Generic EV charger</title>
+  <desc id="desc">A clean illustration used when a charger photograph is unavailable.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#e8f7f5"/><stop offset="1" stop-color="#dce9ef"/>
+    </linearGradient>
+    <linearGradient id="unit" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#17384a"/><stop offset="1" stop-color="#0b2231"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="640" rx="44" fill="url(#bg)"/>
+  <circle cx="480" cy="310" r="230" fill="#fff" opacity=".65"/>
+  <path d="M618 246c82 22 107 81 107 154v47c0 30 19 50 47 50s47-20 47-50V336" fill="none" stroke="#17384a" stroke-width="25" stroke-linecap="round"/>
+  <rect x="258" y="105" width="394" height="438" rx="48" fill="url(#unit)"/>
+  <rect x="298" y="149" width="314" height="176" rx="28" fill="#f7fbfc"/>
+  <path d="m467 180-64 97h58l-10 72 70-111h-59z" fill="#31c7b7"/>
+  <circle cx="455" cy="407" r="51" fill="#0e2b3b" stroke="#31c7b7" stroke-width="12"/>
+  <circle cx="437" cy="396" r="7" fill="#b9ef70"/><circle cx="473" cy="396" r="7" fill="#b9ef70"/><rect x="448" y="416" width="14" height="18" rx="7" fill="#b9ef70"/>
+  <rect x="331" y="522" width="248" height="28" rx="14" fill="#0b2231" opacity=".18"/>
+</svg>

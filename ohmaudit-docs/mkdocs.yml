@@ -1,0 +1,13 @@
+site_name: Ohm Audit Documentation
+docs_dir: .
+site_dir: site
+nav:
+  - Product: PRODUCT.md
+  - Architecture: ARCHITECTURE.md
+  - Domain model: DOMAIN-MODEL.md
+  - Security: SECURITY.md
+  - Roadmap: ROADMAP.md
+exclude_docs: |
+  node_modules/
+  README.md
+

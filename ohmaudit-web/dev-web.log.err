@@ -1,0 +1,3 @@
+$ ng serve
+An unhandled exception occurred: Port 4200 is already in use. Use '--port' to specify a different port.
+See "C:\Users\grifo\AppData\Local\Temp\ng-o61ESF\angular-errors.log" for further details.

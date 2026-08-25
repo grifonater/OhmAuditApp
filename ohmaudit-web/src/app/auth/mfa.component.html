@@ -1,0 +1,21 @@
+<main class="auth-page">
+  <section class="auth-card">
+    <p class="eyebrow">Security check</p>
+    <h1>Enter your authentication code</h1>
+    <p>Open your authenticator app and enter the six-digit code.</p>
+    <form (submit)="submit($event)">
+      <label
+        >Authentication code<input
+          [formControl]="code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+      /></label>
+      @if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+      }
+      <button type="submit" [disabled]="busy() || code.invalid">
+        {{ busy() ? 'Verifying…' : 'Verify' }}
+      </button>
+    </form>
+  </section>
+</main>

@@ -1,0 +1,717 @@
+<main class="engineer-shell" [class.inspection-active]="selectedTask()">
+  @if (visit(); as currentVisit) {
+    <header class="engineer-header">
+      <div class="sync-banner" [class.offline]="!offline.online()">
+        <span>{{
+          offline.online()
+            ? offline.syncing()
+              ? 'Syncing…'
+              : 'Online'
+            : 'Offline — changes stay on this device'
+        }}</span
+        ><strong>{{ saved() }}</strong>
+      </div>
+    </header>
+    @if (!selectedTask()) {
+      <section>
+        <p class="eyebrow">Engineer visit</p>
+        <h1>{{ currentVisit.title }}</h1>
+        <p class="muted">
+          {{ currentVisit.customer.name }} › {{ currentVisit.site.name }} ·
+          {{ currentVisit.site.postcode || 'No postcode' }}
+        </p>
+        <div class="notice">
+          {{ currentVisit.engineerNotes || 'No special visit instructions.' }}
+        </div>
+        <button
+          class="button secondary touch-button"
+          type="button"
+          (click)="downloadPack()"
+          [disabled]="busy()"
+        >
+          ↓ Download visit for offline use
+        </button>
+        <div class="engineer-task-summary">
+          <strong>{{ currentVisit.tasks.length }}</strong
+          ><span>inspection tasks</span>
+        </div>
+        <section class="engineer-add-asset card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Asset missing?</p>
+              <h2>Add a charger found on site</h2>
+              <p>
+                Create the charger now, then record its supplies, connectors and tests normally.
+              </p>
+            </div>
+            <button
+              class="button secondary"
+              type="button"
+              (click)="addingCharger.set(!addingCharger())"
+              [disabled]="!offline.online()"
+            >
+              {{ addingCharger() ? 'Cancel' : '+ Add charger' }}
+            </button>
+          </div>
+          @if (!offline.online()) {
+            <p class="muted">
+              Reconnect before adding a new site asset. Existing tasks remain available offline.
+            </p>
+          }
+          @if (addingCharger()) {
+            <form
+              [formGroup]="newChargerForm"
+              (ngSubmit)="addCharger()"
+              class="form-grid engineer-add-form"
+            >
+              <label class="field"
+                >Site asset reference<input
+                  formControlName="assetReference"
+                  placeholder="e.g. EVCP 1"
+                  autocomplete="off"
+                /><small>Must be unique at this site.</small></label
+              >
+              <label class="field full"
+                >Charger name<input
+                  formControlName="displayName"
+                  placeholder="e.g. Car park charger 01"
+              /></label>
+              <label class="field">Make<input formControlName="manufacturer" /></label>
+              <label class="field">Model<input formControlName="model" /></label>
+              <label class="field">Serial number<input formControlName="serialNumber" /></label>
+              <label class="field"
+                >Power output (kW)<input
+                  type="number"
+                  inputmode="decimal"
+                  formControlName="maximumPowerKw"
+              /></label>
+              <label class="field full"
+                >DC protection<select formControlName="dcRcdType">
+                  <option value="TYPE_B">Type B RCD</option>
+                  <option value="RDC_DD">RDC-DD</option>
+                  <option value="NONE">None / confirm during inspection</option>
+                </select></label
+              >
+              <div class="form-actions full">
+                <button
+                  class="button primary touch-button"
+                  type="submit"
+                  [disabled]="busy() || newChargerForm.invalid"
+                >
+                  Add provisional charger &amp; inspect
+                </button>
+              </div>
+            </form>
+          }
+        </section>
+        <div class="record-list">
+          @for (task of currentVisit.tasks; track task.id) {
+            <article
+              class="card task-card"
+              [class.recent-task]="recentlySubmittedTaskId() === task.id"
+            >
+              <div class="section-heading">
+                <div>
+                  <span class="badge">{{ task.moduleKey }}</span>
+                  <h2>{{ task.asset?.displayName || 'Site-level inspection' }}</h2>
+                  <p>
+                    {{ task.asset?.assetReference }} ·
+                    {{ task.asset?.manufacturer || 'Make not set' }} {{ task.asset?.model || '' }} ·
+                    {{ task.asset?.serialNumber || 'No serial' }}
+                  </p>
+                </div>
+                <span
+                  class="badge"
+                  [class.success]="task.status === 'COMPLETED' || task.status === 'SUBMITTED'"
+                  >{{ task.status }}</span
+                >
+              </div>
+              <button class="button primary touch-button" type="button" (click)="openTask(task)">
+                {{
+                  task.status === 'SUBMITTED' || task.status === 'COMPLETED'
+                    ? 'View submitted inspection'
+                    : task.inspection
+                      ? 'Continue inspection'
+                      : 'Start inspection'
+                }}
+                →
+              </button>
+            </article>
+          }
+        </div>
+      </section>
+    } @else if (selectedTask(); as task) {
+      @if (submitted()) {
+        <section class="card inspection-step empty-state">
+          <span class="empty-icon">✓</span>
+          <h2>Inspection saved</h2>
+          <p>{{ saved() }}</p>
+          <button class="button primary touch-button" type="button" (click)="backToTasks()">
+            Back to visit tasks
+          </button>
+        </section>
+      } @else {
+        <form
+          [formGroup]="form"
+          (ngSubmit)="submit()"
+          class="engineer-inspection-form"
+          [class.ev-mobile-app]="isEvTask()"
+        >
+          <div class="inspection-titlebar">
+            <button class="inspection-back" type="button" (click)="backToTasks()">
+              <span aria-hidden="true">‹</span> Tasks
+            </button>
+            <strong class="inspection-wordmark"><span>Ω</span> OhmAudit</strong>
+            <span class="autosave-state">☁ {{ saved() || 'Saved on device' }}</span>
+          </div>
+          <section class="asset-identity-hero">
+            @if (assetImageUrl()) {
+              <img [src]="assetImageUrl()" [alt]="task.asset?.displayName || 'Asset image'" />
+            } @else {
+              <div class="asset-photo-placeholder">EV</div>
+            }
+            <div>
+              <p class="eyebrow">Unit being tested</p>
+              <h1>{{ task.asset?.displayName || task.title }}</h1>
+              <p>
+                {{ task.asset?.assetReference }} · {{ task.asset?.manufacturer || 'Make not set' }}
+                {{ task.asset?.model || '' }} · {{ task.asset?.serialNumber || 'No serial' }}
+              </p>
+            </div>
+            <span class="inspection-status"><i></i> In progress</span>
+          </section>
+
+          @if (isEvTask()) {
+            <nav class="inspection-progress" aria-label="Inspection sections">
+              <button type="button" (click)="scrollToSection('unit')">
+                <b>1</b><span>Unit</span></button
+              ><button type="button" (click)="scrollToSection('supplies')">
+                <b>2</b><span>Supplies</span></button
+              ><button type="button" (click)="scrollToSection('connectors')">
+                <b>3</b><span>Connectors</span></button
+              ><button type="button" (click)="scrollToSection('condition')">
+                <b>4</b><span>Condition</span></button
+              ><button type="button" (click)="scrollToSection('submit')">
+                <b>5</b><span>Submit</span>
+              </button>
+            </nav>
+
+            <section id="unit" class="card inspection-step" [formGroup]="evAssetForm">
+              <div class="step-heading">
+                <span>1</span>
+                <div>
+                  <h2>Confirm the unit</h2>
+                  <p>
+                    Correct anything that does not match the charger in front of you. Changes go to
+                    the office for approval.
+                  </p>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label class="field">Make<input formControlName="manufacturer" /></label
+                ><label class="field">Model<input formControlName="model" /></label
+                ><label class="field">Serial number<input formControlName="serialNumber" /></label
+                ><label class="field"
+                  >Power output (kW)<input
+                    class="numeric-input"
+                    type="number"
+                    inputmode="decimal"
+                    formControlName="maximumPowerKw" /></label
+                ><label class="field full"
+                  >DC protection<select formControlName="dcRcdType">
+                    <option value="TYPE_B">Type B RCD</option>
+                    <option value="RDC_DD">RDC-DD</option>
+                    <option value="NONE">None — no DC ramp test</option>
+                  </select></label
+                >
+              </div>
+            </section>
+
+            <section id="supplies" class="card inspection-step">
+              <div class="step-heading">
+                <span>2</span>
+                <div>
+                  <h2>Test each supply</h2>
+                  <p>
+                    Confirm the stored supply details first, then record Zs followed by maximum PFC.
+                  </p>
+                </div>
+              </div>
+              <div class="repeat-stack">
+                @for (
+                  supply of supplyTests.controls;
+                  track supply.get('id')?.value;
+                  let index = $index
+                ) {
+                  <fieldset class="test-block" [formGroup]="supply">
+                    <legend>
+                      <span>Supply {{ index + 1 }}</span
+                      ><small>Electrical intake</small>
+                    </legend>
+                    <div class="form-grid">
+                      <label class="field">Supply label<input formControlName="label" /></label
+                      ><label class="field"
+                        >Phases<select formControlName="phaseCount">
+                          <option [ngValue]="1">Single phase</option>
+                          <option [ngValue]="3">Three phase</option>
+                        </select></label
+                      ><label class="field"
+                        >Protective device<select formControlName="protectiveDeviceType">
+                          <option value="MCB">MCB</option>
+                          <option value="RCBO">RCBO</option>
+                          <option value="AFDD">AFDD</option>
+                        </select></label
+                      ><label class="field"
+                        >Rating (A)<input
+                          type="number"
+                          inputmode="numeric"
+                          formControlName="protectiveDeviceRating" /></label
+                      ><label class="field"
+                        >Earthing arrangement<select formControlName="earthingArrangement">
+                          <option value="TNCS">TN-C-S</option>
+                          <option value="TNS">TN-S</option>
+                          <option value="TT">TT</option>
+                          <option value="IT">IT</option>
+                        </select></label
+                      >
+                    </div>
+                    <div class="reading-pair">
+                      <label class="reading-card"
+                        ><span class="reading-order">1</span><span>Zs</span
+                        ><input
+                          type="number"
+                          inputmode="decimal"
+                          step="0.01"
+                          formControlName="zsOhms"
+                          placeholder="0.00"
+                        /><small>Ω</small></label
+                      ><label class="reading-card"
+                        ><span class="reading-order">2</span><span>Maximum PFC</span
+                        ><input
+                          type="number"
+                          inputmode="decimal"
+                          step="0.01"
+                          formControlName="maximumPfcKa"
+                          placeholder="0.00"
+                        /><small>kA</small></label
+                      >
+                    </div>
+                    <button
+                      class="button danger compact"
+                      type="button"
+                      (click)="removeSupply(index)"
+                    >
+                      Remove supply
+                    </button>
+                  </fieldset>
+                } @empty {
+                  <div class="action-empty">
+                    <strong>No supplies recorded</strong>
+                    <p>Add the first supply before testing.</p>
+                  </div>
+                }
+              </div>
+              <button class="button secondary touch-button" type="button" (click)="addSupply()">
+                + Add missing supply
+              </button>
+            </section>
+
+            <section id="connectors" class="card inspection-step">
+              <div class="step-heading">
+                <span>3</span>
+                <div>
+                  <h2>Test each connector</h2>
+                  <p>Complete the four functional checks, then the RCD times in the order shown.</p>
+                </div>
+              </div>
+              <div class="repeat-stack">
+                @for (
+                  connector of connectorTests.controls;
+                  track connector.get('id')?.value;
+                  let index = $index
+                ) {
+                  <fieldset class="test-block connector-test" [formGroup]="connector">
+                    <legend>
+                      <span>Connector {{ index + 1 }}</span
+                      ><small>{{ index + 1 }} of {{ connectorTests.length }}</small>
+                    </legend>
+                    <div class="form-grid">
+                      <label class="field"
+                        >Connector type<select formControlName="connectorType">
+                          <option>Type 2</option>
+                          <option>CCS</option>
+                          <option>CHAdeMO</option>
+                          <option>Type 1</option>
+                          <option>Socket</option>
+                        </select></label
+                      ><label class="field full"
+                        >Connected supply<select
+                          [value]="connector.controls.supplyIds.value[0] || ''"
+                          (change)="chooseConnectorSupply(connector, $any($event.target).value)"
+                        >
+                          <option value="">Select one supply</option>
+                          @for (supply of supplyTests.controls; track supply.get('id')?.value) {
+                            <option [value]="supply.get('id')?.value">
+                              {{ supply.get('label')?.value }}
+                            </option>
+                          }</select
+                        ><small
+                          >Each connector has one supply; a supply can serve several
+                          connectors.</small
+                        ></label
+                      >
+                    </div>
+                    <div class="quick-test-grid">
+                      @for (
+                        check of [
+                          { key: 'pePreTest', label: 'PE pre-test' },
+                          { key: 'cpError', label: 'CP error' },
+                          { key: 'peError', label: 'PE error' },
+                          { key: 'cpStates', label: 'CP states' },
+                        ];
+                        track check.key
+                      ) {
+                        <div class="quick-test">
+                          <strong>{{ check.label }}</strong>
+                          <div class="pass-fail">
+                            <button
+                              type="button"
+                              [class.selected-pass]="connector.get(check.key)?.value === 'PASS'"
+                              (click)="chooseConnector(connector, check.key, 'PASS')"
+                            >
+                              Pass</button
+                            ><button
+                              type="button"
+                              [class.selected-fail]="connector.get(check.key)?.value === 'FAIL'"
+                              (click)="chooseConnector(connector, check.key, 'FAIL')"
+                            >
+                              Fail
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                    <h3>RCD trip times</h3>
+                    <div class="test-reading-grid">
+                      <label
+                        class="compact-reading"
+                        [class.reading-fail]="
+                          tripReadingFailed(connector.controls.rcd1x0Ms.value, 300)
+                        "
+                        ><span>1× at 0°</span
+                        ><input
+                          type="number"
+                          inputmode="decimal"
+                          formControlName="rcd1x0Ms"
+                        /><small>ms</small></label
+                      ><label
+                        class="compact-reading"
+                        [class.reading-fail]="
+                          tripReadingFailed(connector.controls.rcd1x180Ms.value, 300)
+                        "
+                        ><span>1× at 180°</span
+                        ><input
+                          type="number"
+                          inputmode="decimal"
+                          formControlName="rcd1x180Ms"
+                        /><small>ms</small></label
+                      ><label
+                        class="compact-reading"
+                        [class.reading-fail]="
+                          tripReadingFailed(connector.controls.rcd5x0Ms.value, 40)
+                        "
+                        ><span>5× at 0°</span
+                        ><input
+                          type="number"
+                          inputmode="decimal"
+                          formControlName="rcd5x0Ms"
+                        /><small>ms</small></label
+                      ><label
+                        class="compact-reading"
+                        [class.reading-fail]="
+                          tripReadingFailed(connector.controls.rcd5x180Ms.value, 40)
+                        "
+                        ><span>5× at 180°</span
+                        ><input
+                          type="number"
+                          inputmode="decimal"
+                          formControlName="rcd5x180Ms"
+                        /><small>ms</small></label
+                      >
+                    </div>
+                    @if (evAssetForm.controls.dcRcdType.value !== 'NONE') {
+                      <h3>DC RCD ramp test</h3>
+                      <div class="test-reading-grid two">
+                        <label
+                          class="compact-reading"
+                          [class.reading-fail]="
+                            rampReadingFailed(connector.controls.dcRamp0Ma.value)
+                          "
+                          ><span>Ramp at 0°</span
+                          ><input
+                            type="number"
+                            inputmode="decimal"
+                            formControlName="dcRamp0Ma"
+                          /><small>mA</small></label
+                        ><label
+                          class="compact-reading"
+                          [class.reading-fail]="
+                            rampReadingFailed(connector.controls.dcRamp180Ma.value)
+                          "
+                          ><span>Ramp at 180°</span
+                          ><input
+                            type="number"
+                            inputmode="decimal"
+                            formControlName="dcRamp180Ma"
+                          /><small>mA</small></label
+                        >
+                      </div>
+                    } @else {
+                      <div class="info-strip">
+                        DC ramp testing skipped because DC protection is set to None.
+                      </div>
+                    }
+                    @if (automaticRcdFailures().length > 0) {
+                      <div class="rcd-failure-warning" role="alert">
+                        <strong>RCD test failure — this unit will be marked FAIL</strong>
+                        <ul>
+                          @for (reason of automaticRcdFailures(); track reason) {
+                            <li>{{ reason }}</li>
+                          }
+                        </ul>
+                      </div>
+                    }
+                    <button
+                      class="button danger compact"
+                      type="button"
+                      (click)="removeConnector(index)"
+                    >
+                      Remove connector
+                    </button>
+                  </fieldset>
+                } @empty {
+                  <div class="action-empty">
+                    <strong>No connectors recorded</strong>
+                    <p>Add the first connector before testing.</p>
+                  </div>
+                }
+              </div>
+              <button class="button secondary touch-button" type="button" (click)="addConnector()">
+                + Add missing connector
+              </button>
+            </section>
+          } @else {
+            <section class="card inspection-step">
+              <h2>Visual &amp; functional checks</h2>
+              <label class="field"
+                >Visual condition<select formControlName="visualCondition">
+                  <option>PASS</option>
+                  <option>FAIL</option>
+                  <option>NOT APPLICABLE</option>
+                </select></label
+              ><label class="field"
+                >Polarity<select formControlName="polarity">
+                  <option>PASS</option>
+                  <option>FAIL</option>
+                  <option>NOT TESTED</option>
+                </select></label
+              ><label class="field"
+                >Functional operation<select formControlName="functionalOperation">
+                  <option>PASS</option>
+                  <option>FAIL</option>
+                  <option>NOT TESTED</option>
+                </select></label
+              >
+            </section>
+            <section class="card inspection-step">
+              <h2>Measured results</h2>
+              <label class="field"
+                >Protective conductor continuity (Ω)<input
+                  class="numeric-input"
+                  type="number"
+                  inputmode="decimal"
+                  step="0.01"
+                  formControlName="protectiveConductorContinuity" /></label
+              ><label class="field"
+                >Insulation resistance (MΩ)<input
+                  class="numeric-input"
+                  type="number"
+                  inputmode="decimal"
+                  step="0.01"
+                  formControlName="insulationResistance" /></label
+              ><label class="field"
+                >Earth loop impedance (Ω)<input
+                  class="numeric-input"
+                  type="number"
+                  inputmode="decimal"
+                  step="0.01"
+                  formControlName="earthLoopImpedance" /></label
+              ><label class="field"
+                >RCD trip time (ms)<input
+                  class="numeric-input"
+                  type="number"
+                  inputmode="numeric"
+                  formControlName="rcdTripTime"
+              /></label>
+            </section>
+          }
+
+          <section id="condition" class="card inspection-step">
+            <div class="step-heading">
+              <span>{{ isEvTask() ? '4' : '3' }}</span>
+              <div>
+                <h2>Were any faults found?</h2>
+                <p>Choose one option. Fault details are only needed when a fault is found.</p>
+              </div>
+            </div>
+            <div class="fault-choice-grid">
+              <button
+                class="fault-choice no-fault"
+                [class.selected]="!recordingFault()"
+                [attr.aria-pressed]="!recordingFault()"
+                type="button"
+                (click)="setFaultRecording(false)"
+              >
+                <span class="fault-choice-icon">✓</span>
+                <span><strong>No faults found</strong><small>Continue to submission</small></span>
+              </button>
+              <button
+                class="fault-choice has-fault"
+                [class.selected]="recordingFault()"
+                [attr.aria-pressed]="recordingFault()"
+                type="button"
+                (click)="setFaultRecording(true)"
+              >
+                <span class="fault-choice-icon">!</span>
+                <span><strong>Record a fault</strong><small>Add details and evidence</small></span>
+              </button>
+            </div>
+            @if (recordingFault()) {
+              <div class="fault-entry" role="region" aria-label="Fault details">
+                <div class="fault-entry-heading">
+                  <span>!</span>
+                  <div>
+                    <strong>Fault being recorded</strong>
+                    <small>This will be highlighted to the office team.</small>
+                  </div>
+                </div>
+                <div class="form-grid">
+                  <label class="field"
+                    >Fault title<input
+                      formControlName="defectTitle"
+                      placeholder="e.g. Damaged connector housing"
+                  /></label>
+                  <label class="field"
+                    >Severity<select formControlName="defectSeverity">
+                      <option>ADVISORY</option>
+                      <option>MINOR</option>
+                      <option>MAJOR</option>
+                      <option>DANGEROUS</option>
+                    </select></label
+                  >
+                </div>
+                <label class="field"
+                  >Fault description<textarea
+                    rows="4"
+                    formControlName="notes"
+                    placeholder="Describe the location, damage, risk, and any immediate action taken…"
+                  ></textarea>
+                </label>
+                <label class="button secondary touch-button fault-photo-button"
+                  >📷 Add fault photo<input
+                    hidden
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    (change)="capturePhoto($event)"
+                /></label>
+                <p class="muted">{{ photoCount() }} fault photo(s) saved on this device</p>
+              </div>
+            } @else {
+              <div class="no-fault-confirmation">✓ No fault record will be created.</div>
+            }
+          </section>
+
+          <section id="submit" class="card inspection-step submit-step">
+            <div class="step-heading">
+              <span>{{ isEvTask() ? '5' : '4' }}</span>
+              <div>
+                <h2>Review &amp; submit</h2>
+                <p>
+                  Choose the overall outcome, sign, and send the completed inspection to the office.
+                </p>
+              </div>
+            </div>
+            <div class="choice-grid">
+              <button
+                class="choice-button"
+                [class.selected]="form.controls.outcome.value === 'PASS'"
+                [disabled]="automaticRcdFailures().length > 0"
+                type="button"
+                (click)="choose('outcome', 'PASS')"
+              >
+                ✓ Pass</button
+              ><button
+                class="choice-button fail-choice"
+                [class.selected]="form.controls.outcome.value === 'FAIL'"
+                type="button"
+                (click)="choose('outcome', 'FAIL')"
+              >
+                ! Fail
+              </button>
+            </div>
+            @if (isEvTask() && !evReady()) {
+              <div class="warning-strip">
+                Complete every supply reading and connector test before submitting.
+              </div>
+            }
+            <label class="field"
+              >Engineer full name<input autocomplete="name" formControlName="signerName"
+            /></label>
+            <p class="muted">
+              Typing your name confirms these results are accurate to the best of your knowledge.
+            </p>
+            @if (isEvTask()) {
+              <div class="inspection-completion-summary">
+                <span
+                  ><b>{{ connectorTests.length }}</b> connectors</span
+                >
+                <span
+                  ><b>{{ supplyTests.length }}</b> supplies</span
+                >
+                <span
+                  ><b>{{ recordingFault() ? 1 : 0 }}</b> faults</span
+                >
+              </div>
+            }
+            <button
+              class="button primary touch-button submit-inspection"
+              type="submit"
+              [disabled]="
+                busy() ||
+                form.controls.signerName.invalid ||
+                !evReady() ||
+                (recordingFault() && form.controls.defectTitle.invalid)
+              "
+            >
+              {{
+                offline.online()
+                  ? 'Submit completed inspection'
+                  : 'Save completed inspection for sync'
+              }}
+              →
+            </button>
+          </section>
+        </form>
+      }
+    }
+  } @else if (!busy()) {
+    <div class="empty-state card">
+      <h2>Visit unavailable</h2>
+      <p>{{ error() }}</p>
+    </div>
+  }
+  @if (error() && visit()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

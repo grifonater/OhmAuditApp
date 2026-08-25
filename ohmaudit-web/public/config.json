@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "http://localhost:8787/api/v1",
+  "supabaseUrl": "https://cgynntzcxptnvsqrttsz.supabase.co",
+  "supabasePublishableKey": "sb_publishable_ggas-APHHgjEHk15bEXFdg_tcVMHm7S",
+  "authRedirectUrl": "http://localhost:4200/auth/callback"
+}

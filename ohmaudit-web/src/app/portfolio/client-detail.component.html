@@ -1,0 +1,542 @@
+<main class="page client-page">
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a [routerLink]="['/app/org', organisationId, 'portfolio']">Clients</a>
+    <span>/</span>
+    <strong>{{ customer()?.name || 'Client' }}</strong>
+  </nav>
+
+  @if (customer(); as client) {
+    <header class="client-hero card">
+      <div class="client-logo-area">
+        <div class="client-logo-frame">
+          @if (logoUrl()) {
+            <img [src]="logoUrl()" [alt]="client.name + ' logo'" />
+          } @else {
+            <span>{{ client.name.slice(0, 2) }}</span>
+          }
+        </div>
+        <label class="change-logo">
+          {{ client.logoMediaId ? 'Change logo' : 'Upload logo' }}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            (change)="uploadLogo($event)"
+            [disabled]="busy()"
+          />
+        </label>
+        @if (client.logoMediaId) {
+          <button class="remove-logo" type="button" (click)="removeLogo()">Remove</button>
+        }
+      </div>
+
+      <div class="client-hero-main">
+        <div class="client-title-row">
+          <div>
+            <h1>{{ client.name }}</h1>
+            <p>
+              {{ client.reference || 'No client reference' }}
+              <span class="status-badge" [class.inactive]="client.status !== 'ACTIVE'">{{
+                client.status === 'ACTIVE' ? 'Active' : 'Inactive'
+              }}</span>
+            </p>
+            <small
+              >Created {{ formatDate(client.createdAt) }} · Updated
+              {{ formatDate(client.updatedAt) }}</small
+            >
+          </div>
+          <div class="client-actions">
+            <button class="button secondary" type="button" (click)="startEditing()">
+              Edit client
+            </button>
+            <button class="button primary" type="button" (click)="openSiteCreator()">
+              Add site <span aria-hidden="true">＋</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="client-metrics" aria-label="Client totals">
+          <button type="button" (click)="tab.set('sites')">
+            <span class="metric-symbol">▦</span
+            ><span
+              ><b>{{ client.sites.length }}</b
+              ><small>Sites</small></span
+            >
+          </button>
+          <button type="button" (click)="tab.set('sites')">
+            <span class="metric-symbol">◇</span
+            ><span
+              ><b>{{ client._count.assets }}</b
+              ><small>Assets</small></span
+            >
+          </button>
+          <button type="button" (click)="tab.set('reports')">
+            <span class="metric-symbol">≡</span
+            ><span
+              ><b>{{ client.reports.length }}</b
+              ><small>Reports &amp; certificates</small></span
+            >
+          </button>
+          <button type="button" (click)="tab.set('contacts')">
+            <span class="metric-symbol">◎</span
+            ><span
+              ><b>{{ client.contacts.length }}</b
+              ><small>Contacts</small></span
+            >
+          </button>
+        </div>
+      </div>
+
+      <aside class="client-hero-aside">
+        <section class="primary-contact">
+          <p>Primary contact</p>
+          @if (primaryContact(); as contact) {
+            <div>
+              <span class="contact-avatar">{{ contact.name.slice(0, 2) }}</span>
+              <span>
+                <strong>{{ contact.name }}</strong
+                ><small>{{ contact.role || 'Client contact' }}</small>
+                @if (contact.email) {
+                  <a [href]="'mailto:' + contact.email">{{ contact.email }}</a>
+                }
+                @if (contact.mobile || contact.telephone) {
+                  <a [href]="'tel:' + (contact.mobile || contact.telephone)">{{
+                    contact.mobile || contact.telephone
+                  }}</a>
+                }
+              </span>
+            </div>
+          } @else {
+            <small>No primary contact has been added.</small>
+          }
+        </section>
+        <button class="internal-note" type="button" (click)="startEditing()">
+          <span><b>Internal note</b><i>Edit note</i></span
+          ><small>{{ client.internalNotes || 'No internal note has been recorded.' }}</small>
+        </button>
+      </aside>
+    </header>
+
+    <nav class="client-tabs" aria-label="Client sections">
+      <button type="button" [class.active]="tab() === 'overview'" (click)="tab.set('overview')">
+        Overview
+      </button>
+      <button type="button" [class.active]="tab() === 'sites'" (click)="tab.set('sites')">
+        Sites <span>{{ client.sites.length }}</span>
+      </button>
+      <button type="button" [class.active]="tab() === 'reports'" (click)="tab.set('reports')">
+        Reports &amp; certificates <span>{{ client.reports.length }}</span>
+      </button>
+      <button type="button" [class.active]="tab() === 'contacts'" (click)="tab.set('contacts')">
+        Contacts <span>{{ client.contacts.length }}</span>
+      </button>
+      <button type="button" [class.active]="tab() === 'details'" (click)="tab.set('details')">
+        Client details
+      </button>
+    </nav>
+
+    @if (editing()) {
+      <section class="card edit-panel">
+        <div class="section-heading">
+          <div>
+            <h2>Edit client</h2>
+            <p>Update the client record and internal context.</p>
+          </div>
+          <button type="button" class="icon-button" (click)="editing.set(false)" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <form [formGroup]="clientForm" (ngSubmit)="saveClient()" class="form-grid">
+          <label class="field">Client name<input formControlName="name" /></label
+          ><label class="field">Reference<input formControlName="reference" /></label>
+          <label class="field full"
+            >Internal notes<textarea formControlName="internalNotes"></textarea>
+          </label>
+          <div class="form-actions full">
+            <button class="button secondary" type="button" (click)="editing.set(false)">
+              Cancel</button
+            ><button class="button primary" type="submit" [disabled]="busy() || clientForm.invalid">
+              Save changes
+            </button>
+          </div>
+        </form>
+      </section>
+    }
+
+    @if (tab() === 'overview' || tab() === 'sites') {
+      <section class="client-content-grid" [class.sites-mode]="tab() === 'sites'">
+        <article class="card sites-directory">
+          <header class="section-titlebar">
+            <div>
+              <h2>Sites</h2>
+              <p>{{ client.sites.length }} sites across this client</p>
+            </div>
+            <button class="button primary compact" type="button" (click)="openSiteCreator()">
+              Add site ＋
+            </button>
+          </header>
+          <div class="site-controls">
+            <label class="site-search"
+              ><span aria-hidden="true">⌕</span
+              ><input
+                [formControl]="siteSearch"
+                placeholder="Search sites, references, addresses or postcodes…"
+                aria-label="Search client sites"
+              />
+              @if (siteSearch.value) {
+                <button type="button" (click)="siteSearch.setValue('')" aria-label="Clear search">
+                  ×
+                </button>
+              }
+            </label>
+            <select [formControl]="siteStatus" aria-label="Filter sites by status">
+              <option value="ALL">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+            </select>
+            <select [formControl]="siteSort" aria-label="Sort sites">
+              <option value="ASC">Sort: Name A–Z</option>
+              <option value="DESC">Sort: Name Z–A</option>
+            </select>
+          </div>
+          <div class="site-table-wrap">
+            <table class="site-table">
+              <thead>
+                <tr>
+                  <th>Site</th>
+                  <th>Status</th>
+                  <th>Full address</th>
+                  <th>Operational info</th>
+                  <th>Assets</th>
+                  <th><span class="sr-only">Open</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (site of filteredSites(); track site.id) {
+                  <tr>
+                    <td data-label="Site">
+                      <a class="site-name" [routerLink]="['sites', site.id]"
+                        ><span>▦</span
+                        ><span
+                          ><strong>{{ site.name }}</strong
+                          ><small>{{ site.reference || 'No reference' }}</small></span
+                        ></a
+                      >
+                    </td>
+                    <td data-label="Status">
+                      <span class="status-badge" [class.inactive]="site.status !== 'ACTIVE'">{{
+                        site.status === 'ACTIVE' ? 'Active' : 'Inactive'
+                      }}</span>
+                    </td>
+                    <td data-label="Address">
+                      <span class="address-copy">{{
+                        siteAddress(site) || 'Address not recorded'
+                      }}</span>
+                    </td>
+                    <td data-label="Operational info">
+                      <div class="operational-tags">
+                        @if (site.ppeRequirements) {
+                          <span>PPE required</span>
+                        }
+                        @if (site.accessInstructions) {
+                          <span>Access instructions</span>
+                        }
+                        @if (site.parkingInformation) {
+                          <span>Parking information</span>
+                        }
+                        @if (site.inductionInformation) {
+                          <span>Induction required</span>
+                        }
+                        @if (
+                          !site.ppeRequirements &&
+                          !site.accessInstructions &&
+                          !site.parkingInformation &&
+                          !site.inductionInformation
+                        ) {
+                          <small>—</small>
+                        }
+                      </div>
+                    </td>
+                    <td data-label="Assets">
+                      <b>{{ site._count?.assets || 0 }}</b>
+                    </td>
+                    <td class="site-open">
+                      <a [routerLink]="['sites', site.id]" [attr.aria-label]="'Open ' + site.name"
+                        >›</a
+                      >
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="6">
+                      <div class="empty-state">
+                        <h3>No matching sites</h3>
+                        <p>
+                          {{
+                            client.sites.length
+                              ? 'Try changing your search or filters.'
+                              : 'Add the first site for this client.'
+                          }}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <footer class="table-footer">
+            <span>Showing {{ filteredSites().length }} of {{ client.sites.length }} sites</span
+            ><button type="button" (click)="siteSearch.setValue(''); siteStatus.setValue('ALL')">
+              Clear filters
+            </button>
+          </footer>
+        </article>
+
+        @if (tab() === 'overview') {
+          <aside class="client-side-rail">
+            <section class="card rail-card reports-rail">
+              <header>
+                <h2>Recent reports &amp; certificates</h2>
+                <button type="button" (click)="tab.set('reports')">
+                  View all {{ client.reports.length }}
+                </button>
+              </header>
+              <div class="rail-list">
+                @for (report of recentReports(); track report.id) {
+                  <button
+                    type="button"
+                    class="rail-report"
+                    (click)="openReport(report)"
+                    [disabled]="!report.visitId && !report.mediaId && !report.inspectionRevisionId"
+                  >
+                    <span class="report-icon">≡</span
+                    ><span
+                      ><strong>{{ report.title }}</strong
+                      ><small
+                        >{{ report.category }} · {{ formatDate(report.createdAt) }}</small
+                      ></span
+                    ><i>↓</i>
+                  </button>
+                } @empty {
+                  <p class="rail-empty">No reports have been created.</p>
+                }
+              </div>
+              <button class="open-section" type="button" (click)="tab.set('reports')">
+                Open reports &amp; certificates <span>→</span>
+              </button>
+            </section>
+            <section class="card rail-card contacts-rail">
+              <header>
+                <h2>Contacts</h2>
+                <button type="button" (click)="tab.set('contacts')">View all contacts</button>
+              </header>
+              <div class="rail-list">
+                @for (contact of client.contacts.slice(0, 3); track contact.id) {
+                  <div class="rail-contact">
+                    <span class="contact-avatar">{{ contact.name.slice(0, 2) }}</span
+                    ><span
+                      ><strong>{{ contact.name }}</strong
+                      ><small>{{ contact.role || 'Client contact' }}</small></span
+                    ><span
+                      ><small>{{ contact.email || 'No email' }}</small
+                      ><small>{{ contact.mobile || contact.telephone || 'No phone' }}</small></span
+                    >
+                  </div>
+                } @empty {
+                  <p class="rail-empty">No contacts have been added.</p>
+                }
+              </div>
+            </section>
+            <section class="card rail-card client-info">
+              <header><h2>Client information</h2></header>
+              <dl>
+                <div>
+                  <dt>Status</dt>
+                  <dd>
+                    <span class="status-badge" [class.inactive]="client.status !== 'ACTIVE'">{{
+                      client.status === 'ACTIVE' ? 'Active' : 'Inactive'
+                    }}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Reference</dt>
+                  <dd>{{ client.reference || 'Not provided' }}</dd>
+                </div>
+                <div>
+                  <dt>Created</dt>
+                  <dd>{{ formatDate(client.createdAt) }}</dd>
+                </div>
+                <div>
+                  <dt>Last updated</dt>
+                  <dd>{{ formatDate(client.updatedAt) }}</dd>
+                </div>
+              </dl>
+            </section>
+          </aside>
+        } @else {
+          <aside id="add-client-site" class="card add-site-panel">
+            <div>
+              <p class="eyebrow">New location</p>
+              <h2>Add a site</h2>
+              <p>Create a workspace for assets, access notes and reports.</p>
+            </div>
+            <form [formGroup]="siteForm" (ngSubmit)="createSite()" class="stack">
+              <label class="field">Site name<input formControlName="name" /></label
+              ><label class="field">Reference<input formControlName="reference" /></label
+              ><label class="field">Address<input formControlName="addressLine1" /></label>
+              <div class="mini-grid">
+                <label class="field">Town / city<input formControlName="city" /></label
+                ><label class="field">Postcode<input formControlName="postcode" /></label>
+              </div>
+              <label class="field"
+                >Access instructions<textarea
+                  formControlName="accessInstructions"
+                ></textarea></label
+              ><button class="button primary" type="submit" [disabled]="busy() || siteForm.invalid">
+                Create site
+              </button>
+            </form>
+          </aside>
+        }
+      </section>
+    }
+
+    @if (tab() === 'reports') {
+      <section class="card full-section">
+        <header class="section-titlebar">
+          <div>
+            <h2>Reports &amp; certificates</h2>
+            <p>Documents attached to this client, its sites and assets.</p>
+          </div>
+          <span class="badge info">{{ client.reports.length }} reports</span>
+        </header>
+        <div class="full-report-list">
+          @for (report of client.reports; track report.id) {
+            <article>
+              <span class="report-icon">≡</span
+              ><span
+                ><strong>{{ report.title }}</strong
+                ><small
+                  >{{ report.category }}
+                  @if (report.documentCount) {
+                    · {{ report.documentCount }} certificates
+                  }
+                  · {{ report.entityType }} · {{ formatDate(report.createdAt) }}</small
+                ></span
+              >
+              @if (report.expiresAt) {
+                <span class="expiry">Expires {{ formatDate(report.expiresAt) }}</span>
+              }
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="!report.visitId && !report.mediaId && !report.inspectionRevisionId"
+                (click)="openReport(report)"
+              >
+                {{
+                  report.visitId
+                    ? 'Open combined report'
+                    : report.mediaId || report.inspectionRevisionId
+                      ? 'Open report'
+                      : 'Record only'
+                }}
+              </button>
+            </article>
+          } @empty {
+            <div class="empty-state">
+              <h3>No reports for this client</h3>
+              <p>Reports will be collected here automatically.</p>
+            </div>
+          }
+        </div>
+      </section>
+    }
+
+    @if (tab() === 'contacts') {
+      <section class="card full-section">
+        <header class="section-titlebar">
+          <div>
+            <h2>Contacts</h2>
+            <p>People associated with this client.</p>
+          </div>
+          <span class="badge info">{{ client.contacts.length }} contacts</span>
+        </header>
+        <div class="contact-directory">
+          @for (contact of client.contacts; track contact.id) {
+            <article>
+              <span class="contact-avatar large">{{ contact.name.slice(0, 2) }}</span
+              ><span
+                ><strong>{{ contact.name }}</strong
+                ><small
+                  >{{ contact.role || 'Client contact' }}
+                  @if (contact.primary) {
+                    · Primary contact
+                  }
+                </small></span
+              ><span>
+                @if (contact.email) {
+                  <a [href]="'mailto:' + contact.email">{{ contact.email }}</a>
+                } @else {
+                  <small>No email recorded</small>
+                }
+                <small>{{
+                  contact.mobile || contact.telephone || 'No telephone recorded'
+                }}</small></span
+              >
+            </article>
+          } @empty {
+            <div class="empty-state"><h3>No contacts have been added</h3></div>
+          }
+        </div>
+      </section>
+    }
+
+    @if (tab() === 'details') {
+      <section class="card full-section details-section">
+        <header class="section-titlebar">
+          <div>
+            <h2>Client details</h2>
+            <p>Administrative information and internal context.</p>
+          </div>
+          <button class="button secondary compact" type="button" (click)="startEditing()">
+            Edit details
+          </button>
+        </header>
+        <dl>
+          <div>
+            <dt>Client name</dt>
+            <dd>{{ client.name }}</dd>
+          </div>
+          <div>
+            <dt>Reference</dt>
+            <dd>{{ client.reference || 'Not provided' }}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{{ client.status }}</dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd>{{ formatDate(client.createdAt) }}</dd>
+          </div>
+          <div>
+            <dt>Last updated</dt>
+            <dd>{{ formatDate(client.updatedAt) }}</dd>
+          </div>
+          <div class="wide">
+            <dt>Internal notes</dt>
+            <dd>{{ client.internalNotes || 'No internal notes recorded.' }}</dd>
+          </div>
+        </dl>
+      </section>
+    }
+  } @else if (!busy()) {
+    <div class="empty-state card">
+      <h2>Client unavailable</h2>
+      <p>{{ error() }}</p>
+    </div>
+  }
+  @if (error() && customer()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

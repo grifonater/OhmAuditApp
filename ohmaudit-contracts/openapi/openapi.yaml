@@ -1,0 +1,86 @@
+openapi: 3.1.0
+info:
+  title: Ohm Audit API
+  version: 0.2.0
+  description: Authoritative REST contract. Domain endpoints are added milestone by milestone.
+servers:
+  - url: https://api.example.invalid/api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Read API health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /me:
+    get:
+      operationId: getCurrentUser
+      summary: Read the internal user and Organisation memberships
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Current identity context }
+        '401': { $ref: '#/components/responses/ApiError' }
+  /organisations:
+    post:
+      operationId: createOrganisation
+      summary: Create an Organisation and owner membership
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties: { name: { type: string, minLength: 2, maxLength: 120 } }
+      responses:
+        '201': { description: Organisation created }
+        '422': { $ref: '#/components/responses/ApiError' }
+  /organisations/{organisationId}/members:
+    get:
+      operationId: listOrganisationMembers
+      summary: List members when the actor has the required capability
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: organisationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Organisation members }
+        '404': { $ref: '#/components/responses/ApiError' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    ApiError:
+      description: Structured domain error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    HealthResponse:
+      type: object
+      required: [service, status, version]
+      additionalProperties: false
+      properties:
+        service: { type: string }
+        status: { type: string, const: ok }
+        version: { type: string }
+    ApiError:
+      type: object
+      required: [code, message, correlationId]
+      additionalProperties: false
+      properties:
+        code: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        message: { type: string }
+        correlationId: { type: string }
+        details: { type: object, additionalProperties: true }

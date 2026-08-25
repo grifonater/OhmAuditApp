@@ -1,0 +1,421 @@
+.access-tabs {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 1rem;
+  padding: 0.3rem;
+  width: fit-content;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.7rem;
+  background: #fff;
+}
+.access-tabs button {
+  min-height: 2.4rem;
+  padding: 0 0.9rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: var(--oa-ink-secondary);
+  background: transparent;
+  font-weight: 750;
+}
+.access-tabs button.active {
+  color: #fff;
+  background: var(--oa-navy-900);
+}
+.access-tabs span {
+  margin-left: 0.35rem;
+  opacity: 0.72;
+}
+.notice {
+  margin: 0 0 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.65rem;
+}
+.notice.error {
+  color: #8f2631;
+  border: 1px solid #efc9cd;
+  background: #fff7f7;
+}
+.notice.success {
+  color: var(--oa-success);
+  border: 1px solid #bfe4d5;
+  background: #f1fbf7;
+}
+.empty-state {
+  padding: 4rem;
+  color: var(--oa-ink-muted);
+  text-align: center;
+}
+.users-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  gap: 1rem;
+  align-items: start;
+}
+.member-toolbar > div {
+  display: grid;
+  gap: 0.15rem;
+}
+.member-toolbar small,
+.invite-panel p {
+  color: var(--oa-ink-muted);
+}
+.member-toolbar input {
+  max-width: 18rem;
+}
+.member-table {
+  padding: 0 1.2rem;
+}
+.member-row {
+  min-height: 4.6rem;
+  display: grid;
+  grid-template-columns: auto minmax(10rem, 1fr) minmax(10rem, 14rem) auto auto;
+  align-items: center;
+  gap: 0.8rem;
+  border-bottom: 1px solid var(--oa-line-soft);
+}
+.member-row:last-child {
+  border-bottom: 0;
+}
+.member-row.inactive {
+  opacity: 0.7;
+}
+.member-avatar,
+.role-icon {
+  width: 2.45rem;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 0.65rem;
+  color: var(--oa-teal-600);
+  background: var(--oa-teal-100);
+  font-weight: 850;
+}
+.member-identity {
+  min-width: 0;
+  display: grid;
+}
+.member-identity strong,
+.member-identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-identity small {
+  color: var(--oa-ink-muted);
+}
+.role-select select {
+  min-height: 2.35rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.78rem;
+}
+.status {
+  padding: 0.25rem 0.5rem;
+  border-radius: 2rem;
+  color: var(--oa-ink-muted);
+  background: var(--oa-line-soft);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+.status.active {
+  color: var(--oa-success);
+  background: #e8f7f0;
+}
+.stack {
+  display: grid;
+  gap: 1rem;
+}
+.invite-result {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.8rem;
+  border-radius: 0.55rem;
+  background: var(--oa-teal-50);
+}
+.invite-result code {
+  overflow-wrap: anywhere;
+  font-size: 0.72rem;
+}
+.invite-result small {
+  color: var(--oa-ink-muted);
+}
+.pending-invitations {
+  padding: 0 1.2rem 1.2rem;
+  border-top: 1px solid var(--oa-line-soft);
+}
+.pending-invitations h3 {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.78rem;
+}
+.pending-invitations > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--oa-line-soft);
+}
+.pending-invitations span {
+  min-width: 0;
+  display: grid;
+}
+.pending-invitations strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.72rem;
+}
+.pending-invitations small {
+  color: var(--oa-ink-muted);
+}
+.pending-invitations button {
+  padding: 0;
+  border: 0;
+  color: var(--oa-danger);
+  background: none;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+.empty-copy {
+  padding: 2rem;
+  color: var(--oa-ink-muted);
+  text-align: center;
+}
+.roles-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+.roles-layout.editor-open {
+  grid-template-columns: minmax(20rem, 0.72fr) minmax(30rem, 1.28fr);
+}
+.role-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.role-card {
+  padding: 1rem;
+}
+.role-card.selected {
+  border-color: var(--oa-teal-500);
+  box-shadow: 0 0 0 2px #337de51a;
+}
+.role-card-heading {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.8rem;
+  align-items: start;
+}
+.role-card h2 {
+  margin: 0.1rem 0 0.2rem;
+  font-size: 0.95rem;
+}
+.role-card p {
+  margin: 0;
+  color: var(--oa-ink-muted);
+  font-size: 0.75rem;
+}
+.role-type {
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.4rem;
+  color: var(--oa-ink-muted);
+  background: var(--oa-canvas);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+.role-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0.9rem 0;
+  color: var(--oa-ink-muted);
+  font-size: 0.72rem;
+}
+.role-stats strong {
+  color: var(--oa-ink);
+}
+.role-stats .privileged {
+  color: var(--oa-warning);
+  font-weight: 800;
+}
+.role-actions {
+  display: flex;
+  gap: 0.45rem;
+}
+.role-editor {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+}
+.close-button {
+  width: 2.2rem;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 50%;
+  background: var(--oa-canvas);
+  font-size: 1.25rem;
+}
+.role-form {
+  display: grid;
+  gap: 1.4rem;
+}
+.role-fields {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 0.8rem;
+}
+.field > span {
+  color: var(--oa-ink-muted);
+  font-weight: 500;
+}
+.permission-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.permission-heading h3 {
+  margin: 0;
+}
+.permission-heading p {
+  margin: 0.2rem 0 0;
+  color: var(--oa-ink-muted);
+  font-size: 0.75rem;
+}
+.permission-heading > strong {
+  color: var(--oa-teal-600);
+  font-size: 0.75rem;
+}
+.permission-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.permission-group {
+  border: 1px solid var(--oa-line-soft);
+  border-radius: 0.65rem;
+  overflow: hidden;
+}
+.permission-group header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.7rem 0.8rem;
+  background: var(--oa-canvas-soft);
+}
+.permission-group h3 {
+  margin: 0;
+  font-size: 0.77rem;
+}
+.permission-group header button {
+  padding: 0;
+  border: 0;
+  color: var(--oa-teal-600);
+  background: none;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+.permission {
+  min-height: 3.8rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  border-top: 1px solid var(--oa-line-soft);
+  cursor: pointer;
+}
+.permission input {
+  width: 1.05rem;
+  min-height: 1.05rem;
+  margin-top: 0.12rem;
+}
+.permission > span {
+  display: grid;
+  gap: 0.15rem;
+}
+.permission strong {
+  color: var(--oa-ink);
+  font-size: 0.74rem;
+}
+.permission strong small {
+  margin-left: 0.3rem;
+  color: var(--oa-warning);
+}
+.permission em {
+  color: var(--oa-ink-muted);
+  font-size: 0.67rem;
+  font-style: normal;
+  font-weight: 450;
+}
+.permission.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.editor-actions {
+  position: sticky;
+  bottom: -1.2rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin: 0 -1.2rem -1.2rem;
+  padding: 0.9rem 1.2rem;
+  border-top: 1px solid var(--oa-line);
+  background: #fff;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+@media (max-width: 70rem) {
+  .users-layout {
+    grid-template-columns: 1fr;
+  }
+  .invite-panel {
+    order: -1;
+  }
+  .roles-layout.editor-open {
+    grid-template-columns: 1fr;
+  }
+  .role-editor {
+    position: static;
+    max-height: none;
+    order: -1;
+  }
+}
+@media (max-width: 48rem) {
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .page-header .button {
+    width: 100%;
+  }
+  .member-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .member-toolbar input {
+    max-width: none;
+  }
+  .member-row {
+    grid-template-columns: auto 1fr auto;
+    padding: 0.8rem 0;
+  }
+  .role-select {
+    grid-column: 2 / -1;
+  }
+  .status {
+    grid-column: 2;
+    width: fit-content;
+  }
+  .member-row > .button {
+    grid-column: 3;
+  }
+  .role-fields,
+  .permission-groups {
+    grid-template-columns: 1fr;
+  }
+}

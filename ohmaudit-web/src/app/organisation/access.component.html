@@ -1,0 +1,268 @@
+<main class="page access-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Organisation administration</p>
+      <h1>Users &amp; roles</h1>
+      <p>Control who can access this organisation and exactly what they can do.</p>
+    </div>
+    <button class="button primary" type="button" (click)="primaryAction()">
+      {{ tab() === 'users' ? 'Invite user' : 'Create role' }}
+    </button>
+  </header>
+
+  <nav class="access-tabs" aria-label="Users and roles">
+    <button type="button" [class.active]="tab() === 'users'" (click)="setTab('users')">
+      Users <span>{{ data()?.members?.length ?? 0 }}</span>
+    </button>
+    <button type="button" [class.active]="tab() === 'roles'" (click)="setTab('roles')">
+      Roles <span>{{ data()?.roles?.length ?? 0 }}</span>
+    </button>
+  </nav>
+
+  @if (error()) {
+    <p class="notice error" role="alert">{{ error() }}</p>
+  }
+  @if (message()) {
+    <p class="notice success" role="status">{{ message() }}</p>
+  }
+  @if (loading()) {
+    <section class="card empty-state">Loading access settings…</section>
+  } @else if (tab() === 'users') {
+    <div class="users-layout">
+      <section class="card member-panel">
+        <div class="card-header member-toolbar">
+          <div>
+            <h2>Organisation users</h2>
+            <small>Role changes apply immediately.</small>
+          </div>
+          <input
+            type="search"
+            [formControl]="userSearch"
+            placeholder="Search users…"
+            aria-label="Search users"
+          />
+        </div>
+        <div class="member-table">
+          @for (member of filteredMembers(); track member.id) {
+            <div class="member-row" [class.inactive]="member.status === 'INACTIVE'">
+              <span class="member-avatar">{{
+                initials(member.user.displayName, member.user.email)
+              }}</span>
+              <span class="member-identity"
+                ><strong>{{ member.user.displayName || member.user.email }}</strong
+                ><small
+                  >{{ member.user.email }}
+                  @if (member.isCurrentUser) {
+                    · You
+                  }
+                </small></span
+              >
+              <label class="role-select"
+                ><span class="sr-only">Role for {{ member.user.email }}</span
+                ><select
+                  [value]="member.role.id"
+                  (change)="changeRole(member.id, $event)"
+                  [disabled]="member.status === 'INACTIVE'"
+                >
+                  @for (role of data()?.roles ?? []; track role.id) {
+                    <option [value]="role.id" [disabled]="!canAssignRole(role)">
+                      {{ role.name }}
+                    </option>
+                  }
+                </select></label
+              >
+              <span class="status" [class.active]="member.status === 'ACTIVE'">{{
+                member.status === 'ACTIVE' ? 'Active' : 'Suspended'
+              }}</span>
+              <button
+                class="button compact"
+                [class.danger]="member.status === 'ACTIVE'"
+                [class.secondary]="member.status !== 'ACTIVE'"
+                type="button"
+                (click)="toggleStatus(member.id, member.status)"
+              >
+                {{ member.status === 'ACTIVE' ? 'Suspend' : 'Restore' }}
+              </button>
+            </div>
+          } @empty {
+            <p class="empty-copy">No users match your search.</p>
+          }
+        </div>
+      </section>
+
+      <aside class="card invite-panel">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Add a teammate</p>
+            <h2>Invite user</h2>
+          </div>
+        </div>
+        <form class="card-body stack" [formGroup]="inviteForm" (ngSubmit)="invite()">
+          <p>The invitation assigns access only to this organisation.</p>
+          <label class="field"
+            >Email address<input
+              id="invite-email"
+              type="email"
+              formControlName="email"
+              placeholder="name@company.co.uk"
+              autocomplete="email"
+          /></label>
+          <label class="field"
+            >Starting role<select formControlName="roleKey">
+              @for (role of assignableRoles(); track role.id) {
+                <option [value]="role.key">{{ role.name }}</option>
+              }
+            </select></label
+          >
+          <button class="button primary" type="submit" [disabled]="inviteForm.invalid || saving()">
+            {{ saving() ? 'Creating invitation…' : 'Create invitation' }}
+          </button>
+          @if (inviteUrl()) {
+            <div class="invite-result">
+              <strong>Invitation link</strong><code>{{ inviteUrl() }}</code
+              ><small>The recipient must sign in using the invited email address.</small>
+            </div>
+          }
+        </form>
+        @if ((data()?.invitations?.length ?? 0) > 0) {
+          <section class="pending-invitations">
+            <h3>Pending invitations</h3>
+            @for (invitation of data()?.invitations ?? []; track invitation.id) {
+              <div>
+                <span
+                  ><strong>{{ invitation.email }}</strong
+                  ><small>{{ invitation.role.name }}</small></span
+                >
+                <button type="button" (click)="revokeInvitation(invitation.id)">Revoke</button>
+              </div>
+            }
+          </section>
+        }
+      </aside>
+    </div>
+  } @else {
+    <div class="roles-layout" [class.editor-open]="editingRoleId() !== null">
+      <section class="role-list">
+        @for (role of data()?.roles ?? []; track role.id) {
+          <article class="card role-card" [class.selected]="editingRoleId() === role.id">
+            <div class="role-card-heading">
+              <span class="role-icon">{{ role.name.charAt(0) }}</span>
+              <div>
+                <h2>{{ role.name }}</h2>
+                <p>
+                  {{
+                    role.description ||
+                      (role.isSystem ? 'Built-in Ohm Audit role' : 'Custom organisation role')
+                  }}
+                </p>
+              </div>
+              <span class="role-type">{{ role.isSystem ? 'Built-in' : 'Custom' }}</span>
+            </div>
+            <div class="role-stats">
+              <span
+                ><strong>{{ role.memberCount }}</strong> users</span
+              ><span
+                ><strong>{{ role.capabilityKeys.length }}</strong> permissions</span
+              >
+              @if (role.isPrivileged) {
+                <span class="privileged">Sensitive access</span>
+              }
+            </div>
+            <div class="role-actions">
+              @if (!role.isSystem) {
+                <button class="button secondary compact" type="button" (click)="startRole(role)">
+                  Edit</button
+                ><button class="button danger compact" type="button" (click)="deleteRole(role)">
+                  Delete
+                </button>
+              }
+              <button class="button ghost compact" type="button" (click)="duplicateRole(role)">
+                Duplicate
+              </button>
+            </div>
+          </article>
+        }
+      </section>
+
+      @if (editingRoleId() !== null) {
+        <aside class="card role-editor">
+          <div class="card-header">
+            <div>
+              <p class="eyebrow">Custom access</p>
+              <h2>{{ editingRoleId() === 'new' ? 'Create role' : 'Edit role' }}</h2>
+            </div>
+            <button
+              class="close-button"
+              type="button"
+              (click)="cancelRole()"
+              aria-label="Close role editor"
+            >
+              ×
+            </button>
+          </div>
+          <form class="card-body role-form" [formGroup]="roleForm" (ngSubmit)="saveRole()">
+            <div class="role-fields">
+              <label class="field"
+                >Role name<input
+                  formControlName="name"
+                  placeholder="e.g. Regional supervisor" /></label
+              ><label class="field"
+                >Description <span>Optional</span
+                ><textarea
+                  formControlName="description"
+                  placeholder="Explain when this role should be used"
+                ></textarea>
+              </label>
+            </div>
+            <div class="permission-heading">
+              <div>
+                <h3>Permissions</h3>
+                <p>Select only what people in this role need.</p>
+              </div>
+              <strong>{{ selectedCapabilities().size }} selected</strong>
+            </div>
+            <div class="permission-groups">
+              @for (group of permissionGroups(); track group.name) {
+                <section class="permission-group">
+                  <header>
+                    <h3>{{ group.name }}</h3>
+                    <button type="button" (click)="toggleGroup(group.permissions)">
+                      Toggle group
+                    </button>
+                  </header>
+                  @for (permission of group.permissions; track permission.key) {
+                    <label class="permission" [class.disabled]="!canGrant(permission.key)"
+                      ><input
+                        type="checkbox"
+                        [checked]="selectedCapabilities().has(permission.key)"
+                        [disabled]="!canGrant(permission.key)"
+                        (change)="togglePermission(permission.key)"
+                      /><span
+                        ><strong
+                          >{{ permission.name }}
+                          @if (permission.sensitive) {
+                            <small>Sensitive</small>
+                          }</strong
+                        ><em>{{ permission.description }}</em></span
+                      ></label
+                    >
+                  }
+                </section>
+              }
+            </div>
+            <div class="editor-actions">
+              <button class="button secondary" type="button" (click)="cancelRole()">Cancel</button
+              ><button
+                class="button primary"
+                type="submit"
+                [disabled]="roleForm.invalid || saving()"
+              >
+                {{ saving() ? 'Saving…' : 'Save role' }}
+              </button>
+            </div>
+          </form>
+        </aside>
+      }
+    </div>
+  }
+</main>

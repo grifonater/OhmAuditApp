@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ohmaudit-worker-scheduler",
+  "account_id": "488131b4b757ad9a4541451b792e83e5",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "APP_ENV": "local",
+    "APP_VERSION": "0.4.0",
+    "SCHEDULE_HORIZON_YEARS": "5",
+    "API_BASE_URL": "http://127.0.0.1:8787/api",
+  },
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["0 * * * *"] },
+  "env": {
+    "local": { "name": "ohmaudit-worker-scheduler-local" },
+    "development": { "name": "ohmaudit-worker-scheduler-development" },
+    "staging": { "name": "ohmaudit-worker-scheduler-staging" },
+    "production": { "name": "ohmaudit-worker-scheduler-production" },
+  },
+}

@@ -1,0 +1,422 @@
+<main class="page operations-page">
+  @if (asset(); as current) {
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a [routerLink]="['/app/org', organisationId, 'portfolio', 'clients', current.customer.id]">{{
+        current.customer.name
+      }}</a>
+      <span>›</span>
+      <a
+        [routerLink]="[
+          '/app/org',
+          organisationId,
+          'portfolio',
+          'clients',
+          current.customer.id,
+          'sites',
+          current.site.id,
+        ]"
+        >{{ current.site.name }}</a
+      >
+      <span>›</span><strong>{{ current.displayName }}</strong>
+    </nav>
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">EV charging digital twin</p>
+        <h1>{{ current.displayName }}</h1>
+        <p>
+          {{ current.assetReference }} · {{ current.manufacturer || 'Make not recorded' }}
+          {{ current.model }}
+        </p>
+      </div>
+      <span class="badge success">EV module</span>
+    </header>
+
+    @if (success()) {
+      <p class="notice" role="status">{{ success() }}</p>
+    }
+
+    <section class="card panel asset-photo-panel">
+      <div class="section-heading">
+        <div>
+          <h2>Asset images</h2>
+          <p>Images are shown to engineers before testing.</p>
+        </div>
+        <label class="button secondary compact"
+          >+ Add image<input
+            hidden
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            (change)="uploadImage($event)"
+        /></label>
+      </div>
+      <div class="asset-image-grid">
+        @for (image of images(); track image.id) {
+          <figure class="asset-image-card">
+            <img [src]="image.url" [alt]="image.caption || current.displayName" />
+            @if (image.fallback) {
+              <figcaption>{{ image.caption }}</figcaption>
+            } @else {
+              <button class="button danger compact" type="button" (click)="deleteImage(image.id)">
+                Delete
+              </button>
+            }
+          </figure>
+        } @empty {
+          <div class="inline-empty">No image uploaded yet.</div>
+        }
+      </div>
+    </section>
+
+    <section class="card panel">
+      <div class="section-heading">
+        <div>
+          <h2>Charger details</h2>
+          <p>The single source of truth reused on every inspection.</p>
+        </div>
+      </div>
+      <form [formGroup]="detailsForm" (ngSubmit)="saveDetails()" class="form-grid">
+        <label class="field">Make<input formControlName="manufacturer" /></label>
+        <label class="field">Model<input formControlName="model" /></label>
+        <label class="field">Serial number<input formControlName="serialNumber" /></label>
+        <label class="field"
+          >Power output (kW)<input
+            type="number"
+            inputmode="decimal"
+            formControlName="maximumPowerKw"
+        /></label>
+        <label class="field"
+          >DC protection<select formControlName="dcRcdType">
+            <option value="TYPE_B">Type B RCD</option>
+            <option value="RDC_DD">RDC-DD</option>
+            <option value="NONE">None</option>
+          </select></label
+        >
+        <label class="field">Charge point ID<input formControlName="chargePointId" /></label>
+        <label class="field">Operator / network<input formControlName="operatorName" /></label>
+        <label class="field">Firmware<input formControlName="firmwareVersion" /></label>
+        <label class="field"
+          >Installation date<input type="date" formControlName="installationDate"
+        /></label>
+        <label class="field"
+          >Nominal voltage<input type="number" inputmode="numeric" formControlName="nominalVoltage"
+        /></label>
+        <label class="field"
+          >Phases<select formControlName="phaseCount">
+            <option [ngValue]="1">Single phase</option>
+            <option [ngValue]="3">Three phase</option>
+          </select></label
+        >
+        <label class="field full"
+          >Location notes<textarea formControlName="locationNotes"></textarea>
+        </label>
+        <div class="form-actions full">
+          <button class="button primary" type="submit" [disabled]="busy()">
+            Save charger details
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section class="component-management-grid">
+      <article class="card panel component-panel">
+        <div class="section-heading">
+          <div>
+            <h2>Supplies</h2>
+            <p>Incoming electrical supplies used for Zs and PFC testing.</p>
+          </div>
+          <div class="section-actions">
+            <span class="badge info">{{ current.evChargePoint?.supplies?.length || 0 }}</span>
+            <button class="button primary compact" type="button" (click)="addSupply()">
+              + Add supply
+            </button>
+          </div>
+        </div>
+        <div class="component-card-list">
+          @for (supply of current.evChargePoint?.supplies || []; track supply.id) {
+            <article class="component-card">
+              <header>
+                <span class="component-symbol">S</span>
+                <div>
+                  <strong>{{ supply.label }}</strong>
+                  <small>Electrical supply</small>
+                </div>
+                <span class="status-pill">{{
+                  supply.phaseCount === 3 ? 'Three phase' : 'Single phase'
+                }}</span>
+              </header>
+              <dl class="component-facts">
+                <div>
+                  <dt>Protection</dt>
+                  <dd>{{ supply.protectiveDeviceType || 'Not recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Rating</dt>
+                  <dd>
+                    {{
+                      supply.protectiveDeviceRating
+                        ? supply.protectiveDeviceRating + ' A'
+                        : 'Not recorded'
+                    }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Earthing</dt>
+                  <dd>{{ supply.earthingArrangement || 'Not recorded' }}</dd>
+                </div>
+              </dl>
+              <footer>
+                <button class="button ghost compact" type="button" (click)="editSupply(supply)">
+                  Edit details
+                </button>
+                <button
+                  class="button danger compact"
+                  type="button"
+                  [disabled]="busy()"
+                  (click)="deleteSupply(supply.id)"
+                >
+                  Delete
+                </button>
+              </footer>
+            </article>
+          } @empty {
+            <div class="component-empty">
+              <span class="component-symbol">S</span>
+              <strong>No supplies recorded</strong>
+              <p>Add the electrical supply feeding this charger.</p>
+              <button class="button secondary compact" type="button" (click)="addSupply()">
+                Add first supply
+              </button>
+            </div>
+          }
+        </div>
+      </article>
+
+      <article class="card panel component-panel">
+        <div class="section-heading">
+          <div>
+            <h2>Connectors</h2>
+            <p>Charging outlets and the single supply connected to each one.</p>
+          </div>
+          <div class="section-actions">
+            <span class="badge info">{{ current.evChargePoint?.connectors?.length || 0 }}</span>
+            <button class="button primary compact" type="button" (click)="addConnector()">
+              + Add connector
+            </button>
+          </div>
+        </div>
+        <div class="component-card-list">
+          @for (connector of current.evChargePoint?.connectors || []; track connector.id) {
+            <article class="component-card">
+              <header>
+                <span class="component-symbol connector">C</span>
+                <div>
+                  <strong>{{ connector.label }}</strong
+                  ><small>Charging connector</small>
+                </div>
+                <span class="status-pill">{{ connector.connectorType }}</span>
+              </header>
+              <dl class="component-facts connector-facts">
+                <div>
+                  <dt>Connected supply</dt>
+                  <dd>
+                    @for (mapping of connector.supplyMappings; track mapping.supplyId) {
+                      {{ mapping.supply?.label || 'Mapped supply' }}
+                    }
+                    @if (!connector.supplyMappings.length) {
+                      No supply mapped
+                    }
+                  </dd>
+                </div>
+              </dl>
+              <footer>
+                <button
+                  class="button ghost compact"
+                  type="button"
+                  (click)="editConnector(connector)"
+                >
+                  Edit details
+                </button>
+                <button
+                  class="button danger compact"
+                  type="button"
+                  [disabled]="busy()"
+                  (click)="deleteConnector(connector.id)"
+                >
+                  Delete
+                </button>
+              </footer>
+            </article>
+          } @empty {
+            <div class="component-empty">
+              <span class="component-symbol connector">C</span>
+              <strong>No connectors recorded</strong>
+              <p>Add each charging outlet fitted to this unit.</p>
+              <button class="button secondary compact" type="button" (click)="addConnector()">
+                Add first connector
+              </button>
+            </div>
+          }
+        </div>
+      </article>
+    </section>
+
+    @if (supplyEditorOpen()) {
+      <div
+        class="modal-backdrop"
+        tabindex="0"
+        (click)="closeSupplyOnBackdrop($event)"
+        (keydown.escape)="cancelSupplyEdit()"
+      >
+        <section
+          class="component-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="supply-dialog-title"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">Electrical supply</p>
+              <h2 id="supply-dialog-title">
+                {{ editingSupplyId() ? 'Edit supply' : 'Add supply' }}
+              </h2>
+            </div>
+            <button
+              class="icon-button"
+              type="button"
+              aria-label="Close"
+              (click)="cancelSupplyEdit()"
+            >
+              ×
+            </button>
+          </header>
+          <form [formGroup]="supplyForm" (ngSubmit)="saveSupply()" class="form-grid modal-form">
+            <label class="field full"
+              >Supply name<input formControlName="label" placeholder="e.g. Supply 1"
+            /></label>
+            <label class="field"
+              >Phases<select formControlName="phaseCount">
+                <option [ngValue]="1">Single phase</option>
+                <option [ngValue]="3">Three phase</option>
+              </select></label
+            >
+            <label class="field"
+              >Protective device<select formControlName="protectiveDeviceType">
+                <option value="">Not recorded</option>
+                <option value="MCB">MCB</option>
+                <option value="RCBO">RCBO</option>
+                <option value="AFDD">AFDD</option>
+              </select></label
+            >
+            <label class="field"
+              >Device rating (A)<input
+                type="number"
+                inputmode="numeric"
+                formControlName="protectiveDeviceRating"
+            /></label>
+            <label class="field"
+              >Earthing arrangement<select formControlName="earthingArrangement">
+                <option value="TNCS">TN-C-S</option>
+                <option value="TNS">TN-S</option>
+                <option value="TT">TT</option>
+                <option value="IT">IT</option>
+              </select></label
+            >
+            <footer class="form-actions full">
+              <button class="button ghost" type="button" (click)="cancelSupplyEdit()">Cancel</button
+              ><button
+                class="button primary"
+                type="submit"
+                [disabled]="busy() || supplyForm.invalid"
+              >
+                {{ editingSupplyId() ? 'Save changes' : 'Add supply' }}
+              </button>
+            </footer>
+          </form>
+        </section>
+      </div>
+    }
+
+    @if (connectorEditorOpen()) {
+      <div
+        class="modal-backdrop"
+        tabindex="0"
+        (click)="closeConnectorOnBackdrop($event)"
+        (keydown.escape)="cancelConnectorEdit()"
+      >
+        <section
+          class="component-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="connector-dialog-title"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">Charging outlet</p>
+              <h2 id="connector-dialog-title">
+                {{ editingConnectorId() ? 'Edit connector' : 'Add connector' }}
+              </h2>
+            </div>
+            <button
+              class="icon-button"
+              type="button"
+              aria-label="Close"
+              (click)="cancelConnectorEdit()"
+            >
+              ×
+            </button>
+          </header>
+          <form
+            [formGroup]="connectorForm"
+            (ngSubmit)="saveConnector()"
+            class="form-grid modal-form"
+          >
+            <label class="field full"
+              >Connector number<input formControlName="label" placeholder="e.g. Connector 1"
+            /></label>
+            <label class="field"
+              >Connector type<select formControlName="connectorType">
+                <option>Type 2</option>
+                <option>CCS</option>
+                <option>CHAdeMO</option>
+                <option>Type 1</option>
+                <option>Socket</option>
+              </select></label
+            >
+            <label class="field"
+              >Connected supply<select
+                [value]="selectedConnectorSupplyId()"
+                (change)="chooseConnectorSupply($any($event.target).value)"
+              >
+                <option value="">No supply mapped</option>
+                @for (supply of current.evChargePoint?.supplies || []; track supply.id) {
+                  <option [value]="supply.id">{{ supply.label }}</option>
+                }</select
+              ><small
+                >Each connector can use one supply. A supply can feed several connectors.</small
+              ></label
+            >
+            <footer class="form-actions full">
+              <button class="button ghost" type="button" (click)="cancelConnectorEdit()">
+                Cancel</button
+              ><button
+                class="button primary"
+                type="submit"
+                [disabled]="busy() || connectorForm.invalid"
+              >
+                {{ editingConnectorId() ? 'Save changes' : 'Add connector' }}
+              </button>
+            </footer>
+          </form>
+        </section>
+      </div>
+    }
+  } @else if (!busy()) {
+    <div class="empty-state card">
+      <h2>EV charger unavailable</h2>
+      <p>{{ error() }}</p>
+    </div>
+  }
+  @if (error() && asset()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

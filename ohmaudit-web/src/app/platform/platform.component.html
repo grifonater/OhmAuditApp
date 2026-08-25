@@ -1,0 +1,572 @@
+<main class="page platform-page">
+  <header class="platform-hero">
+    <div>
+      <p class="eyebrow">Platform control</p>
+      <h1>Superadmin</h1>
+      <p>Manage organisations, subscriptions, support access and shared platform resources.</p>
+    </div>
+    @if (role() === 'PLATFORM_ADMIN') {
+      <span class="superadmin-badge">Platform access</span>
+    }
+  </header>
+
+  @if (error()) {
+    <p class="message error" role="alert">{{ error() }}</p>
+  }
+  @if (success()) {
+    <p class="message success" role="status">{{ success() }}</p>
+  }
+
+  @if (role() !== 'PLATFORM_ADMIN') {
+    <section class="setup-card">
+      @if (bootstrapAvailable()) {
+        <div class="setup-icon">S</div>
+        <div>
+          <p class="eyebrow">One-time setup</p>
+          <h2>Claim the first superadmin account</h2>
+          <p>
+            In local development the setup token is filled in automatically. In a deployed
+            environment, enter the <code>SUPERADMIN_BOOTSTRAP_TOKEN</code> configured for the API.
+            This setup closes permanently after the first account is claimed.
+          </p>
+          <div class="claim-form">
+            <label
+              >Bootstrap token<input
+                type="password"
+                [formControl]="bootstrapToken"
+                autocomplete="off"
+            /></label>
+            <button
+              class="button primary"
+              type="button"
+              (click)="claimSuperadmin()"
+              [disabled]="busy() || bootstrapToken.invalid"
+            >
+              {{ busy() ? 'Checking…' : 'Make me a superadmin' }}
+            </button>
+          </div>
+        </div>
+      } @else {
+        <div class="setup-icon locked">×</div>
+        <div>
+          <h2>Superadmin access required</h2>
+          <p>Ask an existing superadmin to promote your account from the Users tab.</p>
+        </div>
+      }
+    </section>
+  } @else {
+    <nav class="platform-tabs" aria-label="Superadmin sections">
+      <button
+        type="button"
+        [class.active]="activeTab() === 'organisations'"
+        (click)="setTab('organisations')"
+      >
+        Organisations
+      </button>
+      <button
+        type="button"
+        [class.active]="activeTab() === 'catalogue'"
+        (click)="setTab('catalogue')"
+      >
+        EV image catalogue
+      </button>
+      <button type="button" [class.active]="activeTab() === 'users'" (click)="setTab('users')">
+        Users &amp; access
+      </button>
+    </nav>
+
+    @if (activeTab() === 'organisations') {
+      <section class="platform-card organisation-admin">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Customer accounts</p>
+            <h2>Organisations &amp; subscriptions</h2>
+            <p>Control module access, expiry dates and provide secure account support.</p>
+          </div>
+          <div class="search-box">
+            <input
+              [formControl]="organisationSearch"
+              type="search"
+              placeholder="Search organisation or trading name"
+            /><button class="button secondary compact" type="button" (click)="loadOrganisations()">
+              Search
+            </button>
+          </div>
+        </div>
+
+        <div class="organisation-grid">
+          <div class="organisation-list" aria-label="Organisations">
+            @for (organisation of organisations(); track organisation.id) {
+              <button
+                type="button"
+                [class.selected]="selectedOrganisation()?.id === organisation.id"
+                (click)="openOrganisation(organisation.id)"
+              >
+                <span class="organisation-avatar">{{
+                  organisation.name.charAt(0).toUpperCase()
+                }}</span>
+                <span>
+                  <strong>{{ organisation.brandProfile?.tradingName || organisation.name }}</strong>
+                  <small
+                    >{{ organisation._count.memberships }} users ·
+                    {{ organisation._count.sites }} sites ·
+                    {{ organisation._count.assets }} assets</small
+                  >
+                </span>
+                <span class="organisation-modules">
+                  @for (entitlement of organisation.moduleEntitlements; track entitlement.id) {
+                    @if (entitlement.status === 'ACTIVE' || entitlement.status === 'TRIAL') {
+                      <small>{{ entitlement.module.name }}</small>
+                    }
+                  }
+                </span>
+                <span aria-hidden="true">›</span>
+              </button>
+            } @empty {
+              <div class="empty"><strong>No organisations found</strong></div>
+            }
+          </div>
+
+          @if (selectedOrganisation(); as organisation) {
+            <div class="organisation-detail">
+              <header>
+                <div>
+                  <p class="eyebrow">Organisation account</p>
+                  <h2>{{ organisation.brandProfile?.tradingName || organisation.name }}</h2>
+                  <p>{{ organisation.slug }} · {{ organisation.status }}</p>
+                </div>
+                <button class="button ghost compact" type="button" (click)="closeOrganisation()">
+                  Close
+                </button>
+              </header>
+
+              <section class="admin-subsection">
+                <div class="subsection-title">
+                  <div>
+                    <h3>Subscribed modules</h3>
+                    <p>Access stops automatically at the end date.</p>
+                  </div>
+                </div>
+                <div class="module-admin-list">
+                  @for (module of organisation.modules; track module.id) {
+                    <article>
+                      <span class="module-icon">{{ module.name.charAt(0) }}</span>
+                      <span class="module-copy"
+                        ><strong>{{ module.name }}</strong
+                        ><small>{{ module.description }}</small></span
+                      >
+                      <label
+                        >Access<select
+                          #moduleStatus
+                          [value]="module.entitlement?.status || 'CANCELLED'"
+                        >
+                          <option value="ACTIVE">Active</option>
+                          <option value="TRIAL">Trial</option>
+                          <option value="SUSPENDED">Suspended</option>
+                          <option value="CANCELLED">Not subscribed</option>
+                          <option value="EXPIRED">Expired</option>
+                        </select></label
+                      >
+                      <label
+                        >Ends on<input
+                          #moduleExpiryInput
+                          type="date"
+                          [value]="moduleExpiry(module)"
+                      /></label>
+                      <button
+                        class="button primary compact"
+                        type="button"
+                        (click)="
+                          saveModule(module.key, moduleStatus.value, moduleExpiryInput.value)
+                        "
+                        [disabled]="busy()"
+                      >
+                        Save
+                      </button>
+                    </article>
+                  }
+                </div>
+              </section>
+
+              <section class="admin-subsection">
+                <div class="subsection-title support-heading">
+                  <div>
+                    <h3>Users &amp; support</h3>
+                    <p>Manage access without handling customer passwords.</p>
+                  </div>
+                  <label
+                    >Support reason<input
+                      [formControl]="supportReason"
+                      placeholder="Reason for support access"
+                  /></label>
+                </div>
+                <div class="organisation-member-list">
+                  @for (membership of organisation.memberships; track membership.id) {
+                    <article [class.inactive]="membership.status !== 'ACTIVE'">
+                      <span class="user-avatar">{{
+                        (membership.user.displayName || membership.user.email)
+                          .charAt(0)
+                          .toUpperCase()
+                      }}</span>
+                      <span class="user-copy"
+                        ><strong>{{ membership.user.displayName || membership.user.email }}</strong
+                        ><small>{{ membership.user.email }} · {{ membership.status }}</small></span
+                      >
+                      <label
+                        >Organisation role<select
+                          [value]="membership.role.id"
+                          (change)="changeMemberRole(membership.id, $any($event.target).value)"
+                        >
+                          @for (role of organisation.roles; track role.id) {
+                            <option [value]="role.id">{{ role.name }}</option>
+                          }
+                        </select></label
+                      >
+                      <div class="member-actions">
+                        <button
+                          class="button secondary compact"
+                          type="button"
+                          (click)="sendPasswordReset(membership.user.id, membership.user.email)"
+                        >
+                          Send reset link
+                        </button>
+                        <button
+                          class="button secondary compact"
+                          type="button"
+                          (click)="startSupport(membership.user.id, membership.user.email)"
+                          [disabled]="supportReason.invalid || membership.status !== 'ACTIVE'"
+                        >
+                          View as user
+                        </button>
+                        <button
+                          class="button compact"
+                          [class.danger]="membership.status === 'ACTIVE'"
+                          [class.secondary]="membership.status !== 'ACTIVE'"
+                          type="button"
+                          (click)="toggleMember(membership)"
+                        >
+                          {{ membership.status === 'ACTIVE' ? 'Suspend' : 'Restore' }}
+                        </button>
+                      </div>
+                    </article>
+                  } @empty {
+                    <div class="empty"><strong>No users in this organisation</strong></div>
+                  }
+                </div>
+              </section>
+            </div>
+          } @else {
+            <div class="organisation-placeholder">
+              <span>🏢</span><strong>Select an organisation</strong>
+              <p>Its subscriptions and members will appear here.</p>
+            </div>
+          }
+        </div>
+      </section>
+    } @else if (activeTab() === 'catalogue') {
+      <section class="metric-grid">
+        <article>
+          <strong>{{ totalModels() }}</strong
+          ><span>Make/model combinations seen</span>
+        </article>
+        <article>
+          <strong>{{ imageCount() }}</strong
+          ><span>Stock images available</span>
+        </article>
+        <article>
+          <strong>{{ unmatched().length }}</strong
+          ><span>Priority models shown</span>
+        </article>
+      </section>
+
+      <section class="catalogue-layout">
+        <div class="catalogue-main">
+          <article class="platform-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Prioritised by fleet usage</p>
+                <h2>Images needed</h2>
+                <p>Top 20 make/model combinations without a stock image.</p>
+              </div>
+              <div class="search-box">
+                <input [formControl]="search" type="search" placeholder="Search make or model" />
+                <button class="button secondary compact" type="button" (click)="loadCatalogue()">
+                  Search
+                </button>
+              </div>
+            </div>
+            <div class="priority-list">
+              @for (item of unmatched(); track item.manufacturer + item.model) {
+                <button type="button" (click)="selectSuggestion(item)">
+                  <span class="rank">{{ $index + 1 }}</span>
+                  <span
+                    ><strong>{{ item.manufacturer }}</strong
+                    ><small>{{ item.model }}</small></span
+                  >
+                  <span class="fleet-count"
+                    ><strong>{{ item.count }}</strong
+                    ><small>chargers</small></span
+                  >
+                  <span class="add-action">Add image</span>
+                </button>
+              } @empty {
+                <div class="empty">
+                  <strong>No unmatched models found</strong
+                  ><span
+                    >Every matching charger already has an image, or no chargers match this
+                    search.</span
+                  >
+                </div>
+              }
+            </div>
+          </article>
+
+          <article class="platform-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Reusable library</p>
+                <h2>Stock images</h2>
+                <p>One image can cover multiple visually identical model numbers.</p>
+              </div>
+            </div>
+            <div class="stock-grid">
+              @for (image of stocked(); track image.mediaId) {
+                <article class="stock-card">
+                  <img
+                    [src]="stockImageUrl(image)"
+                    [alt]="image.models[0]?.manufacturer + ' charger'"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <div class="stock-body">
+                    <div class="model-tags">
+                      @for (model of image.models; track model.id) {
+                        <span
+                          ><strong>{{ model.manufacturer }} {{ model.model }}</strong
+                          ><small>{{ model.count }} in fleet</small
+                          ><button type="button" (click)="unlinkModel(model)" title="Unlink model">
+                            ×
+                          </button></span
+                        >
+                      }
+                    </div>
+                    <div class="stock-actions">
+                      <button
+                        class="button secondary compact"
+                        type="button"
+                        (click)="prepareAlias(image)"
+                      >
+                        + Add model number
+                      </button>
+                      <label class="button secondary compact replace-image"
+                        >Replace image for {{ image.models.length }} model{{
+                          image.models.length === 1 ? '' : 's'
+                        }}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          (change)="replaceImage(image, $event)"
+                      /></label>
+                      <button
+                        class="button danger compact"
+                        type="button"
+                        (click)="deleteImage(image)"
+                      >
+                        Delete image
+                      </button>
+                    </div>
+                    @if (selectedImageId() === image.mediaId) {
+                      <form class="alias-form" [formGroup]="aliasForm" (ngSubmit)="addAliases()">
+                        <label>Make<input formControlName="manufacturer" /></label>
+                        <span class="field-label">Additional model numbers</span>
+                        <div class="model-entry">
+                          <input
+                            [formControl]="aliasModelInput"
+                            placeholder="Type a model, then press Enter"
+                            (keydown)="modelKeydown($event, 'alias')"
+                            (paste)="modelPaste($event, 'alias')"
+                            (blur)="commitModelInput('alias')"
+                          />
+                          <button
+                            class="button secondary compact"
+                            type="button"
+                            (click)="commitModelInput('alias')"
+                          >
+                            Add
+                          </button>
+                        </div>
+                        <div class="model-chip-list" aria-label="Models to link">
+                          @for (model of aliasModels(); track model) {
+                            <span
+                              ><strong>{{ model }}</strong
+                              ><button
+                                type="button"
+                                (click)="removeModel('alias', $index)"
+                                [attr.aria-label]="'Remove ' + model"
+                              >
+                                ×
+                              </button></span
+                            >
+                          } @empty {
+                            <small>No additional models added yet.</small>
+                          }
+                        </div>
+                        <div>
+                          <button
+                            class="button primary compact"
+                            type="submit"
+                            [disabled]="aliasModels().length === 0"
+                          >
+                            Link to this image</button
+                          ><button
+                            class="button ghost compact"
+                            type="button"
+                            (click)="cancelAlias()"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    }
+                  </div>
+                </article>
+              } @empty {
+                <div class="empty wide">
+                  <strong>No stock images yet</strong
+                  ><span>Add the first from the upload panel.</span>
+                </div>
+              }
+            </div>
+          </article>
+        </div>
+
+        <aside id="stock-upload" class="platform-card upload-card">
+          <p class="eyebrow">Add to library</p>
+          <h2>Upload stock image</h2>
+          <p>
+            Use a clear front or three-quarter view. Associate every model number that shares the
+            same casing.
+          </p>
+          @if (organisationId() === '') {
+            <p class="message error">
+              Create or join an organisation before uploading; its storage bucket is used for the
+              file.
+            </p>
+          }
+          <form [formGroup]="uploadForm" (ngSubmit)="upload()">
+            <label
+              >Manufacturer<input formControlName="manufacturer" placeholder="e.g. Rolec"
+            /></label>
+            <span class="field-label">Model numbers</span>
+            <div class="model-entry">
+              <input
+                [formControl]="uploadModelInput"
+                placeholder="e.g. Quantum, then press Enter"
+                (keydown)="modelKeydown($event, 'upload')"
+                (paste)="modelPaste($event, 'upload')"
+                (blur)="commitModelInput('upload')"
+              />
+              <button
+                class="button secondary compact"
+                type="button"
+                (click)="commitModelInput('upload')"
+              >
+                Add model
+              </button>
+            </div>
+            <small class="model-help"
+              >Each model appears as a separate tag. Press Enter after each one, or paste a
+              comma-separated list.</small
+            >
+            <div class="model-chip-list" aria-label="Models assigned to this image">
+              @for (model of uploadModels(); track model) {
+                <span
+                  ><strong>{{ model }}</strong
+                  ><button
+                    type="button"
+                    (click)="removeModel('upload', $index)"
+                    [attr.aria-label]="'Remove ' + model"
+                  >
+                    ×
+                  </button></span
+                >
+              } @empty {
+                <small>Add at least one model number.</small>
+              }
+            </div>
+            <label class="file-drop"
+              ><input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                (change)="chooseFile($event)"
+              /><strong>{{ selectedFile()?.name || 'Choose charger image' }}</strong
+              ><span>JPEG, PNG or WebP · maximum 20 MB</span></label
+            >
+            <button
+              class="button primary full"
+              type="submit"
+              [disabled]="
+                busy() ||
+                uploadForm.invalid ||
+                uploadModels().length === 0 ||
+                !selectedFile() ||
+                !organisationId()
+              "
+            >
+              {{ busy() ? 'Uploading…' : 'Add stock image' }}
+            </button>
+          </form>
+        </aside>
+      </section>
+    } @else {
+      <section class="platform-card users-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Platform security</p>
+            <h2>Users &amp; superadmins</h2>
+            <p>Promote trusted users or remove platform-wide access.</p>
+          </div>
+          <div class="search-box">
+            <input
+              [formControl]="userSearch"
+              type="search"
+              placeholder="Search name or email"
+            /><button class="button secondary compact" type="button" (click)="loadUsers()">
+              Search
+            </button>
+          </div>
+        </div>
+        <div class="user-list">
+          @for (user of users(); track user.id) {
+            <article>
+              <span class="user-avatar">{{
+                (user.displayName || user.email).charAt(0).toUpperCase()
+              }}</span
+              ><span class="user-copy"
+                ><strong>{{ user.displayName || user.email }}</strong
+                ><small
+                  >{{ user.email }} · {{ user._count.memberships }} organisation{{
+                    user._count.memberships === 1 ? '' : 's'
+                  }}</small
+                ></span
+              ><span class="role-pill" [class.admin]="user.platformRole === 'PLATFORM_ADMIN'">{{
+                user.platformRole === 'PLATFORM_ADMIN' ? 'Superadmin' : 'User'
+              }}</span
+              ><button
+                class="button compact"
+                [class.danger]="user.platformRole === 'PLATFORM_ADMIN'"
+                [class.secondary]="user.platformRole !== 'PLATFORM_ADMIN'"
+                type="button"
+                (click)="toggleUser(user)"
+              >
+                {{ user.platformRole === 'PLATFORM_ADMIN' ? 'Remove access' : 'Make superadmin' }}
+              </button>
+            </article>
+          } @empty {
+            <div class="empty"><strong>No users found</strong></div>
+          }
+        </div>
+      </section>
+    }
+  }
+</main>

@@ -1,0 +1,46 @@
+{
+  "name": "@ohmaudit/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env=\"\"",
+    "build": "pnpm prisma:generate && wrangler deploy --env=\"\" --dry-run --outdir dist",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm prisma:generate && tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.0.0",
+    "@prisma/client": "^7.0.0",
+    "@hono/zod-openapi": "^1.0.0",
+    "hono": "^4.0.0",
+    "jose": "^6.0.0",
+    "pg": "^8.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260813.1",
+    "@eslint/js": "^9.0.0",
+    "@types/pg": "^8.0.0",
+    "dotenv": "^17.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "prisma": "^7.0.0",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0",
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.19.0"
+}

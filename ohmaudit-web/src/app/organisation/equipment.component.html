@@ -1,0 +1,123 @@
+<main class="page equipment-page">
+  <nav class="breadcrumbs">
+    <a [routerLink]="['/app/org', organisationId]">Organisation settings</a><span>/</span
+    ><span>Equipment</span>
+  </nav>
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Organisation register</p>
+      <h1>Equipment</h1>
+      <p>Keep cameras, meters and test instruments ready for use across inspections.</p>
+    </div>
+    @if (canManage()) {
+      <button class="button primary" type="button" (click)="openCreate()">+ Add equipment</button>
+    }
+  </header>
+  <section class="summary-strip">
+    <div>
+      <strong>{{ equipment().length }}</strong
+      ><span>Active items</span>
+    </div>
+    <div>
+      <strong>{{ filtered().length }}</strong
+      ><span>Shown</span>
+    </div>
+    <label
+      ><span class="sr-only">Search equipment</span
+      ><input
+        type="search"
+        placeholder="Search name, type, make, model or serial…"
+        [ngModel]="query()"
+        (ngModelChange)="query.set($event)"
+    /></label>
+  </section>
+  @if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+  }
+  <section class="card register-card">
+    @if (filtered().length) {
+      <div class="equipment-list">
+        @for (item of filtered(); track item.id) {
+          <article>
+            <div class="equipment-icon">⌁</div>
+            <div class="equipment-main">
+              <strong>{{ item.name }}</strong
+              ><span>{{ item.equipmentType }}</span
+              ><small
+                >{{ item.manufacturer || 'Make not set' }} ·
+                {{ item.model || 'Model not set' }}</small
+              >
+            </div>
+            <div>
+              <span class="field-label">Serial</span
+              ><strong>{{ item.serialNumber || 'Not recorded' }}</strong>
+            </div>
+            <div>
+              <span class="field-label">Calibration</span
+              ><strong [class.overdue]="calibrationState(item) === 'Calibration overdue'">{{
+                calibrationState(item)
+              }}</strong>
+            </div>
+            @if (canManage()) {
+              <div class="row-actions">
+                <button type="button" (click)="openEdit(item)">Edit</button
+                ><button class="danger-link" type="button" (click)="archive(item)">Archive</button>
+              </div>
+            }
+          </article>
+        }
+      </div>
+    } @else {
+      <div class="empty-state">
+        <span class="empty-icon">⌁</span>
+        <h2>No equipment found</h2>
+        <p>Add the organisation's first camera or test instrument.</p>
+      </div>
+    }
+  </section>
+</main>
+@if (formOpen()) {
+  <div class="modal-backdrop" (click)="formOpen.set(false)">
+    <section
+      class="equipment-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="equipment-title"
+      (click)="$event.stopPropagation()"
+    >
+      <header>
+        <div>
+          <p class="eyebrow">Equipment register</p>
+          <h2 id="equipment-title">{{ editingId() ? 'Edit equipment' : 'Add equipment' }}</h2>
+        </div>
+        <button type="button" aria-label="Close" (click)="formOpen.set(false)">×</button>
+      </header>
+      <div class="form-grid">
+        <label class="wide"
+          >Name<input [(ngModel)]="form.name" placeholder="e.g. FLIR E8-XT"
+        /></label>
+        <label
+          >Equipment type<input [(ngModel)]="form.equipmentType" list="equipment-types"
+        /></label>
+        <datalist id="equipment-types">
+          <option value="Thermal imaging camera"></option>
+          <option value="Electrical tester"></option>
+          <option value="PAT tester"></option>
+          <option value="Multifunction tester"></option>
+          <option value="Calibration instrument"></option>
+        </datalist>
+        <label>Manufacturer<input [(ngModel)]="form.manufacturer" /></label>
+        <label>Model<input [(ngModel)]="form.model" /></label>
+        <label>Serial number<input [(ngModel)]="form.serialNumber" /></label>
+        <label>Calibration due<input type="date" [(ngModel)]="form.calibrationDueAt" /></label>
+        <label class="wide">Notes<textarea rows="3" [(ngModel)]="form.notes"></textarea></label>
+      </div>
+      <footer>
+        <button class="button secondary" type="button" (click)="formOpen.set(false)">Cancel</button
+        ><button class="button primary" type="button" [disabled]="busy()" (click)="save()">
+          {{ busy() ? 'Saving…' : 'Save equipment' }}
+        </button>
+      </footer>
+    </section>
+  </div>
+}

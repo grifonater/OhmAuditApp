@@ -1,0 +1,1073 @@
+generator client {
+  provider = "prisma-client"
+  runtime  = "cloudflare"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlatformRole {
+  USER
+  PLATFORM_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum OrganisationStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum EntitlementStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum BillingProviderType {
+  STRIPE
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum AssetStatus {
+  PROPOSED
+  ACTIVE
+  INACTIVE
+  REMOVED
+  DECOMMISSIONED
+  REPLACED
+}
+
+enum AssetModelStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaStatus {
+  PENDING_UPLOAD
+  AVAILABLE
+  QUARANTINED
+  ARCHIVED
+}
+
+enum ScheduleOccurrenceStatus {
+  FUTURE
+  UPCOMING
+  DUE
+  OVERDUE
+  COMPLETED
+  SKIPPED
+  SUPERSEDED
+}
+
+enum NotificationEventStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum VisitStatus {
+  DRAFT
+  SCHEDULED
+  IN_PROGRESS
+  SUBMITTED
+  COMPLETED
+  CANCELLED
+}
+
+enum VisitTaskStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  COMPLETED
+  CANCELLED
+}
+
+enum InspectionStatus {
+  DRAFT
+  IN_PROGRESS
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
+enum DefectSeverity {
+  ADVISORY
+  MINOR
+  MAJOR
+  DANGEROUS
+}
+
+enum DefectStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+enum SyncMutationStatus {
+  PENDING
+  APPLIED
+  CONFLICT
+  REJECTED
+}
+
+model User {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  authSubject             String                   @unique @map("auth_subject") @db.Uuid
+  email                   String
+  displayName             String?                  @map("display_name")
+  platformRole            PlatformRole             @default(USER) @map("platform_role")
+  status                  UserStatus               @default(ACTIVE)
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  memberships             OrganisationMembership[]
+  auditEvents             AuditEvent[]             @relation("AuditActor")
+  invitationsSent         OrganisationInvitation[] @relation("InvitationInviter")
+  invitationsAccepted     OrganisationInvitation[] @relation("InvitationAcceptedUser")
+  supportSessionsCreated  PlatformSupportSession[] @relation("SupportSessionAdministrator")
+  supportSessionsTargeted PlatformSupportSession[] @relation("SupportSessionTarget")
+
+  @@map("users")
+}
+
+model Organisation {
+  id                           String                          @id @default(uuid()) @db.Uuid
+  name                         String
+  slug                         String                          @unique
+  status                       OrganisationStatus              @default(ACTIVE)
+  requireMfaForPrivilegedRoles Boolean                         @default(false) @map("require_mfa_for_privileged_roles")
+  createdAt                    DateTime                        @default(now()) @map("created_at")
+  updatedAt                    DateTime                        @updatedAt @map("updated_at")
+  memberships                  OrganisationMembership[]
+  roles                        Role[]
+  auditEvents                  AuditEvent[]
+  brandProfile                 OrganisationBrandProfile?
+  accreditations               OrganisationAccreditation[]
+  invitations                  OrganisationInvitation[]
+  moduleEntitlements           OrganisationModuleEntitlement[]
+  billingCustomer              BillingCustomer?
+  customers                    Customer[]
+  sites                        Site[]
+  assets                       Asset[]
+  contacts                     Contact[]
+  tags                         Tag[]
+  entityTags                   EntityTag[]
+  media                        Media[]
+  documents                    Document[]
+  scheduleRules                ScheduleRule[]
+  scheduleOccurrences          ScheduleOccurrence[]
+  notificationPreference       NotificationPreference?
+  notificationEvents           NotificationEvent[]
+  visits                       Visit[]
+  visitTasks                   VisitTask[]
+  inspections                  Inspection[]
+  inspectionRevisions          InspectionRevision[]
+  defects                      Defect[]
+  customFieldDefinitions       CustomFieldDefinition[]
+  reportTemplates              ReportTemplate[]
+  syncMutations                SyncMutation[]
+  proposedAssetChanges         ProposedAssetChange[]
+  evChargePoints               EvChargePoint[]
+  evSupplies                   EvSupply[]
+  evConnectors                 EvConnector[]
+  equipment                    OrganisationEquipment[]
+  supportSessions              PlatformSupportSession[]
+
+  @@map("organisations")
+}
+
+model Role {
+  id             String                   @id @default(uuid()) @db.Uuid
+  organisationId String                   @map("organisation_id") @db.Uuid
+  key            String
+  name           String
+  description    String?
+  isSystem       Boolean                  @default(true) @map("is_system")
+  isPrivileged   Boolean                  @default(false) @map("is_privileged")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+  organisation   Organisation             @relation(fields: [organisationId], references: [id])
+  capabilities   RoleCapability[]
+  memberships    OrganisationMembership[]
+  invitations    OrganisationInvitation[]
+
+  @@unique([organisationId, key])
+  @@index([organisationId])
+  @@map("roles")
+}
+
+model Capability {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique
+  description String?
+  roles       RoleCapability[]
+
+  @@map("capabilities")
+}
+
+model RoleCapability {
+  roleId       String     @map("role_id") @db.Uuid
+  capabilityId String     @map("capability_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  capability   Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, capabilityId])
+  @@map("role_capabilities")
+}
+
+model OrganisationMembership {
+  id             String           @id @default(uuid()) @db.Uuid
+  organisationId String           @map("organisation_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  roleId         String           @map("role_id") @db.Uuid
+  status         MembershipStatus @default(ACTIVE)
+  joinedAt       DateTime         @default(now()) @map("joined_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  organisation   Organisation     @relation(fields: [organisationId], references: [id])
+  user           User             @relation(fields: [userId], references: [id])
+  role           Role             @relation(fields: [roleId], references: [id])
+
+  @@unique([organisationId, userId])
+  @@index([userId, status])
+  @@index([organisationId, status])
+  @@map("organisation_memberships")
+}
+
+model AuditEvent {
+  id             String        @id @default(uuid()) @db.Uuid
+  organisationId String?       @map("organisation_id") @db.Uuid
+  actorUserId    String?       @map("actor_user_id") @db.Uuid
+  eventType      String        @map("event_type")
+  entityType     String        @map("entity_type")
+  entityId       String        @map("entity_id")
+  correlationId  String        @map("correlation_id")
+  data           Json
+  occurredAt     DateTime      @default(now()) @map("occurred_at")
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+  actor          User?         @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([organisationId, occurredAt])
+  @@index([entityType, entityId])
+  @@map("audit_events")
+}
+
+model Customer {
+  id             String         @id @default(uuid()) @db.Uuid
+  organisationId String         @map("organisation_id") @db.Uuid
+  name           String
+  reference      String?
+  status         RecordStatus   @default(ACTIVE)
+  logoMediaId    String?        @map("logo_media_id") @db.Uuid
+  internalNotes  String?        @map("internal_notes")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  organisation   Organisation   @relation(fields: [organisationId], references: [id])
+  sites          Site[]
+  assets         Asset[]
+  contacts       Contact[]
+  visits         Visit[]
+  inspections    Inspection[]
+  scheduleRules  ScheduleRule[]
+
+  @@unique([organisationId, reference])
+  @@index([organisationId, status, name])
+  @@map("customers")
+}
+
+model Site {
+  id                   String         @id @default(uuid()) @db.Uuid
+  organisationId       String         @map("organisation_id") @db.Uuid
+  customerId           String         @map("customer_id") @db.Uuid
+  name                 String
+  reference            String?
+  status               RecordStatus   @default(ACTIVE)
+  addressLine1         String?        @map("address_line_1")
+  addressLine2         String?        @map("address_line_2")
+  city                 String?
+  county               String?
+  postcode             String?
+  countryCode          String         @default("GB") @map("country_code")
+  latitude             Decimal?       @db.Decimal(9, 6)
+  longitude            Decimal?       @db.Decimal(9, 6)
+  locationAccuracy     Decimal?       @map("location_accuracy") @db.Decimal(8, 2)
+  parkingInformation   String?        @map("parking_information")
+  accessInstructions   String?        @map("access_instructions")
+  openingTimes         String?        @map("opening_times")
+  ppeRequirements      String?        @map("ppe_requirements")
+  inductionInformation String?        @map("induction_information")
+  internalNotes        String?        @map("internal_notes")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+  organisation         Organisation   @relation(fields: [organisationId], references: [id])
+  customer             Customer       @relation(fields: [customerId], references: [id])
+  assets               Asset[]
+  contacts             Contact[]
+  visits               Visit[]
+  inspections          Inspection[]
+  scheduleRules        ScheduleRule[]
+
+  @@unique([organisationId, reference])
+  @@index([organisationId, customerId, status])
+  @@index([organisationId, postcode])
+  @@map("sites")
+}
+
+model Contact {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  customerId     String?      @map("customer_id") @db.Uuid
+  siteId         String?      @map("site_id") @db.Uuid
+  name           String
+  role           String?
+  email          String?
+  telephone      String?
+  mobile         String?
+  primary        Boolean      @default(false)
+  notes          String?
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  customer       Customer?    @relation(fields: [customerId], references: [id])
+  site           Site?        @relation(fields: [siteId], references: [id])
+
+  @@index([organisationId, customerId])
+  @@index([organisationId, siteId])
+  @@map("contacts")
+}
+
+model AssetModel {
+  id                String           @id @default(uuid()) @db.Uuid
+  manufacturer      String
+  model             String
+  category          String
+  status            AssetModelStatus @default(DRAFT)
+  stockImageMediaId String?          @map("stock_image_media_id") @db.Uuid
+  technicalNotes    String?          @map("technical_notes")
+  metadata          Json             @default("{}")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  assets            Asset[]
+
+  @@unique([manufacturer, model, category])
+  @@index([status, category])
+  @@map("asset_models")
+}
+
+model Asset {
+  id                 String                @id @default(uuid()) @db.Uuid
+  organisationId     String                @map("organisation_id") @db.Uuid
+  customerId         String                @map("customer_id") @db.Uuid
+  siteId             String                @map("site_id") @db.Uuid
+  assetModelId       String?               @map("asset_model_id") @db.Uuid
+  assetType          String                @map("asset_type")
+  assetReference     String                @map("asset_reference")
+  displayName        String                @map("display_name")
+  manufacturer       String?
+  model              String?
+  serialNumber       String?               @map("serial_number")
+  status             AssetStatus           @default(ACTIVE)
+  commissionedAt     DateTime?             @map("commissioned_at") @db.Date
+  decommissionedAt   DateTime?             @map("decommissioned_at") @db.Date
+  replacementAssetId String?               @map("replacement_asset_id") @db.Uuid
+  latitude           Decimal?              @db.Decimal(9, 6)
+  longitude          Decimal?              @db.Decimal(9, 6)
+  locationAccuracy   Decimal?              @map("location_accuracy") @db.Decimal(8, 2)
+  locationCapturedAt DateTime?             @map("location_captured_at")
+  locationSource     String?               @map("location_source")
+  notes              String?
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+  organisation       Organisation          @relation(fields: [organisationId], references: [id])
+  customer           Customer              @relation(fields: [customerId], references: [id])
+  site               Site                  @relation(fields: [siteId], references: [id])
+  assetModel         AssetModel?           @relation(fields: [assetModelId], references: [id])
+  replacementAsset   Asset?                @relation("AssetReplacement", fields: [replacementAssetId], references: [id])
+  replacedAssets     Asset[]               @relation("AssetReplacement")
+  inspections        Inspection[]
+  visitTasks         VisitTask[]
+  scheduleRules      ScheduleRule[]
+  defects            Defect[]
+  proposedChanges    ProposedAssetChange[]
+  evChargePoint      EvChargePoint?
+
+  @@unique([organisationId, siteId, assetReference])
+  @@index([organisationId, siteId, status])
+  @@index([organisationId, serialNumber])
+  @@index([organisationId, manufacturer, model])
+  @@map("assets")
+}
+
+model Tag {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  name           String
+  colour         String       @default("#526D82")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  entities       EntityTag[]
+
+  @@unique([organisationId, name])
+  @@index([organisationId])
+  @@map("tags")
+}
+
+model EntityTag {
+  organisationId String       @map("organisation_id") @db.Uuid
+  tagId          String       @map("tag_id") @db.Uuid
+  entityType     String       @map("entity_type")
+  entityId       String       @map("entity_id") @db.Uuid
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  tag            Tag          @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([tagId, entityType, entityId])
+  @@index([organisationId, entityType, entityId])
+  @@map("entity_tags")
+}
+
+model Media {
+  id               String       @id @default(uuid()) @db.Uuid
+  organisationId   String       @map("organisation_id") @db.Uuid
+  storageKey       String       @unique @map("storage_key")
+  entityType       String       @map("entity_type")
+  entityId         String       @map("entity_id") @db.Uuid
+  category         String
+  caption          String?
+  originalFilename String?      @map("original_filename")
+  tags             String[]     @default([])
+  sortOrder        Int          @default(0) @map("sort_order")
+  capturedAt       DateTime?    @map("captured_at")
+  capturedByUserId String?      @map("captured_by_user_id") @db.Uuid
+  mimeType         String       @map("mime_type")
+  width            Int?
+  height           Int?
+  size             Int
+  status           MediaStatus  @default(PENDING_UPLOAD)
+  createdAt        DateTime     @default(now()) @map("created_at")
+  organisation     Organisation @relation(fields: [organisationId], references: [id])
+
+  @@index([organisationId, entityType, entityId])
+  @@map("media")
+}
+
+model OrganisationEquipment {
+  id               String       @id @default(uuid()) @db.Uuid
+  organisationId   String       @map("organisation_id") @db.Uuid
+  name             String
+  equipmentType    String       @map("equipment_type")
+  manufacturer     String?
+  model            String?
+  serialNumber     String?      @map("serial_number")
+  calibrationDueAt DateTime?    @map("calibration_due_at") @db.Date
+  notes            String?
+  status           RecordStatus @default(ACTIVE)
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  organisation     Organisation @relation(fields: [organisationId], references: [id])
+
+  @@index([organisationId, status, equipmentType])
+  @@index([organisationId, serialNumber])
+  @@map("organisation_equipment")
+}
+
+model Document {
+  id                   String              @id @default(uuid()) @db.Uuid
+  organisationId       String              @map("organisation_id") @db.Uuid
+  entityType           String              @map("entity_type")
+  entityId             String              @map("entity_id") @db.Uuid
+  title                String
+  category             String
+  mediaId              String?             @map("media_id") @db.Uuid
+  status               RecordStatus        @default(ACTIVE)
+  issuedAt             DateTime?           @map("issued_at")
+  expiresAt            DateTime?           @map("expires_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  organisation         Organisation        @relation(fields: [organisationId], references: [id])
+  inspectionRevisionId String?             @map("inspection_revision_id") @db.Uuid
+  templateKey          String?             @map("template_key")
+  templateVersion      Int?                @map("template_version")
+  snapshot             Json?
+  inspectionRevision   InspectionRevision? @relation(fields: [inspectionRevisionId], references: [id])
+
+  @@index([organisationId, entityType, entityId])
+  @@index([organisationId, title])
+  @@map("documents")
+}
+
+model ScheduleRule {
+  id                   String               @id @default(uuid()) @db.Uuid
+  organisationId       String               @map("organisation_id") @db.Uuid
+  customerId           String?              @map("customer_id") @db.Uuid
+  siteId               String               @map("site_id") @db.Uuid
+  assetId              String?              @map("asset_id") @db.Uuid
+  title                String
+  moduleKey            String               @map("module_key")
+  frequencyMonths      Int                  @map("frequency_months")
+  startDate            DateTime             @map("start_date") @db.Date
+  notificationLeadDays Int                  @default(30) @map("notification_lead_days")
+  active               Boolean              @default(true)
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+  organisation         Organisation         @relation(fields: [organisationId], references: [id])
+  customer             Customer?            @relation(fields: [customerId], references: [id])
+  site                 Site                 @relation(fields: [siteId], references: [id])
+  asset                Asset?               @relation(fields: [assetId], references: [id])
+  occurrences          ScheduleOccurrence[]
+
+  @@index([organisationId, active])
+  @@index([organisationId, siteId])
+  @@map("schedule_rules")
+}
+
+model ScheduleOccurrence {
+  id             String                   @id @default(uuid()) @db.Uuid
+  organisationId String                   @map("organisation_id") @db.Uuid
+  scheduleRuleId String                   @map("schedule_rule_id") @db.Uuid
+  dueDate        DateTime                 @map("due_date") @db.Date
+  windowStartsAt DateTime?                @map("window_starts_at") @db.Date
+  windowEndsAt   DateTime?                @map("window_ends_at") @db.Date
+  status         ScheduleOccurrenceStatus @default(FUTURE)
+  completedAt    DateTime?                @map("completed_at")
+  visitId        String?                  @map("visit_id") @db.Uuid
+  inspectionId   String?                  @map("inspection_id") @db.Uuid
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+  organisation   Organisation             @relation(fields: [organisationId], references: [id])
+  scheduleRule   ScheduleRule             @relation(fields: [scheduleRuleId], references: [id], onDelete: Cascade)
+  notifications  NotificationEvent[]
+
+  @@unique([scheduleRuleId, dueDate])
+  @@index([organisationId, dueDate, status])
+  @@map("schedule_occurrences")
+}
+
+model NotificationPreference {
+  id                  String       @id @default(uuid()) @db.Uuid
+  organisationId      String       @unique @map("organisation_id") @db.Uuid
+  inAppEnabled        Boolean      @default(true) @map("in_app_enabled")
+  emailEnabled        Boolean      @default(true) @map("email_enabled")
+  defaultLeadDays     Int          @default(30) @map("default_lead_days")
+  overdueReminders    Boolean      @default(true) @map("overdue_reminders")
+  inspectionSubmitted Boolean      @default(true) @map("inspection_submitted")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  organisation        Organisation @relation(fields: [organisationId], references: [id])
+
+  @@map("notification_preferences")
+}
+
+model NotificationEvent {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  organisationId       String                  @map("organisation_id") @db.Uuid
+  scheduleOccurrenceId String?                 @map("schedule_occurrence_id") @db.Uuid
+  eventType            String                  @map("event_type")
+  channel              String
+  recipient            String?
+  dedupeKey            String                  @unique @map("dedupe_key")
+  payload              Json
+  status               NotificationEventStatus @default(PENDING)
+  attempts             Int                     @default(0)
+  availableAt          DateTime                @default(now()) @map("available_at")
+  sentAt               DateTime?               @map("sent_at")
+  lastError            String?                 @map("last_error")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  organisation         Organisation            @relation(fields: [organisationId], references: [id])
+  scheduleOccurrence   ScheduleOccurrence?     @relation(fields: [scheduleOccurrenceId], references: [id])
+
+  @@index([organisationId, status, availableAt])
+  @@map("notification_events")
+}
+
+model Visit {
+  id                String             @id @default(uuid()) @db.Uuid
+  organisationId    String             @map("organisation_id") @db.Uuid
+  customerId        String             @map("customer_id") @db.Uuid
+  siteId            String             @map("site_id") @db.Uuid
+  reference         String?
+  title             String
+  scheduledStart    DateTime           @map("scheduled_start")
+  scheduledEnd      DateTime?          @map("scheduled_end")
+  status            VisitStatus        @default(DRAFT)
+  assignedUserId    String?            @map("assigned_user_id") @db.Uuid
+  guestEngineerName String?            @map("guest_engineer_name")
+  guestEmail        String?            @map("guest_email")
+  guestMobile       String?            @map("guest_mobile")
+  engineerNotes     String?            @map("engineer_notes")
+  submittedAt       DateTime?          @map("submitted_at")
+  completedAt       DateTime?          @map("completed_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  organisation      Organisation       @relation(fields: [organisationId], references: [id])
+  customer          Customer           @relation(fields: [customerId], references: [id])
+  site              Site               @relation(fields: [siteId], references: [id])
+  tasks             VisitTask[]
+  guestTokens       GuestAccessToken[]
+  inspections       Inspection[]
+  syncMutations     SyncMutation[]
+
+  @@index([organisationId, scheduledStart, status])
+  @@index([organisationId, assignedUserId])
+  @@map("visits")
+}
+
+model VisitTask {
+  id             String          @id @default(uuid()) @db.Uuid
+  organisationId String          @map("organisation_id") @db.Uuid
+  visitId        String          @map("visit_id") @db.Uuid
+  assetId        String?         @map("asset_id") @db.Uuid
+  moduleKey      String          @map("module_key")
+  title          String
+  status         VisitTaskStatus @default(PENDING)
+  displayOrder   Int             @default(0) @map("display_order")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  organisation   Organisation    @relation(fields: [organisationId], references: [id])
+  visit          Visit           @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  asset          Asset?          @relation(fields: [assetId], references: [id])
+  inspection     Inspection?
+
+  @@index([organisationId, visitId])
+  @@map("visit_tasks")
+}
+
+model GuestAccessToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  visitId    String    @map("visit_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  visit      Visit     @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([visitId, expiresAt])
+  @@map("guest_access_tokens")
+}
+
+model Inspection {
+  id                    String                @id @default(uuid()) @db.Uuid
+  organisationId        String                @map("organisation_id") @db.Uuid
+  visitId               String?               @map("visit_id") @db.Uuid
+  visitTaskId           String?               @unique @map("visit_task_id") @db.Uuid
+  customerId            String                @map("customer_id") @db.Uuid
+  siteId                String                @map("site_id") @db.Uuid
+  assetId               String?               @map("asset_id") @db.Uuid
+  moduleKey             String                @map("module_key")
+  inspectionType        String                @map("inspection_type")
+  status                InspectionStatus      @default(DRAFT)
+  currentRevisionNumber Int                   @default(0) @map("current_revision_number")
+  effectiveDate         DateTime?             @map("effective_date") @db.Date
+  submittedAt           DateTime?             @map("submitted_at")
+  reviewedAt            DateTime?             @map("reviewed_at")
+  approvedAt            DateTime?             @map("approved_at")
+  reviewedByUserId      String?               @map("reviewed_by_user_id") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime              @updatedAt @map("updated_at")
+  organisation          Organisation          @relation(fields: [organisationId], references: [id])
+  visit                 Visit?                @relation(fields: [visitId], references: [id])
+  visitTask             VisitTask?            @relation(fields: [visitTaskId], references: [id])
+  customer              Customer              @relation(fields: [customerId], references: [id])
+  site                  Site                  @relation(fields: [siteId], references: [id])
+  asset                 Asset?                @relation(fields: [assetId], references: [id])
+  revisions             InspectionRevision[]
+  defects               Defect[]
+  proposedAssetChanges  ProposedAssetChange[]
+
+  @@index([organisationId, status, createdAt])
+  @@index([organisationId, siteId])
+  @@map("inspections")
+}
+
+model InspectionRevision {
+  id               String                @id @default(uuid()) @db.Uuid
+  organisationId   String                @map("organisation_id") @db.Uuid
+  inspectionId     String                @map("inspection_id") @db.Uuid
+  revisionNumber   Int                   @map("revision_number")
+  data             Json
+  validation       Json                  @default("{}")
+  snapshots        Json                  @default("{}")
+  createdByUserId  String?               @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime              @default(now()) @map("created_at")
+  clientMutationId String?               @unique @map("client_mutation_id")
+  organisation     Organisation          @relation(fields: [organisationId], references: [id])
+  inspection       Inspection            @relation(fields: [inspectionId], references: [id])
+  signatures       InspectionSignature[]
+  documents        Document[]
+  evData           EvInspectionData?
+
+  @@unique([inspectionId, revisionNumber])
+  @@index([organisationId, createdAt])
+  @@map("inspection_revisions")
+}
+
+model InspectionSignature {
+  id                   String             @id @default(uuid()) @db.Uuid
+  inspectionRevisionId String             @map("inspection_revision_id") @db.Uuid
+  signerName           String             @map("signer_name")
+  signerRole           String             @map("signer_role")
+  signatureData        String             @map("signature_data")
+  signedAt             DateTime           @default(now()) @map("signed_at")
+  revision             InspectionRevision @relation(fields: [inspectionRevisionId], references: [id], onDelete: Cascade)
+
+  @@index([inspectionRevisionId])
+  @@map("inspection_signatures")
+}
+
+model Defect {
+  id             String         @id @default(uuid()) @db.Uuid
+  organisationId String         @map("organisation_id") @db.Uuid
+  inspectionId   String         @map("inspection_id") @db.Uuid
+  assetId        String?        @map("asset_id") @db.Uuid
+  title          String
+  description    String?
+  severity       DefectSeverity
+  status         DefectStatus   @default(OPEN)
+  photoMediaIds  Json           @default("[]") @map("photo_media_ids")
+  resolvedAt     DateTime?      @map("resolved_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  organisation   Organisation   @relation(fields: [organisationId], references: [id])
+  inspection     Inspection     @relation(fields: [inspectionId], references: [id])
+  asset          Asset?         @relation(fields: [assetId], references: [id])
+
+  @@index([organisationId, status, severity])
+  @@map("defects")
+}
+
+model CustomFieldDefinition {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  moduleKey      String       @map("module_key")
+  fieldKey       String       @map("field_key")
+  label          String
+  dataType       String       @map("data_type")
+  required       Boolean      @default(false)
+  configuration  Json         @default("{}")
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  @@unique([organisationId, moduleKey, fieldKey])
+  @@map("custom_field_definitions")
+}
+
+model ReportTemplate {
+  id             String        @id @default(uuid()) @db.Uuid
+  organisationId String?       @map("organisation_id") @db.Uuid
+  moduleKey      String        @map("module_key")
+  documentType   String        @map("document_type")
+  name           String
+  version        Int
+  htmlTemplate   String        @map("html_template")
+  cssTemplate    String        @map("css_template")
+  active         Boolean       @default(true)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+
+  @@unique([organisationId, moduleKey, documentType, version])
+  @@index([moduleKey, documentType, active])
+  @@map("report_templates")
+}
+
+model SyncMutation {
+  id               String             @id @default(uuid()) @db.Uuid
+  organisationId   String             @map("organisation_id") @db.Uuid
+  visitId          String             @map("visit_id") @db.Uuid
+  clientMutationId String             @map("client_mutation_id")
+  entityType       String             @map("entity_type")
+  operation        String
+  payload          Json
+  baseVersion      Int?               @map("base_version")
+  status           SyncMutationStatus @default(PENDING)
+  result           Json?
+  createdAt        DateTime           @default(now()) @map("created_at")
+  appliedAt        DateTime?          @map("applied_at")
+  organisation     Organisation       @relation(fields: [organisationId], references: [id])
+  visit            Visit              @relation(fields: [visitId], references: [id])
+
+  @@unique([organisationId, clientMutationId])
+  @@index([organisationId, visitId, status])
+  @@map("sync_mutations")
+}
+
+model ProposedAssetChange {
+  id               String       @id @default(uuid()) @db.Uuid
+  organisationId   String       @map("organisation_id") @db.Uuid
+  assetId          String       @map("asset_id") @db.Uuid
+  inspectionId     String?      @map("inspection_id") @db.Uuid
+  proposedData     Json         @map("proposed_data")
+  status           String       @default("PENDING")
+  reviewedByUserId String?      @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt       DateTime?    @map("reviewed_at")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  organisation     Organisation @relation(fields: [organisationId], references: [id])
+  asset            Asset        @relation(fields: [assetId], references: [id])
+  inspection       Inspection?  @relation(fields: [inspectionId], references: [id])
+
+  @@index([organisationId, status])
+  @@index([inspectionId])
+  @@map("proposed_asset_changes")
+}
+
+model EvChargePoint {
+  id               String        @id @default(uuid()) @db.Uuid
+  organisationId   String        @map("organisation_id") @db.Uuid
+  assetId          String        @unique @map("asset_id") @db.Uuid
+  chargePointId    String?       @map("charge_point_id")
+  operatorName     String?       @map("operator_name")
+  firmwareVersion  String?       @map("firmware_version")
+  installationDate DateTime?     @map("installation_date") @db.Date
+  nominalVoltage   Int?          @map("nominal_voltage")
+  phaseCount       Int?          @map("phase_count")
+  maximumPowerKw   Decimal?      @map("maximum_power_kw") @db.Decimal(8, 2)
+  dcRcdType        String?       @map("dc_rcd_type")
+  locationNotes    String?       @map("location_notes")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  organisation     Organisation  @relation(fields: [organisationId], references: [id])
+  asset            Asset         @relation(fields: [assetId], references: [id])
+  supplies         EvSupply[]
+  connectors       EvConnector[]
+
+  @@index([organisationId])
+  @@map("ev_charge_points")
+}
+
+model EvSupply {
+  id                     String              @id @default(uuid()) @db.Uuid
+  organisationId         String              @map("organisation_id") @db.Uuid
+  chargePointId          String              @map("charge_point_id") @db.Uuid
+  label                  String
+  phaseCount             Int                 @default(1) @map("phase_count")
+  protectiveDeviceType   String?             @map("protective_device_type")
+  protectiveDeviceRating Int?                @map("protective_device_rating")
+  earthingArrangement    String?             @map("earthing_arrangement")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+  organisation           Organisation        @relation(fields: [organisationId], references: [id])
+  chargePoint            EvChargePoint       @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
+  connectorMappings      EvConnectorSupply[]
+
+  @@index([organisationId, chargePointId])
+  @@map("ev_supplies")
+}
+
+model EvConnector {
+  id             String              @id @default(uuid()) @db.Uuid
+  organisationId String              @map("organisation_id") @db.Uuid
+  chargePointId  String              @map("charge_point_id") @db.Uuid
+  label          String
+  connectorType  String              @map("connector_type")
+  status         String              @default("ACTIVE")
+  displayOrder   Int                 @default(0) @map("display_order")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  organisation   Organisation        @relation(fields: [organisationId], references: [id])
+  chargePoint    EvChargePoint       @relation(fields: [chargePointId], references: [id], onDelete: Cascade)
+  supplyMappings EvConnectorSupply[]
+
+  @@index([organisationId, chargePointId])
+  @@map("ev_connectors")
+}
+
+model EvConnectorSupply {
+  connectorId String      @map("connector_id") @db.Uuid
+  supplyId    String      @map("supply_id") @db.Uuid
+  connector   EvConnector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+  supply      EvSupply    @relation(fields: [supplyId], references: [id], onDelete: Cascade)
+
+  @@id([connectorId, supplyId])
+  @@map("ev_connector_supplies")
+}
+
+model EvInspectionData {
+  id                   String             @id @default(uuid()) @db.Uuid
+  inspectionRevisionId String             @unique @map("inspection_revision_id") @db.Uuid
+  stableDetails        Json               @default("{}") @map("stable_details")
+  supplyTests          Json               @default("[]") @map("supply_tests")
+  connectorTests       Json               @default("[]") @map("connector_tests")
+  functionalChecks     Json               @default("{}") @map("functional_checks")
+  engineerObservations String?            @map("engineer_observations")
+  revision             InspectionRevision @relation(fields: [inspectionRevisionId], references: [id], onDelete: Cascade)
+
+  @@map("ev_inspection_data")
+}
+
+model ModuleDefinition {
+  id           String                          @id @default(uuid()) @db.Uuid
+  key          String                          @unique
+  name         String
+  description  String
+  displayOrder Int                             @default(0) @map("display_order")
+  active       Boolean                         @default(true)
+  capabilities Json
+  createdAt    DateTime                        @default(now()) @map("created_at")
+  updatedAt    DateTime                        @updatedAt @map("updated_at")
+  entitlements OrganisationModuleEntitlement[]
+
+  @@map("module_definitions")
+}
+
+model OrganisationModuleEntitlement {
+  id                       String            @id @default(uuid()) @db.Uuid
+  organisationId           String            @map("organisation_id") @db.Uuid
+  moduleId                 String            @map("module_id") @db.Uuid
+  status                   EntitlementStatus @default(TRIAL)
+  trialStartedAt           DateTime?         @map("trial_started_at")
+  trialEndsAt              DateTime?         @map("trial_ends_at")
+  currentPeriodEndsAt      DateTime?         @map("current_period_ends_at")
+  stripeSubscriptionId     String?           @map("stripe_subscription_id")
+  stripeSubscriptionItemId String?           @map("stripe_subscription_item_id")
+  createdAt                DateTime          @default(now()) @map("created_at")
+  updatedAt                DateTime          @updatedAt @map("updated_at")
+  organisation             Organisation      @relation(fields: [organisationId], references: [id])
+  module                   ModuleDefinition  @relation(fields: [moduleId], references: [id])
+
+  @@unique([organisationId, moduleId])
+  @@index([organisationId, status])
+  @@map("organisation_module_entitlements")
+}
+
+model PlatformSupportSession {
+  id                  String       @id @default(uuid()) @db.Uuid
+  platformAdminUserId String       @map("platform_admin_user_id") @db.Uuid
+  targetUserId        String       @map("target_user_id") @db.Uuid
+  organisationId      String       @map("organisation_id") @db.Uuid
+  tokenHash           String       @unique @map("token_hash")
+  reason              String
+  expiresAt           DateTime     @map("expires_at")
+  revokedAt           DateTime?    @map("revoked_at")
+  lastUsedAt          DateTime?    @map("last_used_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  platformAdmin       User         @relation("SupportSessionAdministrator", fields: [platformAdminUserId], references: [id])
+  targetUser          User         @relation("SupportSessionTarget", fields: [targetUserId], references: [id])
+  organisation        Organisation @relation(fields: [organisationId], references: [id])
+
+  @@index([platformAdminUserId, expiresAt])
+  @@index([organisationId, targetUserId])
+  @@map("platform_support_sessions")
+}
+
+model OrganisationBrandProfile {
+  id                    String       @id @default(uuid()) @db.Uuid
+  organisationId        String       @unique @map("organisation_id") @db.Uuid
+  tradingName           String?      @map("trading_name")
+  registeredName        String?      @map("registered_name")
+  addressLine1          String?      @map("address_line_1")
+  addressLine2          String?      @map("address_line_2")
+  city                  String?
+  county                String?
+  postcode              String?
+  countryCode           String       @default("GB") @map("country_code")
+  telephone             String?
+  email                 String?
+  website               String?
+  primaryColour         String       @default("#006B66") @map("primary_colour")
+  secondaryColour       String       @default("#243B53") @map("secondary_colour")
+  logoMediaId           String?      @map("logo_media_id") @db.Uuid
+  timezone              String       @default("Europe/London")
+  dateFormat            String       @default("DD/MM/YYYY") @map("date_format")
+  onboardingStep        String       @default("organisation-details") @map("onboarding_step")
+  onboardingCompletedAt DateTime?    @map("onboarding_completed_at")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+  organisation          Organisation @relation(fields: [organisationId], references: [id])
+
+  @@map("organisation_brand_profiles")
+}
+
+model OrganisationAccreditation {
+  id                 String       @id @default(uuid()) @db.Uuid
+  organisationId     String       @map("organisation_id") @db.Uuid
+  scheme             String
+  registrationNumber String       @map("registration_number")
+  expiresAt          DateTime?    @map("expires_at")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  organisation       Organisation @relation(fields: [organisationId], references: [id])
+
+  @@unique([organisationId, scheme, registrationNumber])
+  @@index([organisationId])
+  @@map("organisation_accreditations")
+}
+
+model OrganisationInvitation {
+  id               String           @id @default(uuid()) @db.Uuid
+  organisationId   String           @map("organisation_id") @db.Uuid
+  email            String
+  roleId           String           @map("role_id") @db.Uuid
+  tokenHash        String           @unique @map("token_hash")
+  status           InvitationStatus @default(PENDING)
+  expiresAt        DateTime         @map("expires_at")
+  invitedByUserId  String           @map("invited_by_user_id") @db.Uuid
+  acceptedByUserId String?          @map("accepted_by_user_id") @db.Uuid
+  acceptedAt       DateTime?        @map("accepted_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  organisation     Organisation     @relation(fields: [organisationId], references: [id])
+  role             Role             @relation(fields: [roleId], references: [id])
+  invitedBy        User             @relation("InvitationInviter", fields: [invitedByUserId], references: [id])
+  acceptedBy       User?            @relation("InvitationAcceptedUser", fields: [acceptedByUserId], references: [id])
+
+  @@index([organisationId, status])
+  @@index([email, status])
+  @@map("organisation_invitations")
+}
+
+model BillingCustomer {
+  id                 String              @id @default(uuid()) @db.Uuid
+  organisationId     String              @unique @map("organisation_id") @db.Uuid
+  provider           BillingProviderType @default(STRIPE)
+  providerCustomerId String              @unique @map("provider_customer_id")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  organisation       Organisation        @relation(fields: [organisationId], references: [id])
+
+  @@map("billing_customers")
+}
+
+model BillingWebhookEvent {
+  id              String              @id @default(uuid()) @db.Uuid
+  provider        BillingProviderType @default(STRIPE)
+  providerEventId String              @map("provider_event_id")
+  eventType       String              @map("event_type")
+  payload         Json
+  processedAt     DateTime?           @map("processed_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  @@unique([provider, providerEventId])
+  @@map("billing_webhook_events")
+}

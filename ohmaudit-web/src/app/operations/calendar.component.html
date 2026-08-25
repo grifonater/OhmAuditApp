@@ -1,0 +1,104 @@
+<main class="page operations-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Planned work</p>
+      <h1>Schedule</h1>
+      <p>
+        Recurring inspection dates are materialised years ahead, so future compliance work is always
+        visible.
+      </p>
+    </div>
+    <button class="button primary" type="button" (click)="showCreate.set(!showCreate())">
+      + New schedule
+    </button>
+  </header>
+  @if (showCreate()) {
+    <section class="card panel">
+      <div class="section-heading">
+        <div>
+          <h2>Create recurring schedule</h2>
+          <p>The next five years will appear immediately.</p>
+        </div>
+        <button class="button ghost compact" type="button" (click)="showCreate.set(false)">
+          Close
+        </button>
+      </div>
+      <form [formGroup]="scheduleForm" (ngSubmit)="createSchedule()" class="form-grid">
+        <label class="field"
+          >Site<select formControlName="siteId">
+            <option value="">Choose a site</option>
+            @for (site of sites(); track site.id) {
+              <option [value]="site.id">{{ site.customer?.name }} — {{ site.name }}</option>
+            }
+          </select></label
+        ><label class="field">Schedule name<input formControlName="title" /></label
+        ><label class="field"
+          >Inspection module<select formControlName="moduleKey">
+            <option value="core">General inspection</option>
+            @for (item of activeModules(); track item.module.key) {
+              <option [value]="item.module.key">{{ item.module.name }}</option>
+            }
+          </select></label
+        ><label class="field"
+          >Repeat<select formControlName="frequencyMonths">
+            <option [ngValue]="1">Monthly</option>
+            <option [ngValue]="3">Quarterly</option>
+            <option [ngValue]="6">Every 6 months</option>
+            <option [ngValue]="12">Annually</option>
+            <option [ngValue]="24">Every 2 years</option>
+            <option [ngValue]="60">Every 5 years</option>
+          </select></label
+        ><label class="field">First due date<input type="date" formControlName="startDate" /></label
+        ><label class="field"
+          >Reminder lead time (days)<input
+            type="number"
+            inputmode="numeric"
+            formControlName="notificationLeadDays"
+        /></label>
+        <div class="form-actions full">
+          <button class="button primary" type="submit" [disabled]="busy() || scheduleForm.invalid">
+            Create schedule
+          </button>
+        </div>
+      </form>
+    </section>
+  }
+  <section class="card panel">
+    <div class="toolbar">
+      <button class="button secondary compact" type="button" (click)="moveMonth(-1)">
+        ← Previous
+      </button>
+      <h2>{{ monthLabel() }}</h2>
+      <button class="button secondary compact" type="button" (click)="moveMonth(1)">Next →</button>
+    </div>
+    <div class="calendar-month">
+      <span class="calendar-label">Mon</span><span class="calendar-label">Tue</span
+      ><span class="calendar-label">Wed</span><span class="calendar-label">Thu</span
+      ><span class="calendar-label">Fri</span><span class="calendar-label">Sat</span
+      ><span class="calendar-label">Sun</span>
+      @for (day of days(); track day.key) {
+        <div class="calendar-day" [style.opacity]="day.current ? 1 : 0.45">
+          <span>{{ day.date.getDate() }}</span>
+          @for (item of day.occurrences; track item.id) {
+            <button
+              class="calendar-event"
+              type="button"
+              [title]="
+                item.scheduleRule.customer?.name +
+                ' — ' +
+                item.scheduleRule.site.name +
+                ' — ' +
+                item.scheduleRule.title
+              "
+            >
+              {{ item.scheduleRule.site.name }} · {{ item.scheduleRule.title }}
+            </button>
+          }
+        </div>
+      }
+    </div>
+  </section>
+  @if (error()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

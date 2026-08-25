@@ -1,0 +1,294 @@
+<main class="page setup-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Organisation settings</p>
+      <h1>Set up your Organisation</h1>
+      <p>Complete these steps at your own pace. Your progress is saved as you go.</p>
+    </div>
+    <span class="badge trial">30-day trial active</span>
+  </header>
+
+  <div class="setup-layout">
+    <aside class="setup-nav" aria-label="Setup sections">
+      <button
+        type="button"
+        [class.active]="activeSection() === 'details'"
+        (click)="activeSection.set('details')"
+      >
+        <span>1</span>
+        <div>
+          <strong>Organisation details</strong><small>Identity and contact information</small>
+        </div>
+      </button>
+      <button
+        type="button"
+        [class.active]="activeSection() === 'brand'"
+        (click)="activeSection.set('brand')"
+      >
+        <span>2</span>
+        <div><strong>Branding</strong><small>Logo and document colours</small></div>
+      </button>
+      <button
+        type="button"
+        [class.active]="activeSection() === 'accreditations'"
+        (click)="activeSection.set('accreditations')"
+      >
+        <span>3</span>
+        <div><strong>Accreditations</strong><small>Registration schemes</small></div>
+      </button>
+      <button
+        type="button"
+        [class.active]="activeSection() === 'team'"
+        (click)="activeSection.set('team')"
+      >
+        <span>4</span>
+        <div><strong>Team</strong><small>Invite staff and engineers</small></div>
+      </button>
+      <button
+        type="button"
+        [class.active]="activeSection() === 'modules'"
+        (click)="activeSection.set('modules')"
+      >
+        <span>5</span>
+        <div><strong>Modules</strong><small>Trial and access overview</small></div>
+      </button>
+    </aside>
+
+    <section class="card setup-content">
+      @if (activeSection() === 'details') {
+        <div class="setup-heading">
+          <span class="setup-icon">▤</span>
+          <div>
+            <h2>Organisation details</h2>
+            <p>
+              These details become the source of truth for reports and operational communication.
+            </p>
+          </div>
+        </div>
+        <form [formGroup]="profileForm" (ngSubmit)="saveProfile()" class="settings-form">
+          <div class="form-grid two">
+            <label class="field"
+              >Trading name<input
+                formControlName="tradingName"
+                autocomplete="organization" /></label
+            ><label class="field"
+              >Registered business name<input formControlName="registeredName"
+            /></label>
+          </div>
+          <div class="form-divider"><span>Business address</span></div>
+          <div class="form-grid two">
+            <label class="field wide"
+              >Address line 1<input
+                formControlName="addressLine1"
+                autocomplete="address-line1" /></label
+            ><label class="field"
+              >City<input formControlName="city" autocomplete="address-level2" /></label
+            ><label class="field"
+              >Postcode<input formControlName="postcode" autocomplete="postal-code"
+            /></label>
+          </div>
+          <div class="form-divider"><span>Contact information</span></div>
+          <div class="form-grid two">
+            <label class="field"
+              >Telephone<input formControlName="telephone" autocomplete="tel" /></label
+            ><label class="field"
+              >Email<input type="email" formControlName="email" autocomplete="email" /></label
+            ><label class="field wide"
+              >Website<input formControlName="website" placeholder="example.co.uk"
+            /></label>
+          </div>
+          <div class="form-actions">
+            <button class="button primary" type="submit" [disabled]="profileForm.invalid">
+              Save and continue
+            </button>
+          </div>
+        </form>
+      }
+      @if (activeSection() === 'brand') {
+        <div class="setup-heading">
+          <span class="setup-icon">◉</span>
+          <div>
+            <h2>Brand profile</h2>
+            <p>Your logo and colours will appear on future certificates and reports.</p>
+          </div>
+        </div>
+        <div class="brand-layout">
+          <div>
+            <label class="upload-zone"
+              ><input
+                class="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                (change)="uploadLogo($event)"
+              /><span class="upload-icon">↥</span><strong>Upload contractor logo</strong>
+              @if (logoUrl()) {
+                <img
+                  class="upload-current-logo"
+                  [src]="logoUrl()"
+                  alt="Current organisation logo"
+                />
+              }
+              <small>PNG, JPEG or WebP · maximum 20 MB</small
+              ><span class="button secondary compact">Choose file</span></label
+            >
+          </div>
+          <div
+            class="brand-preview"
+            [style.--preview-primary]="profileForm.controls.primaryColour.value"
+            [style.--preview-secondary]="profileForm.controls.secondaryColour.value"
+          >
+            <div class="preview-header">
+              @if (logoUrl()) {
+                <img class="preview-logo-image" [src]="logoUrl()" alt="Organisation logo" />
+              } @else {
+                <span class="preview-logo">Your logo</span>
+              }
+              <span>Inspection report</span>
+            </div>
+            <div class="preview-lines"><i></i><i></i><i></i></div>
+            <div class="preview-accent"></div>
+          </div>
+        </div>
+        <form [formGroup]="profileForm" (ngSubmit)="saveProfile()">
+          <div class="colour-grid">
+            <label class="colour-field"
+              >Primary colour<span
+                ><input type="color" formControlName="primaryColour" /><code>{{
+                  profileForm.controls.primaryColour.value
+                }}</code></span
+              ></label
+            ><label class="colour-field"
+              >Secondary colour<span
+                ><input type="color" formControlName="secondaryColour" /><code>{{
+                  profileForm.controls.secondaryColour.value
+                }}</code></span
+              ></label
+            >
+          </div>
+          <div class="form-actions">
+            <button class="button primary" type="submit">Save branding</button>
+          </div>
+        </form>
+      }
+      @if (activeSection() === 'accreditations') {
+        <div class="setup-heading">
+          <span class="setup-icon">✓</span>
+          <div>
+            <h2>Accreditations</h2>
+            <p>Add professional registrations that should appear on contractor documents.</p>
+          </div>
+        </div>
+        <form
+          [formGroup]="accreditationForm"
+          (ngSubmit)="addAccreditation()"
+          class="form-grid accreditation-form"
+        >
+          <label class="field"
+            >Scheme<input formControlName="scheme" placeholder="e.g. NICEIC" /></label
+          ><label class="field"
+            >Registration number<input formControlName="registrationNumber" /></label
+          ><button class="button primary" type="submit" [disabled]="accreditationForm.invalid">
+            Add accreditation
+          </button>
+        </form>
+        @if (state(); as setup) {
+          <div class="record-list">
+            @for (item of setup.accreditations; track item.id) {
+              <div>
+                <span class="record-icon">✓</span
+                ><span
+                  ><strong>{{ item.scheme }}</strong
+                  ><small>{{ item.registrationNumber }}</small></span
+                ><span class="badge success">Active</span>
+              </div>
+            } @empty {
+              <div class="empty-state compact-empty">
+                <span class="empty-icon">✓</span>
+                <h3>No accreditations yet</h3>
+                <p>Add your first registration above.</p>
+              </div>
+            }
+          </div>
+        }
+      }
+      @if (activeSection() === 'team') {
+        <div class="setup-heading">
+          <span class="setup-icon">+</span>
+          <div>
+            <h2>Invite your team</h2>
+            <p>
+              Invite permanent users now. Guest engineer access will be available in a later
+              workflow.
+            </p>
+          </div>
+        </div>
+        <form [formGroup]="invitationForm" (ngSubmit)="invite()" class="form-grid invitation-form">
+          <label class="field"
+            >Email address<input
+              type="email"
+              formControlName="email"
+              placeholder="engineer@example.co.uk" /></label
+          ><label class="field"
+            >Role<select formControlName="roleKey">
+              <option value="engineer">Engineer</option>
+              <option value="office-administrator">Office Administrator</option>
+              <option value="read-only">Read Only</option>
+            </select></label
+          ><button class="button primary" type="submit" [disabled]="invitationForm.invalid">
+            Create invitation
+          </button>
+        </form>
+        @if (state(); as setup) {
+          <div class="record-list">
+            @for (item of setup.invitations; track item.id) {
+              <div>
+                <span class="member-avatar">{{ item.email.charAt(0).toUpperCase() }}</span
+                ><span
+                  ><strong>{{ item.email }}</strong
+                  ><small>{{ item.role.name }}</small></span
+                ><span class="badge">{{ item.status }}</span>
+              </div>
+            } @empty {
+              <div class="empty-state compact-empty">
+                <span class="empty-icon">+</span>
+                <h3>No invitations yet</h3>
+                <p>Use the form above to invite your first teammate.</p>
+              </div>
+            }
+          </div>
+        }
+      }
+      @if (activeSection() === 'modules') {
+        <div class="setup-heading">
+          <span class="setup-icon">◇</span>
+          <div>
+            <h2>Module access</h2>
+            <p>All specialist modules are available during your initial trial.</p>
+          </div>
+        </div>
+        <div class="module-grid">
+          @for (item of entitlements(); track item.module.key) {
+            <article>
+              <div class="module-top">
+                <span class="module-icon">{{ item.module.name.charAt(0) }}</span
+                ><span class="badge trial">{{ item.status }}</span>
+              </div>
+              <h3>{{ item.module.name }}</h3>
+              <p>{{ item.module.description }}</p>
+              <footer>
+                <strong>{{ item.daysRemaining }}</strong
+                ><span>days remaining</span>
+              </footer>
+            </article>
+          }
+        </div>
+      }
+    </section>
+  </div>
+  @if (message()) {
+    <p class="success-message floating-message" role="status">{{ message() }}</p>
+  }
+  @if (error()) {
+    <p class="error floating-message" role="alert">{{ error() }}</p>
+  }
+</main>

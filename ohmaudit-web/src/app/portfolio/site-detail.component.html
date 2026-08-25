@@ -1,0 +1,463 @@
+<main class="page site-page">
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a [routerLink]="['/app/org', organisationId, 'portfolio']">Clients</a><span>›</span
+    ><a [routerLink]="['/app/org', organisationId, 'portfolio', 'clients', customerId]">{{
+      site()?.customer?.name || 'Client'
+    }}</a
+    ><span>›</span><strong>{{ site()?.name || 'Site' }}</strong>
+  </nav>
+  @if (site(); as currentSite) {
+    <header class="site-hero card">
+      @if (currentSite.media?.[0]; as heroImage) {
+        @if (siteImageUrls()[heroImage.id]; as heroUrl) {
+          <img class="site-mark site-hero-image" [src]="heroUrl" [alt]="currentSite.name" />
+        } @else {
+          <span class="site-mark">⌖</span>
+        }
+      } @else {
+        <span class="site-mark">⌖</span>
+      }
+      <div>
+        <p class="eyebrow">Site workspace</p>
+        <h1>{{ currentSite.name }}</h1>
+        <p>
+          {{ currentSite.addressLine1 || 'Address not set'
+          }}{{ currentSite.postcode ? ' · ' + currentSite.postcode : '' }}
+        </p>
+      </div>
+      <div class="hero-metrics">
+        <span
+          ><b>{{ currentSite.assets.length }}</b
+          >Assets</span
+        ><span
+          ><b>{{ currentSite.reports.length }}</b
+          >Reports</span
+        ><span
+          ><b>{{ reminders().length }}</b
+          >Reminders</span
+        >
+      </div>
+      <div class="site-hero-actions">
+        <a
+          class="button primary"
+          [routerLink]="['/app/org', organisationId, 'visits']"
+          [queryParams]="{ siteId: siteId, create: 'true' }"
+          >Create visit</a
+        >
+        <button class="button secondary" type="button" (click)="startSiteEdit()">Edit site</button>
+      </div>
+    </header>
+    <nav class="workspace-tabs" aria-label="Site sections">
+      <button type="button" [class.active]="tab() === 'overview'" (click)="setTab('overview')">
+        Overview</button
+      ><button type="button" [class.active]="tab() === 'assets'" (click)="setTab('assets')">
+        Assets <span>{{ currentSite.assets.length }}</span></button
+      ><button type="button" [class.active]="tab() === 'reports'" (click)="setTab('reports')">
+        Reports <span>{{ currentSite.reports.length }}</span></button
+      ><button type="button" [class.active]="tab() === 'reminders'" (click)="setTab('reminders')">
+        Reminders <span>{{ reminders().length }}</span>
+      </button>
+    </nav>
+    @if (editingSite()) {
+      <section class="card edit-site">
+        <div class="section-heading">
+          <div>
+            <h2>Edit site details</h2>
+            <p>Keep location and engineer access information accurate.</p>
+          </div>
+          <button class="icon-button" type="button" (click)="editingSite.set(false)">×</button>
+        </div>
+        <form [formGroup]="siteForm" (ngSubmit)="saveSite()" class="form-grid">
+          <label class="field">Site name<input formControlName="name" /></label
+          ><label class="field">Reference<input formControlName="reference" /></label
+          ><label class="field full">Address<input formControlName="addressLine1" /></label
+          ><label class="field">Town / city<input formControlName="city" /></label
+          ><label class="field">Postcode<input formControlName="postcode" /></label
+          ><label class="field"
+            >Parking information<textarea formControlName="parkingInformation"></textarea></label
+          ><label class="field"
+            >Access instructions<textarea formControlName="accessInstructions"></textarea></label
+          ><label class="field full"
+            >Internal notes<textarea formControlName="internalNotes"></textarea>
+          </label>
+          <div class="form-actions full">
+            <button class="button secondary" type="button" (click)="editingSite.set(false)">
+              Cancel</button
+            ><button class="button primary" type="submit" [disabled]="busy() || siteForm.invalid">
+              Save site
+            </button>
+          </div>
+        </form>
+      </section>
+    }
+    @if (tab() === 'overview') {
+      <section class="card site-gallery-panel">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Site identity</p>
+            <h2>Site photos</h2>
+            <p>Help office staff and engineers recognise the correct location.</p>
+          </div>
+          <label class="button secondary upload-button">
+            + Add photos
+            <input
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/webp"
+              (change)="uploadSiteImages($event)"
+              [disabled]="busy()"
+            />
+          </label>
+        </div>
+        <div class="site-gallery">
+          @for (image of currentSite.media || []; track image.id) {
+            <figure>
+              @if (siteImageUrls()[image.id]; as imageUrl) {
+                <img [src]="imageUrl" [alt]="image.caption || currentSite.name" />
+              } @else {
+                <div class="site-image-unavailable">Image unavailable</div>
+              }
+              <button
+                class="button danger compact"
+                type="button"
+                (click)="deleteSiteImage(image.id)"
+              >
+                Delete
+              </button>
+            </figure>
+          } @empty {
+            <div class="site-gallery-empty">
+              No site photos yet. Add a clear exterior or entrance photo.
+            </div>
+          }
+        </div>
+      </section>
+      <section class="overview-grid">
+        <div class="card info-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Location</p>
+              <h2>Site details</h2>
+            </div>
+            <button class="text-button" type="button" (click)="startSiteEdit()">Edit</button>
+          </div>
+          <dl>
+            <div>
+              <dt>Address</dt>
+              <dd>{{ currentSite.addressLine1 || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>Town / city</dt>
+              <dd>{{ currentSite.city || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>Postcode</dt>
+              <dd>{{ currentSite.postcode || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>Reference</dt>
+              <dd>{{ currentSite.reference || 'Not provided' }}</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="card info-card">
+          <p class="eyebrow">Engineer brief</p>
+          <h2>Access information</h2>
+          <dl>
+            <div>
+              <dt>Access</dt>
+              <dd>{{ currentSite.accessInstructions || 'No access instructions recorded.' }}</dd>
+            </div>
+            <div>
+              <dt>Parking</dt>
+              <dd>{{ currentSite.parkingInformation || 'No parking information recorded.' }}</dd>
+            </div>
+            <div>
+              <dt>Internal notes</dt>
+              <dd>{{ currentSite.internalNotes || 'No internal notes.' }}</dd>
+            </div>
+          </dl>
+        </div>
+        <button class="summary-card card" type="button" (click)="setTab('assets')">
+          <span class="summary-icon teal">◇</span
+          ><span
+            ><b>{{ currentSite.assets.length }} assets</b><small>Open asset register</small></span
+          ><i>›</i></button
+        ><button class="summary-card card" type="button" (click)="setTab('reports')">
+          <span class="summary-icon blue">≡</span
+          ><span
+            ><b>{{ currentSite.reports.length }} reports</b
+            ><small>Certificates and documents</small></span
+          ><i>›</i></button
+        ><button class="summary-card card" type="button" (click)="setTab('reminders')">
+          <span class="summary-icon amber">◷</span
+          ><span
+            ><b>{{ reminders().length }} reminders</b><small>Items needing attention</small></span
+          ><i>›</i>
+        </button>
+      </section>
+    }
+    @if (tab() === 'assets') {
+      <section class="asset-workspace">
+        <div class="asset-toolbar card">
+          <div>
+            <h2>Asset register</h2>
+            <p>Search, filter and maintain every asset at this site.</p>
+          </div>
+          <div class="toolbar-actions">
+            <button
+              class="view-button"
+              type="button"
+              [class.active]="view() === 'grid'"
+              (click)="view.set('grid')"
+              aria-label="Grid view"
+            >
+              ▦</button
+            ><button
+              class="view-button"
+              type="button"
+              [class.active]="view() === 'list'"
+              (click)="view.set('list')"
+              aria-label="List view"
+            >
+              ☷</button
+            ><button
+              class="button primary compact"
+              type="button"
+              (click)="addingAsset.set(true); cancelAssetEdit()"
+            >
+              + Add asset
+            </button>
+          </div>
+          <div class="asset-filters">
+            <label class="filter-search"
+              >⌕<input
+                [formControl]="assetSearch"
+                placeholder="Search name, reference, serial…" /></label
+            ><select [formControl]="statusFilter" aria-label="Filter by status">
+              <option value="ALL">All statuses</option>
+              <option>ACTIVE</option>
+              <option>PROPOSED</option>
+              <option>INACTIVE</option>
+              <option>REMOVED</option>
+              <option>DECOMMISSIONED</option></select
+            ><span>{{ filteredAssets().length }} results</span>
+          </div>
+        </div>
+        @if (addingAsset() || editingAssetId()) {
+          <div class="card asset-editor">
+            <div class="section-heading">
+              <div>
+                <h3>{{ editingAssetId() ? 'Edit asset' : 'Add asset' }}</h3>
+                <p>Record the identifiers engineers use on site.</p>
+              </div>
+              <button
+                class="icon-button"
+                type="button"
+                (click)="addingAsset.set(false); cancelAssetEdit()"
+              >
+                ×
+              </button>
+            </div>
+            <form
+              [formGroup]="assetForm"
+              (ngSubmit)="editingAssetId() ? saveAsset() : createAsset()"
+              class="form-grid"
+            >
+              <label class="field">Display name<input formControlName="displayName" /></label
+              ><label class="field"
+                >Asset reference<input formControlName="assetReference" autocomplete="off" /><small
+                  >Must be unique at this site.</small
+                ></label
+              ><label class="field"
+                >Asset type<select formControlName="assetType">
+                  @if (evEnabled()) {
+                    <option>EV Charger</option>
+                  }
+                  <option>Emergency Lighting System</option>
+                  <option>Solar PV System</option>
+                  <option>General Asset</option>
+                </select></label
+              ><label class="field">Serial number<input formControlName="serialNumber" /></label
+              ><label class="field">Manufacturer<input formControlName="manufacturer" /></label
+              ><label class="field">Model<input formControlName="model" /></label
+              ><label class="field full">Notes<textarea formControlName="notes"></textarea></label>
+              <div class="form-actions full">
+                <button
+                  class="button secondary"
+                  type="button"
+                  (click)="addingAsset.set(false); cancelAssetEdit()"
+                >
+                  Cancel</button
+                ><button
+                  class="button primary"
+                  type="submit"
+                  [disabled]="busy() || assetForm.invalid"
+                >
+                  {{ editingAssetId() ? 'Save asset' : 'Create asset' }}
+                </button>
+              </div>
+            </form>
+          </div>
+        }
+        <div class="asset-collection" [class.list-view]="view() === 'list'">
+          @for (asset of filteredAssets(); track asset.id) {
+            <article class="asset-card card">
+              <div class="asset-title">
+                <span class="asset-symbol">◇</span
+                ><span
+                  ><strong>{{ asset.displayName }}</strong
+                  ><small>{{ asset.assetReference }}</small></span
+                ><span class="badge" [class.success]="asset.status === 'ACTIVE'">{{
+                  asset.status
+                }}</span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Type</dt>
+                  <dd>{{ asset.assetType }}</dd>
+                </div>
+                <div>
+                  <dt>Manufacturer</dt>
+                  <dd>{{ asset.manufacturer || 'Not set' }} {{ asset.model }}</dd>
+                </div>
+                <div>
+                  <dt>Serial</dt>
+                  <dd>{{ asset.serialNumber || 'Not set' }}</dd>
+                </div>
+              </dl>
+              <div class="asset-card-actions">
+                <select
+                  #status
+                  [value]="asset.status"
+                  (change)="changeStatus(asset.id, status.value)"
+                  aria-label="Asset status"
+                >
+                  <option>ACTIVE</option>
+                  <option>PROPOSED</option>
+                  <option>INACTIVE</option>
+                  <option>REMOVED</option>
+                  <option>DECOMMISSIONED</option>
+                </select>
+                @if (evEnabled() && asset.assetType.toLowerCase().includes('ev')) {
+                  <a
+                    class="button ghost compact"
+                    [routerLink]="['/app/org', organisationId, 'assets', asset.id, 'ev']"
+                    >EV details</a
+                  >
+                }
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  (click)="startAssetEdit(asset); addingAsset.set(false)"
+                >
+                  Edit
+                </button>
+              </div>
+            </article>
+          } @empty {
+            <div class="empty-state card">
+              <span class="empty-icon">◇</span>
+              <h3>No matching assets</h3>
+              <p>Adjust the search or add an asset to this site.</p>
+            </div>
+          }
+        </div>
+      </section>
+    }
+    @if (tab() === 'reports') {
+      <section class="section-card card">
+        <div class="section-heading">
+          <div>
+            <h2>Reports &amp; certificates</h2>
+            <p>Documents attached to this site and its assets.</p>
+          </div>
+        </div>
+        <div class="report-list">
+          @for (report of currentSite.reports; track report.id) {
+            <article>
+              <span class="report-icon">≡</span
+              ><span
+                ><strong>{{ report.title }}</strong
+                ><small
+                  >{{ report.category }}
+                  @if (report.documentCount) {
+                    · {{ report.documentCount }} certificates
+                  }
+                  · {{ report.entityType }} · Added {{ formatDate(report.createdAt) }}</small
+                ></span
+              >
+              @if (report.expiresAt) {
+                <span class="expiry">Expires {{ formatDate(report.expiresAt) }}</span>
+              }
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="!report.visitId && !report.mediaId && !report.inspectionRevisionId"
+                (click)="openReport(report)"
+              >
+                {{
+                  report.visitId
+                    ? 'Open combined report'
+                    : report.mediaId || report.inspectionRevisionId
+                      ? 'Open report'
+                      : 'Record only'
+                }}
+              </button>
+            </article>
+          } @empty {
+            <div class="empty-state">
+              <span class="empty-icon">≡</span>
+              <h3>No reports at this site</h3>
+              <p>Reports generated or attached to the site and its assets will appear here.</p>
+            </div>
+          }
+        </div>
+      </section>
+    }
+    @if (tab() === 'reminders') {
+      <section class="section-card card">
+        <div class="section-heading">
+          <div>
+            <h2>Site reminders</h2>
+            <p>Automatically surfaced from report expiry dates and asset lifecycle states.</p>
+          </div>
+        </div>
+        <div class="reminder-list">
+          @for (reminder of reminders(); track reminder.id) {
+            <article>
+              <span
+                class="reminder-dot"
+                [class.warning]="reminder.level === 'warning'"
+                [class.danger]="reminder.level === 'danger'"
+              ></span
+              ><span
+                ><strong>{{ reminder.title }}</strong
+                ><small>{{ reminder.detail }}</small></span
+              ><span
+                class="badge"
+                [class.warning]="reminder.level === 'warning'"
+                [class.danger]="reminder.level === 'danger'"
+                >Needs attention</span
+              >
+            </article>
+          } @empty {
+            <div class="empty-state">
+              <span class="empty-icon">✓</span>
+              <h3>Nothing needs attention</h3>
+              <p>There are no expiring reports or assets awaiting review at this site.</p>
+            </div>
+          }
+        </div>
+      </section>
+    }
+  } @else if (!busy()) {
+    <div class="empty-state card">
+      <h2>Site unavailable</h2>
+      <p>{{ error() }}</p>
+    </div>
+  }
+  @if (error() && site()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

@@ -1,0 +1,30 @@
+{
+  "name": "@ohmaudit/worker-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env local",
+    "build": "wrangler deploy --env=\"\" --dry-run --outdir dist",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260813.1",
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0",
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.19.0"
+}

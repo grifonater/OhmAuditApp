@@ -1,0 +1,122 @@
+<main class="page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Organisation settings</p>
+      <h1>Security</h1>
+      <p>Protect permanent users and privileged Organisation roles.</p>
+    </div>
+    <span class="badge success"><span class="status-dot"></span>Supabase Auth</span>
+  </header>
+  <div class="security-grid">
+    <section class="card security-card">
+      <div class="card-header">
+        <div>
+          <p class="eyebrow">Your account</p>
+          <h2>Multi-factor authentication</h2>
+        </div>
+        <span class="setup-icon">⌁</span>
+      </div>
+      <div class="card-body">
+        <p>Add an authenticator app as a second factor for sensitive operations.</p>
+        @if (enrolment(); as factor) {
+          <img
+            class="qr-code"
+            [src]="factor.qrCode"
+            alt="Authenticator QR code"
+            width="220"
+            height="220"
+          />
+          <p>
+            Manual key: <code>{{ factor.secret }}</code>
+          </p>
+          <label class="field"
+            >Six-digit code<input
+              [formControl]="code"
+              inputmode="numeric"
+              autocomplete="one-time-code" /></label
+          ><button
+            class="button primary security-action"
+            type="button"
+            (click)="verifyMfa()"
+            [disabled]="code.invalid"
+          >
+            Verify MFA
+          </button>
+        } @else {
+          <button class="button primary security-action" type="button" (click)="startMfa()">
+            Set up MFA
+          </button>
+        }
+      </div>
+    </section>
+    <section class="card security-card">
+      <div class="card-header">
+        <div>
+          <p class="eyebrow">Organisation policy</p>
+          <h2>Privileged role protection</h2>
+        </div>
+        <span class="setup-icon">⚙</span>
+      </div>
+      <div class="card-body">
+        <p>
+          Require Organisation Owners and Administrators to use a verified second factor before
+          privileged operations.
+        </p>
+        <div class="policy-note">
+          <strong>Recommended</strong
+          ><span>This reduces the risk of administrative account takeover.</span>
+        </div>
+        <button class="button secondary security-action" type="button" (click)="requireMfa()">
+          Require MFA for privileged roles
+        </button>
+      </div>
+    </section>
+    <section class="card security-card">
+      <div class="card-header">
+        <div>
+          <p class="eyebrow">Reminders</p>
+          <h2>Notification preferences</h2>
+        </div>
+        <span class="setup-icon">◷</span>
+      </div>
+      <div class="card-body">
+        <p>Choose how the Organisation is alerted about scheduled and submitted work.</p>
+        <form
+          [formGroup]="notificationForm"
+          (ngSubmit)="saveNotificationPreferences()"
+          class="stack"
+        >
+          <label><input type="checkbox" formControlName="inAppEnabled" /> In-app reminders</label>
+          <label><input type="checkbox" formControlName="emailEnabled" /> Email reminders</label>
+          <label
+            ><input type="checkbox" formControlName="overdueReminders" /> Continue overdue
+            reminders</label
+          >
+          <label
+            ><input type="checkbox" formControlName="inspectionSubmitted" /> Notify when inspections
+            are submitted</label
+          >
+          <label class="field"
+            >Default reminder lead time (days)<input
+              type="number"
+              inputmode="numeric"
+              formControlName="defaultLeadDays"
+          /></label>
+          <button
+            class="button secondary security-action"
+            type="submit"
+            [disabled]="notificationForm.invalid"
+          >
+            Save notification preferences
+          </button>
+        </form>
+      </div>
+    </section>
+  </div>
+  @if (message()) {
+    <p class="success-message floating-message" role="status">{{ message() }}</p>
+  }
+  @if (error()) {
+    <p class="error floating-message" role="alert">{{ error() }}</p>
+  }
+</main>

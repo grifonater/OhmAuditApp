@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "https://ohmaudit-api-production.ohmaudit.workers.dev/api/v1",
+  "supabaseUrl": "https://cgynntzcxptnvsqrttsz.supabase.co",
+  "supabasePublishableKey": "sb_publishable_ggas-APHHgjEHk15bEXFdg_tcVMHm7S",
+  "authRedirectUrl": "https://ohmaudit-web.ohmaudit.workers.dev/auth/callback"
+}

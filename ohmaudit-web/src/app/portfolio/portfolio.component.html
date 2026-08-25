@@ -1,0 +1,386 @@
+<main class="page portfolio-page">
+  <header class="page-header directory-titlebar">
+    <div>
+      <h1>Clients</h1>
+      <p>Manage clients, sites and compliance activity.</p>
+    </div>
+  </header>
+
+  <section class="portfolio-stats card" aria-label="Portfolio summary">
+    <div class="stat-item">
+      <span class="stat-icon clients" aria-hidden="true">C</span>
+      <span
+        ><small>Total clients</small
+        ><strong>{{ summary().customers || totalCustomers() }}</strong></span
+      >
+    </div>
+    <div class="stat-item">
+      <span class="stat-icon active" aria-hidden="true">✓</span>
+      <span
+        ><small>Active shown</small><strong>{{ activeShown() }}</strong></span
+      >
+    </div>
+    <div class="stat-item">
+      <span class="stat-icon sites" aria-hidden="true">S</span>
+      <span
+        ><small>Sites</small><strong>{{ summary().sites }}</strong></span
+      >
+    </div>
+    <div class="stat-item">
+      <span class="stat-icon assets" aria-hidden="true">A</span>
+      <span
+        ><small>Assets</small><strong>{{ summary().assets }}</strong></span
+      >
+    </div>
+  </section>
+
+  <section class="directory-controls" aria-label="Client directory controls">
+    <div class="search-input" [class.loading]="searching()">
+      <span class="search-icon" aria-hidden="true"></span>
+      <input
+        type="search"
+        [formControl]="searchControl"
+        placeholder="Search clients, references, sites or postcodes…"
+        aria-label="Search clients and sites"
+      />
+      @if (searching()) {
+        <span class="search-spinner" aria-label="Searching"></span>
+      } @else if (searchControl.value) {
+        <button type="button" (click)="clearSearch()" aria-label="Clear search">×</button>
+      }
+    </div>
+    <label class="control-select">
+      <span class="sr-only">Filter by status</span>
+      <select [formControl]="statusControl">
+        <option value="ALL">All statuses</option>
+        <option value="ACTIVE">Active</option>
+        <option value="INACTIVE">Inactive</option>
+      </select>
+    </label>
+    <label class="control-select sort-select">
+      <span class="sr-only">Sort clients</span>
+      <select [formControl]="sortControl">
+        <option value="ASC">Sort: Client A–Z</option>
+        <option value="DESC">Sort: Client Z–A</option>
+      </select>
+    </label>
+    <details class="add-client-menu">
+      <summary class="button primary">Add client <span aria-hidden="true">＋</span></summary>
+      <form [formGroup]="customerForm" (ngSubmit)="createCustomer()" class="create-popover card">
+        <header>
+          <strong>New client</strong><small>Add an organisation to your managed portfolio.</small>
+        </header>
+        <label class="field"
+          >Client name<input formControlName="name" autocomplete="organization"
+        /></label>
+        <label class="field">Reference<input formControlName="reference" /></label>
+        <label class="field"
+          >Internal notes<textarea formControlName="internalNotes"></textarea>
+        </label>
+        <button class="button primary" type="submit" [disabled]="busy() || customerForm.invalid">
+          {{ busy() ? 'Creating…' : 'Create client' }}
+        </button>
+      </form>
+    </details>
+  </section>
+
+  @if (matchedSites().length > 0) {
+    <section class="site-match-panel card" aria-label="Matching sites">
+      <div class="match-heading">
+        <strong>Matching sites</strong><small>Shown with their client path</small>
+      </div>
+      <div class="site-matches">
+        @for (site of matchedSites(); track site.id) {
+          <a
+            [routerLink]="[
+              '/app/org',
+              organisationId,
+              'portfolio',
+              'clients',
+              site.customerId,
+              'sites',
+              site.id,
+            ]"
+          >
+            <span>{{ site.customer?.name || 'Client' }}</span
+            ><b>›</b><strong>{{ site.name }}</strong>
+            @if (site.postcode) {
+              <small>{{ site.postcode }}</small>
+            }
+          </a>
+        }
+      </div>
+    </section>
+  }
+
+  <section class="client-directory card" [attr.aria-busy]="searching()">
+    <header class="directory-summary">
+      <div>
+        <strong>{{ totalCustomers() }} clients</strong
+        ><small>{{ visibleCustomers().length }} displayed</small>
+      </div>
+      @if (statusControl.value !== 'ALL' || searchControl.value) {
+        <div class="active-filters">
+          @if (statusControl.value !== 'ALL') {
+            <span>Status: {{ statusControl.value }}</span>
+          }
+          @if (searchControl.value) {
+            <span>Search: {{ searchControl.value }}</span>
+          }
+          <button type="button" (click)="statusControl.setValue('ALL'); clearSearch()">
+            Clear all
+          </button>
+        </div>
+      }
+    </header>
+
+    <div class="client-table-wrap">
+      <table class="client-table">
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Status</th>
+            <th>Sites</th>
+            <th>Assets</th>
+            <th>Reference</th>
+            <th><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (customer of visibleCustomers(); track customer.id) {
+            <tr class="client-row" [class.expanded]="expandedCustomerId() === customer.id">
+              <td data-label="Client">
+                <button
+                  type="button"
+                  class="client-identity"
+                  (click)="toggleClientPreview(customer.id)"
+                  [attr.aria-expanded]="expandedCustomerId() === customer.id"
+                  [attr.aria-controls]="'client-preview-' + customer.id"
+                >
+                  @if (logoUrls()[customer.id]; as logoUrl) {
+                    <img
+                      class="client-avatar client-logo"
+                      [src]="logoUrl"
+                      [alt]="customer.name + ' logo'"
+                    />
+                  } @else {
+                    <span class="client-avatar">{{ customer.name.slice(0, 2) }}</span>
+                  }
+                  <span
+                    ><strong>{{ customer.name }}</strong
+                    ><small>{{ customer.reference || 'No reference' }}</small></span
+                  >
+                </button>
+              </td>
+              <td data-label="Status">
+                <span class="status-badge" [class.inactive]="customer.status !== 'ACTIVE'">{{
+                  customer.status === 'ACTIVE' ? 'Active' : 'Inactive'
+                }}</span>
+              </td>
+              <td data-label="Sites">
+                <strong class="metric-value">{{ customer._count.sites }}</strong>
+              </td>
+              <td data-label="Assets">
+                <strong class="metric-value">{{ customer._count.assets }}</strong>
+              </td>
+              <td data-label="Reference">
+                <span class="reference-value">{{ customer.reference || '—' }}</span>
+              </td>
+              <td class="row-action">
+                <button
+                  type="button"
+                  class="expand-client"
+                  (click)="toggleClientPreview(customer.id)"
+                  [attr.aria-label]="
+                    (expandedCustomerId() === customer.id ? 'Collapse ' : 'Preview ') +
+                    customer.name
+                  "
+                >
+                  {{ expandedCustomerId() === customer.id ? '⌃' : '⌄' }}
+                </button>
+              </td>
+            </tr>
+            @if (expandedCustomerId() === customer.id) {
+              <tr class="client-expansion-row">
+                <td colspan="6">
+                  <section
+                    class="client-preview"
+                    [id]="'client-preview-' + customer.id"
+                    [attr.aria-label]="customer.name + ' summary'"
+                  >
+                    @if (previewLoadingId() === customer.id) {
+                      <div class="preview-loading">
+                        <span class="search-spinner" aria-hidden="true"></span>
+                        Loading sites and reports…
+                      </div>
+                    } @else if (previewErrors()[customer.id]) {
+                      <div class="preview-message error">
+                        <span>{{ previewErrors()[customer.id] }}</span>
+                        <button
+                          class="button secondary compact"
+                          type="button"
+                          (click)="retryClientPreview(customer.id)"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    } @else if (clientPreviews()[customer.id]; as preview) {
+                      <div class="preview-sites">
+                        <header class="preview-heading">
+                          <div>
+                            <strong>Sites</strong>
+                            <small>
+                              Showing
+                              {{ preview.sites.length > 3 ? 3 : preview.sites.length }} of
+                              {{ preview.sites.length }}
+                            </small>
+                          </div>
+                          <a
+                            [routerLink]="[
+                              '/app/org',
+                              organisationId,
+                              'portfolio',
+                              'clients',
+                              customer.id,
+                            ]"
+                            [queryParams]="{ tab: 'sites' }"
+                            >View all sites</a
+                          >
+                        </header>
+                        <div class="preview-list">
+                          @for (site of preview.sites.slice(0, 3); track site.id) {
+                            <a
+                              class="preview-site"
+                              [routerLink]="[
+                                '/app/org',
+                                organisationId,
+                                'portfolio',
+                                'clients',
+                                customer.id,
+                                'sites',
+                                site.id,
+                              ]"
+                            >
+                              <span class="preview-icon">⌖</span>
+                              <span>
+                                <strong>{{ site.name }}</strong>
+                                <small>{{
+                                  site.postcode || site.reference || 'Address not set'
+                                }}</small>
+                              </span>
+                              <span class="preview-count"
+                                ><b>{{ site._count?.assets || 0 }}</b> assets</span
+                              >
+                              <i>›</i>
+                            </a>
+                          } @empty {
+                            <p class="preview-empty">No sites have been added for this client.</p>
+                          }
+                        </div>
+                      </div>
+
+                      <div class="preview-reports">
+                        <header class="preview-heading">
+                          <div>
+                            <strong>Recent reports</strong>
+                            <small>The latest three client records</small>
+                          </div>
+                          <a
+                            [routerLink]="[
+                              '/app/org',
+                              organisationId,
+                              'portfolio',
+                              'clients',
+                              customer.id,
+                            ]"
+                            [queryParams]="{ tab: 'reports' }"
+                            >View all reports</a
+                          >
+                        </header>
+                        <div class="preview-list">
+                          @for (report of preview.reports.slice(0, 3); track report.id) {
+                            <button
+                              type="button"
+                              class="preview-report"
+                              (click)="openReport(report)"
+                              [disabled]="
+                                !report.visitId && !report.mediaId && !report.inspectionRevisionId
+                              "
+                            >
+                              <span class="report-mark">≡</span>
+                              <span>
+                                <strong>{{ report.title }}</strong>
+                                <small>
+                                  {{ report.category }} · {{ formatDate(report.createdAt) }}
+                                  @if (report.documentCount) {
+                                    · {{ report.documentCount }} certificates
+                                  }
+                                </small>
+                              </span>
+                              <i>{{
+                                report.visitId || report.mediaId || report.inspectionRevisionId
+                                  ? 'Open'
+                                  : 'Record'
+                              }}</i>
+                            </button>
+                          } @empty {
+                            <p class="preview-empty">
+                              No reports have been created for this client.
+                            </p>
+                          }
+                        </div>
+                      </div>
+
+                      <footer class="preview-footer">
+                        <a
+                          class="button primary compact"
+                          [routerLink]="[
+                            '/app/org',
+                            organisationId,
+                            'portfolio',
+                            'clients',
+                            customer.id,
+                          ]"
+                          >Open client workspace <span aria-hidden="true">↗</span></a
+                        >
+                      </footer>
+                    }
+                  </section>
+                </td>
+              </tr>
+            }
+          } @empty {
+            <tr class="empty-row">
+              <td colspan="6">
+                <div class="empty-state directory-empty">
+                  <span class="empty-icon">⌕</span>
+                  <h3>No clients found</h3>
+                  <p>
+                    {{
+                      searchControl.value
+                        ? 'Try a different client, site or postcode.'
+                        : 'Add your first client to start building the portfolio.'
+                    }}
+                  </p>
+                  @if (searchControl.value) {
+                    <button class="button secondary" type="button" (click)="clearSearch()">
+                      Clear search
+                    </button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <footer class="directory-footer">
+      <span>Showing {{ visibleCustomers().length }} of {{ totalCustomers() }}</span
+      ><span>Client directory</span>
+    </footer>
+  </section>
+
+  @if (error()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

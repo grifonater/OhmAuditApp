@@ -1,0 +1,681 @@
+<main class="thermal-page">
+  <header class="thermal-header">
+    <div>
+      <button class="crumb" type="button" (click)="back()">‹ Inspections</button>
+      <div class="title-row">
+        <h1>Thermal Imaging Report</h1>
+        <span class="status-pill">Draft</span>
+      </div>
+      <p>
+        {{ visit()?.site?.name }} · {{ visit()?.scheduledStart?.slice(0, 10) }} ·
+        {{ visit()?.title }}
+      </p>
+    </div>
+    <div class="header-actions">
+      @if (saved()) {
+        <span class="saved-state">✓ {{ saved() }}</span>
+      }
+      <button class="button secondary" type="button" (click)="saveDraft('Draft saved')">
+        Save draft
+      </button>
+    </div>
+  </header>
+  @if (error()) {
+    <div class="alert error" role="alert">{{ error() }}</div>
+  }
+  <nav class="progress-strip" aria-label="Report progress">
+    <button
+      type="button"
+      [class.current]="currentStep() === 'details'"
+      (click)="goToStep('details')"
+    >
+      <b>1</b><span>Details</span></button
+    ><i></i>
+    <button type="button" [class.current]="currentStep() === 'images'" (click)="goToStep('images')">
+      <b>2</b><span>Image gallery</span></button
+    ><i></i>
+    <button
+      type="button"
+      [class.current]="currentStep() === 'targets'"
+      (click)="goToStep('targets')"
+    >
+      <b>3</b><span>Target items</span></button
+    ><i></i>
+    <button type="button" [class.current]="currentStep() === 'review'" (click)="goToStep('review')">
+      <b>4</b><span>Review & issue</span>
+    </button>
+  </nav>
+
+  @if (currentStep() === 'details') {
+    <section class="step-shell details-step">
+      <div class="step-intro">
+        <p class="eyebrow">Step 1 of 4</p>
+        <h2>Inspection details</h2>
+        <p>
+          Set the survey context once so every target item and the final report can be interpreted
+          correctly.
+        </p>
+      </div>
+      <div class="panel details-form">
+        <label class="wide"
+          >Scope of inspection <span>Required</span
+          ><textarea
+            rows="4"
+            [ngModel]="details().scope"
+            (ngModelChange)="patchDetails({ scope: $event })"
+            placeholder="Describe the systems, areas and equipment included in this survey…"
+          ></textarea>
+        </label>
+        <label class="wide"
+          >Purpose<textarea
+            rows="2"
+            [ngModel]="details().purpose"
+            (ngModelChange)="patchDetails({ purpose: $event })"
+          ></textarea>
+        </label>
+        <label class="wide"
+          >Inspection method<textarea
+            rows="2"
+            [ngModel]="details().inspectionMethod"
+            (ngModelChange)="patchDetails({ inspectionMethod: $event })"
+          ></textarea>
+        </label>
+        <label
+          >Areas inspected<textarea
+            rows="3"
+            [ngModel]="details().areasInspected"
+            (ngModelChange)="patchDetails({ areasInspected: $event })"
+          ></textarea>
+        </label>
+        <label
+          >Areas excluded<textarea
+            rows="3"
+            [ngModel]="details().areasExcluded"
+            (ngModelChange)="patchDetails({ areasExcluded: $event })"
+          ></textarea>
+        </label>
+        <label
+          >Limitations<textarea
+            rows="3"
+            [ngModel]="details().limitations"
+            (ngModelChange)="patchDetails({ limitations: $event })"
+            placeholder="Access, load or visibility limitations…"
+          ></textarea>
+        </label>
+        <label
+          >Environmental conditions<textarea
+            rows="3"
+            [ngModel]="details().environmentalConditions"
+            (ngModelChange)="patchDetails({ environmentalConditions: $event })"
+          ></textarea>
+        </label>
+        <label
+          >Load / operating condition<input
+            [ngModel]="details().loadCondition"
+            (ngModelChange)="patchDetails({ loadCondition: $event })"
+            placeholder="e.g. Normal production load"
+        /></label>
+        <label
+          >Client representative<input
+            [ngModel]="details().clientRepresentative"
+            (ngModelChange)="patchDetails({ clientRepresentative: $event })"
+        /></label>
+        <label
+          >Ambient temperature (°C)<input
+            type="number"
+            step="0.1"
+            [ngModel]="details().ambientTemperatureC"
+            (ngModelChange)="patchDetails({ ambientTemperatureC: $event })"
+        /></label>
+        <label
+          >Emissivity<input
+            type="number"
+            min="0.01"
+            max="1"
+            step="0.01"
+            [ngModel]="details().emissivity"
+            (ngModelChange)="patchDetails({ emissivity: $event })"
+        /></label>
+        <label
+          >Reflected temperature (°C)<input
+            type="number"
+            step="0.1"
+            [ngModel]="details().reflectedTemperatureC"
+            (ngModelChange)="patchDetails({ reflectedTemperatureC: $event })"
+        /></label>
+        <label class="wide"
+          >Thermal imaging equipment<select
+            [ngModel]="details().equipmentId"
+            (ngModelChange)="patchDetails({ equipmentId: $event })"
+          >
+            <option value="">Select equipment (optional)</option>
+            @for (item of equipment(); track item.id) {
+              <option [value]="item.id">
+                {{ item.name }} · {{ item.manufacturer }} {{ item.model }} · S/N
+                {{ item.serialNumber || 'not set' }}
+              </option>
+            }
+          </select>
+          @if (!equipment().length) {
+            <small
+              >No active equipment is registered. An organisation manager can add it in Organisation
+              Settings → Equipment.</small
+            >
+          }
+        </label>
+        <label class="wide"
+          >Additional notes<textarea
+            rows="3"
+            [ngModel]="details().additionalNotes"
+            (ngModelChange)="patchDetails({ additionalNotes: $event })"
+          ></textarea>
+        </label>
+      </div>
+      <footer class="step-actions">
+        <span></span
+        ><button class="button primary" type="button" (click)="nextFromDetails()">
+          Continue to image gallery →
+        </button>
+      </footer>
+    </section>
+  }
+
+  @if (currentStep() === 'images') {
+    <section class="step-shell gallery-step">
+      <div class="step-intro">
+        <p class="eyebrow">Step 2 of 4</p>
+        <h2>Image gallery</h2>
+        <p>
+          Upload the full survey first, then drag images or multi-select them into infrared and
+          standard groups.
+        </p>
+      </div>
+      <label class="upload-drop panel" [class.uploading]="uploading()"
+        ><span class="upload-icon">⇧</span
+        ><strong>{{ uploading() ? uploadProgress() : 'Upload inspection images' }}</strong
+        ><small>Choose multiple JPEG, PNG or WebP files · up to 20 MB each</small
+        ><input
+          type="file"
+          multiple
+          accept="image/jpeg,image/png,image/webp"
+          (change)="upload($event)"
+          [disabled]="uploading()"
+      /></label>
+      <div class="gallery-toolbar panel">
+        <label class="gallery-search"
+          >⌕<input
+            type="search"
+            placeholder="Search names, original filenames or tags…"
+            [value]="search()"
+            (input)="search.set($any($event.target).value)"
+        /></label>
+        <div class="selection-tools">
+          <button type="button" (click)="selectAllVisible()">Select visible</button
+          ><strong>{{ selectedImageIds().size }} selected</strong
+          ><button
+            type="button"
+            (click)="classifySelected('thermal')"
+            [disabled]="!selectedImageIds().size"
+          >
+            Mark infrared</button
+          ><button
+            type="button"
+            (click)="classifySelected('standard')"
+            [disabled]="!selectedImageIds().size"
+          >
+            Mark standard
+          </button>
+        </div>
+      </div>
+      <div class="gallery-board">
+        @for (
+          lane of [
+            {
+              kind: 'unclassified',
+              title: 'Needs sorting',
+              hint: 'Drop new or uncertain images here',
+            },
+            { kind: 'thermal', title: 'Infrared', hint: 'Thermal camera images' },
+            { kind: 'standard', title: 'Standard', hint: 'Visible-light reference images' },
+          ];
+          track lane.kind
+        ) {
+          <section
+            class="image-lane panel"
+            [class.unsorted]="lane.kind === 'unclassified'"
+            (dragover)="$event.preventDefault()"
+            (drop)="dropInLane($any(lane.kind))"
+          >
+            <header>
+              <div>
+                <h3>{{ lane.title }}</h3>
+                <small>{{ lane.hint }}</small>
+              </div>
+              <span>{{ imageCount($any(lane.kind)) }}</span>
+            </header>
+            <div class="image-grid">
+              @for (image of filteredImages(); track image.id) {
+                @if (imageKind(image) === lane.kind) {
+                  <article
+                    class="image-card"
+                    draggable="true"
+                    [class.selected]="selectedImageIds().has(image.id)"
+                    (dragstart)="dragStart(image.id)"
+                    (dragover)="$event.preventDefault()"
+                    (drop)="$event.stopPropagation(); dropBefore(image.id)"
+                  >
+                    <button
+                      class="image-select"
+                      type="button"
+                      (click)="toggleImage(image.id)"
+                      [attr.aria-label]="
+                        selectedImageIds().has(image.id) ? 'Deselect image' : 'Select image'
+                      "
+                    >
+                      {{ selectedImageIds().has(image.id) ? '✓' : '' }}
+                    </button>
+                    @if (imageUrls()[image.id]) {
+                      <img
+                        [src]="imageUrls()[image.id]"
+                        [alt]="image.caption || 'Inspection image'"
+                      />
+                    } @else if (failedImageIds().has(image.id)) {
+                      <button class="image-failed" type="button" (click)="retryImage(image)">
+                        <b>Image unavailable</b><span>Tap to retry</span>
+                      </button>
+                    } @else {
+                      <div class="image-loading"><span></span>Loading preview…</div>
+                    }
+                    <div class="image-meta">
+                      <label
+                        >Name<input
+                          [value]="image.caption || image.originalFilename || ''"
+                          (change)="updateImageName(image, $any($event.target).value)" /></label
+                      ><label
+                        >Tags <small>comma separated</small
+                        ><input
+                          [value]="(image.tags || []).join(', ')"
+                          (change)="updateImageTags(image, $any($event.target).value)"
+                          placeholder="board, floor 1…" /></label
+                      ><small class="original-name"
+                        >Original:
+                        {{ image.originalFilename || image.caption || 'Not recorded' }}</small
+                      >
+                    </div>
+                  </article>
+                }
+              }
+              @if (imageCount($any(lane.kind)) === 0) {
+                <div class="lane-empty">Drag images here or use the multi-select actions.</div>
+              }
+            </div>
+          </section>
+        }
+      </div>
+      <footer class="step-actions">
+        <button class="button secondary" type="button" (click)="goToStep('details')">
+          ← Details
+        </button>
+        <div>
+          @if (unclassifiedCount()) {
+            <span class="classification-warning">{{ unclassifiedCount() }} still need sorting</span>
+          }
+          <button class="button primary" type="button" (click)="nextFromImages()">
+            Continue to target items →
+          </button>
+        </div>
+      </footer>
+    </section>
+  }
+
+  @if (currentStep() === 'targets') {
+    <section class="step-shell targets-step">
+      <div class="step-intro">
+        <p class="eyebrow">Step 3 of 4</p>
+        <h2>Target items</h2>
+        <p>
+          Group related infrared and standard images into the board, enclosure or item inspected.
+        </p>
+      </div>
+      <div class="target-workspace">
+        <aside class="panel target-gallery">
+          <div class="panel-heading">
+            <div>
+              <h3>Available images</h3>
+              <small>Select images to group</small>
+            </div>
+          </div>
+          <label class="gallery-search"
+            >⌕<input
+              type="search"
+              placeholder="Search images…"
+              [value]="search()"
+              (input)="search.set($any($event.target).value)"
+          /></label>
+          <div class="mini-gallery">
+            @for (image of availableImages(); track image.id) {
+              <button
+                type="button"
+                [class.selected]="selectedImageIds().has(image.id)"
+                (click)="toggleImage(image.id)"
+              >
+                @if (imageUrls()[image.id]) {
+                  <img [src]="imageUrls()[image.id]" alt="" />
+                }
+                <span>{{ imageKind(image) === 'thermal' ? 'Infrared' : 'Standard' }}</span>
+              </button>
+            }
+          </div>
+          <div class="selection-tools vertical">
+            <strong>{{ selectedImageIds().size }} selected</strong>
+            @if (selectedTarget()) {
+              <button
+                type="button"
+                (click)="addSelectedToTarget()"
+                [disabled]="!selectedImageIds().size"
+              >
+                Add to selected target +
+              </button>
+            } @else {
+              <button type="button" (click)="createTarget()">Create target +</button>
+            }
+          </div>
+        </aside>
+        <section class="targets-column">
+          <div class="stats-bar panel">
+            <span
+              ><b>{{ targets().length }}</b
+              ><small>Targets</small></span
+            ><span class="good"
+              ><b>{{ targets().length - faultCount() }}</b
+              ><small>No issues</small></span
+            ><span class="bad"
+              ><b>{{ faultCount() }}</b
+              ><small>Faults</small></span
+            ><span
+              ><b>{{ images().length }}</b
+              ><small>Images</small></span
+            >
+          </div>
+          <div class="target-list panel">
+            <div class="panel-heading">
+              <div>
+                <h3>Target items</h3>
+                <small>Items default to no issues.</small>
+              </div>
+              <button class="button secondary compact" type="button" (click)="createTarget()">
+                ＋ New target
+              </button>
+            </div>
+            @for (target of targets(); track target.id) {
+              <button
+                class="target-row"
+                type="button"
+                [class.selected]="selectedTarget()?.id === target.id"
+                (click)="selectedTargetId.set(target.id)"
+              >
+                <span class="target-thumbs">
+                  @for (imageId of target.imageIds.slice(0, 2); track imageId) {
+                    @if (imageUrls()[imageId]) {
+                      <img [src]="imageUrls()[imageId]" alt="" />
+                    }
+                  }</span
+                ><span class="target-copy"
+                  ><b>{{ target.name }}</b
+                  ><small
+                    >{{ target.reference || 'No reference' }} ·
+                    {{ target.location || 'Location not set' }}</small
+                  ></span
+                ><span class="condition" [class.fault]="target.condition === 'FAULT'">{{
+                  target.condition === 'FAULT' ? '⚠ Fault reported' : '✓ No issues'
+                }}</span>
+              </button>
+            } @empty {
+              <div class="empty-state">
+                <b>No target items yet</b><span>Select images and create the first target.</span
+                ><button class="button primary" type="button" (click)="createTarget()">
+                  ＋ New target
+                </button>
+              </div>
+            }
+          </div>
+          @if (selectedTarget(); as target) {
+            <div class="target-images panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>Images in {{ target.name }}</h3>
+                  <small>{{ target.imageIds.length }} grouped</small>
+                </div>
+              </div>
+              <div class="target-image-grid">
+                @for (imageId of target.imageIds; track imageId) {
+                  @if (imageById(imageId); as image) {
+                    <figure>
+                      @if (imageUrls()[imageId]) {
+                        <img [src]="imageUrls()[imageId]" alt="Target evidence" />
+                      }
+                      <figcaption>
+                        <span>{{ imageKind(image) === 'thermal' ? 'Infrared' : 'Standard' }}</span
+                        ><button
+                          type="button"
+                          (click)="removeImageFromTarget(imageId)"
+                          aria-label="Remove image"
+                        >
+                          ×
+                        </button>
+                      </figcaption>
+                    </figure>
+                  }
+                }
+              </div>
+            </div>
+          }
+        </section>
+        <aside class="details-panel panel">
+          <div class="panel-heading">
+            <div>
+              <h3>Target details</h3>
+              <small>Record the condition found.</small>
+            </div>
+          </div>
+          @if (selectedTarget(); as target) {
+            <label
+              >Target name<input
+                [ngModel]="target.name"
+                (ngModelChange)="patchTarget({ name: $event })" /></label
+            ><label
+              >Reference<input
+                [ngModel]="target.reference"
+                (ngModelChange)="patchTarget({ reference: $event })" /></label
+            ><label
+              >Location<input
+                [ngModel]="target.location"
+                (ngModelChange)="patchTarget({ location: $event })"
+            /></label>
+            <div class="condition-editor">
+              <span>Were any issues found?</span>
+              <div>
+                <button
+                  type="button"
+                  [class.active]="target.condition === 'NO_ISSUES'"
+                  (click)="setCondition('NO_ISSUES')"
+                >
+                  ✓ No issues</button
+                ><button
+                  class="fault-button"
+                  type="button"
+                  [class.active]="target.condition === 'FAULT'"
+                  (click)="setCondition('FAULT')"
+                >
+                  ⚠ Report fault
+                </button>
+              </div>
+            </div>
+            @if (target.condition === 'FAULT') {
+              <div class="fault-fields">
+                <label
+                  >Issue summary<textarea
+                    rows="3"
+                    [ngModel]="target.issueSummary"
+                    (ngModelChange)="patchTarget({ issueSummary: $event })"
+                  ></textarea>
+                </label>
+                <div class="two-fields">
+                  <label
+                    >Severity<select
+                      [ngModel]="target.severity"
+                      (ngModelChange)="patchTarget({ severity: $event })"
+                    >
+                      <option value="ADVISORY">Advisory</option>
+                      <option value="MINOR">Minor</option>
+                      <option value="MAJOR">Major</option>
+                      <option value="DANGEROUS">Dangerous</option>
+                    </select></label
+                  ><label
+                    >Max temperature °C<input
+                      type="number"
+                      step="0.1"
+                      [ngModel]="target.maxTemperatureC"
+                      (ngModelChange)="patchTarget({ maxTemperatureC: $event })"
+                  /></label>
+                </div>
+                <label
+                  >Temperature difference ΔT °C<input
+                    type="number"
+                    step="0.1"
+                    [ngModel]="target.deltaTemperatureC"
+                    (ngModelChange)="patchTarget({ deltaTemperatureC: $event })" /></label
+                ><label
+                  >Detailed observations<textarea
+                    rows="4"
+                    [ngModel]="target.observations"
+                    (ngModelChange)="patchTarget({ observations: $event })"
+                  ></textarea></label
+                ><label
+                  >Recommendation<textarea
+                    rows="3"
+                    [ngModel]="target.recommendation"
+                    (ngModelChange)="patchTarget({ recommendation: $event })"
+                  ></textarea>
+                </label>
+              </div>
+            }
+            <div class="detail-actions">
+              <button class="button danger-ghost" type="button" (click)="removeTarget()">
+                Remove</button
+              ><span class="autosave-copy">✓ Changes save automatically</span>
+            </div>
+          } @else {
+            <div class="empty-state">
+              <span>Create or select a target to enter its details.</span>
+            </div>
+          }
+        </aside>
+      </div>
+      <footer class="step-actions">
+        <button class="button secondary" type="button" (click)="goToStep('images')">
+          ← Image gallery</button
+        ><button class="button primary" type="button" (click)="goToStep('review')">
+          Review report →
+        </button>
+      </footer>
+    </section>
+  }
+
+  @if (currentStep() === 'review') {
+    <section class="step-shell review-step">
+      <div class="step-intro">
+        <p class="eyebrow">Step 4 of 4</p>
+        <h2>Review & issue</h2>
+        <p>Confirm the inspection context, evidence and findings before submission.</p>
+      </div>
+      <div class="review-grid">
+        <section class="panel review-card">
+          <header>
+            <h3>Inspection details</h3>
+            <button type="button" (click)="goToStep('details')">Edit</button>
+          </header>
+          <dl>
+            <div>
+              <dt>Scope</dt>
+              <dd>{{ details().scope || 'Not recorded' }}</dd>
+            </div>
+            <div>
+              <dt>Equipment</dt>
+              <dd>
+                {{ selectedEquipment()?.name || 'Not selected' }}
+                @if (selectedEquipment()?.serialNumber) {
+                  · S/N {{ selectedEquipment()?.serialNumber }}
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Areas inspected</dt>
+              <dd>{{ details().areasInspected || 'Not recorded' }}</dd>
+            </div>
+            <div>
+              <dt>Limitations</dt>
+              <dd>{{ details().limitations || 'None recorded' }}</dd>
+            </div>
+          </dl>
+        </section>
+        <section class="panel review-card">
+          <header>
+            <h3>Evidence & findings</h3>
+            <button type="button" (click)="goToStep('targets')">Edit</button>
+          </header>
+          <div class="review-stats">
+            <span
+              ><b>{{ images().length }}</b> images</span
+            ><span
+              ><b>{{ targets().length }}</b> targets</span
+            ><span [class.has-faults]="faultCount()"
+              ><b>{{ faultCount() }}</b> faults</span
+            >
+          </div>
+          @for (target of targets(); track target.id) {
+            <article class="review-target">
+              <div>
+                <strong>{{ target.name }}</strong
+                ><small
+                  >{{ target.location || 'Location not set' }} ·
+                  {{ target.imageIds.length }} images</small
+                >
+              </div>
+              <span class="condition" [class.fault]="target.condition === 'FAULT'">{{
+                target.condition === 'FAULT' ? target.issueSummary : 'No issues'
+              }}</span>
+            </article>
+          }
+        </section>
+      </div>
+      <section class="panel declaration">
+        <div>
+          <h3>Engineer declaration</h3>
+          <p>
+            I confirm this report accurately records the thermal imaging survey completed at this
+            site.
+          </p>
+        </div>
+        <label
+          >Engineer full name<input
+            [ngModel]="signerName"
+            (ngModelChange)="patchSignerName($event)"
+            placeholder="Enter full name"
+        /></label>
+      </section>
+      <footer class="step-actions">
+        <button class="button secondary" type="button" (click)="goToStep('targets')">
+          ← Target items</button
+        ><button
+          class="button primary submit-button"
+          type="button"
+          (click)="submit()"
+          [disabled]="busy()"
+        >
+          {{ busy() ? 'Submitting…' : 'Submit for office review →' }}
+        </button>
+      </footer>
+    </section>
+  }
+</main>

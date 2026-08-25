@@ -1,0 +1,268 @@
+<main class="page operations-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Quality &amp; compliance</p>
+      <h1>Inspections</h1>
+      <p>Review submitted work, preserve revision history, and issue professional records.</p>
+    </div>
+  </header>
+  @if (success()) {
+    <p class="notice" role="status">{{ success() }}</p>
+  }
+  <div class="toolbar">
+    <div class="segmented">
+      <button
+        type="button"
+        [class.active]="filter() === 'SUBMITTED'"
+        (click)="setFilter('SUBMITTED')"
+      >
+        Awaiting review</button
+      ><button
+        type="button"
+        [class.active]="filter() === 'APPROVED'"
+        (click)="setFilter('APPROVED')"
+      >
+        Approved</button
+      ><button type="button" [class.active]="filter() === ''" (click)="setFilter('')">All</button>
+    </div>
+  </div>
+  <section class="review-guide card" aria-label="Inspection review workflow">
+    <strong>Review by visit session</strong>
+    <span><b>1</b> Open a visit</span>
+    <span><b>2</b> Check each charger and proposed asset correction</span>
+    <span><b>3</b> Approve and issue the final visit report</span>
+  </section>
+  <section class="operations-grid">
+    <div class="session-list">
+      @for (session of sessions(); track session.id) {
+        <article class="card session-card" [class.open]="expandedSessionId() === session.id">
+          <button class="session-summary" type="button" (click)="openSession(session)">
+            <span class="session-icon">V</span>
+            <span class="session-copy">
+              <small>{{ session.customerName }} / {{ session.siteName }}</small>
+              <strong>{{ session.title }}</strong>
+              <span>
+                {{ session.inspections.length }} charger inspection{{
+                  session.inspections.length === 1 ? '' : 's'
+                }}
+                @if (session.scheduledStart) {
+                  &middot; {{ format(session.scheduledStart) }}
+                }
+              </span>
+            </span>
+            <span class="session-counts">
+              @if (session.awaitingReview) {
+                <span class="badge warning">{{ session.awaitingReview }} awaiting review</span>
+              }
+              @if (session.approved) {
+                <span class="badge success">{{ session.approved }} approved</span>
+              }
+              @if (session.assetChanges) {
+                <span class="badge info">{{ session.assetChanges }} asset updates</span>
+              }
+            </span>
+            <span class="session-chevron">→</span>
+          </button>
+          @if (expandedSessionId() === session.id) {
+            <div class="session-inspections">
+              @for (item of session.inspections; track item.id) {
+                <button
+                  type="button"
+                  class="session-inspection"
+                  [class.selected]="selected()?.id === item.id"
+                  (click)="open(item.id)"
+                >
+                  <span>
+                    <strong>{{ item.asset?.displayName || item.inspectionType }}</strong>
+                    <small>
+                      {{ item.asset?.manufacturer || 'Make not recorded' }}
+                      {{ item.asset?.model || '' }} &middot; {{ item.defects.length }} defects
+                    </small>
+                  </span>
+                  @if (item.proposedAssetChanges?.length) {
+                    <span class="badge info">Asset approval</span>
+                  }
+                  <span class="badge" [class.success]="item.status === 'APPROVED'">{{
+                    item.status
+                  }}</span>
+                </button>
+              }
+            </div>
+          }
+        </article>
+      } @empty {
+        <div class="empty-state card">
+          <span class="empty-icon">V</span>
+          <h3>No inspection sessions in this view</h3>
+          <p>Submitted visits will appear here as a single grouped session.</p>
+        </div>
+      }
+    </div>
+    <div class="record-list legacy-inspection-list">
+      @for (item of inspections(); track item.id) {
+        <button class="record-card card" type="button" (click)="open(item.id)">
+          <span class="record-icon">✓</span
+          ><span class="record-copy"
+            ><strong>{{ item.asset?.displayName || item.inspectionType }}</strong
+            ><small
+              >{{ item.customer.name }} › {{ item.site.name }} · {{ item.inspectionType }} ·
+              {{ format(item.submittedAt) }}</small
+            ></span
+          ><span class="record-meta">
+            @if (item.proposedAssetChanges?.length) {
+              <span class="badge info">Asset approval</span>
+            }
+            <span class="badge" [class.success]="item.status === 'APPROVED'">{{
+              item.status
+            }}</span></span
+          >
+        </button>
+      } @empty {
+        <div class="empty-state card">
+          <span class="empty-icon">✓</span>
+          <h3>No inspections in this view</h3>
+          <p>Submitted engineer work will appear here for review.</p>
+        </div>
+      }
+    </div>
+    @if (selected(); as item) {
+      <aside class="card panel operations-aside">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Revision {{ item.currentRevisionNumber }}</p>
+            <h2>{{ item.asset?.displayName || item.inspectionType }}</h2>
+            <p>{{ item.customer.name }} › {{ item.site.name }}</p>
+          </div>
+          <button class="button ghost compact" type="button" (click)="selected.set(undefined)">
+            Close
+          </button>
+        </div>
+        <div class="status-strip">
+          <span class="badge">{{ item.moduleKey }}</span
+          ><span class="badge" [class.success]="item.status === 'APPROVED'">{{ item.status }}</span
+          ><span class="badge danger">{{ item.defects.length }} defects</span>
+        </div>
+        <dl>
+          @for (entry of resultEntries(item); track entry[0]) {
+            <div>
+              <dt>{{ entry[0] }}</dt>
+              <dd>{{ entry[1] }}</dd>
+            </div>
+          }
+        </dl>
+        @if (item.defects.length) {
+          <h3>Defects</h3>
+          @for (defect of item.defects; track defect.id) {
+            <div class="notice">
+              <strong>{{ defect.severity }} · {{ defect.title }}</strong
+              ><br />{{ defect.description }}
+            </div>
+          }
+        }
+        @for (change of item.proposedAssetChanges || []; track change.id) {
+          <section class="proposed-change-card" [class.reviewed]="change.status !== 'PENDING'">
+            <div class="section-heading">
+              <div>
+                <span class="badge info">{{
+                  isNewAssetChange(change.proposedData)
+                    ? 'New charger awaiting approval'
+                    : 'Engineer asset correction'
+                }}</span>
+                <h3>
+                  {{
+                    isNewAssetChange(change.proposedData)
+                      ? 'Verify new charger'
+                      : 'Verify asset details'
+                  }}
+                </h3>
+                <p>
+                  {{
+                    isNewAssetChange(change.proposedData)
+                      ? 'Confirm the charger identity, supplies and connectors before adding it to the permanent site register.'
+                      : 'Compare these proposed stable details with the inspection evidence before applying them.'
+                  }}
+                </p>
+              </div>
+              <span class="badge">{{ change.status }}</span>
+            </div>
+            @if (proposedDifferences(item, change.proposedData); as sections) {
+              @if (sections.length) {
+                <div class="change-sections">
+                  @for (section of sections; track section.title) {
+                    <section class="change-section">
+                      <h4>{{ section.title }}</h4>
+                      <div class="change-table" role="table" [attr.aria-label]="section.title">
+                        @for (row of section.rows; track row.label) {
+                          <div class="change-row" role="row">
+                            <strong role="cell">{{ row.label }}</strong>
+                            <span class="old-value" role="cell">{{ row.current }}</span>
+                            <span class="change-arrow" aria-hidden="true">→</span>
+                            <span class="new-value" role="cell">{{ row.proposed }}</span>
+                            <span class="badge info">{{
+                              row.state === 'new' ? 'New' : 'Changed'
+                            }}</span>
+                          </div>
+                        }
+                      </div>
+                    </section>
+                  }
+                </div>
+              } @else {
+                <p class="notice">No effective differences were found in this proposal.</p>
+              }
+            }
+            @if (change.status === 'PENDING') {
+              <div class="form-actions">
+                <button
+                  class="button primary"
+                  type="button"
+                  (click)="reviewAssetChange(change.id, true)"
+                >
+                  {{
+                    isNewAssetChange(change.proposedData) ? 'Approve new charger' : 'Apply to asset'
+                  }}</button
+                ><button
+                  class="button danger"
+                  type="button"
+                  (click)="reviewAssetChange(change.id, false)"
+                >
+                  {{ isNewAssetChange(change.proposedData) ? 'Reject charger' : 'Reject change' }}
+                </button>
+              </div>
+            }
+          </section>
+        }
+        <div class="stack">
+          @if (item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW') {
+            <button class="button primary touch-button" type="button" (click)="review(true)">
+              Approve inspection</button
+            ><button class="button danger" type="button" (click)="review(false)">
+              Return to engineer
+            </button>
+          }
+          @if (item.status === 'APPROVED') {
+            @if (item.revisions[0]?.documents?.[0]; as document) {
+              <button
+                class="button secondary touch-button"
+                type="button"
+                (click)="openCertificate(document.id)"
+              >
+                View certificate
+              </button>
+            }
+            <button class="button primary touch-button" type="button" (click)="issue()">
+              {{
+                item.revisions[0]?.documents?.length
+                  ? 'Issue updated certificate'
+                  : 'Issue certificate'
+              }}
+            </button>
+          }
+        </div>
+      </aside>
+    }
+  </section>
+  @if (error()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

@@ -1,0 +1,10 @@
+{
+  "name": "Ohm Audit",
+  "short_name": "Ohm Audit",
+  "theme_color": "#102a43",
+  "background_color": "#f7f9fb",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
+  "icons": []
+}

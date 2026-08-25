@@ -1,0 +1,10 @@
+APP_ENV=local
+APP_VERSION=0.7.0
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_JWT_AUDIENCE=authenticated
+ALLOWED_ORIGINS=http://localhost:4200
+DATABASE_URL=postgresql://postgres:password@host:6543/postgres?pgbouncer=true
+DIRECT_URL=postgresql://postgres:password@host:5432/postgres
+INTERNAL_SERVICE_TOKEN=replace-with-at-least-24-random-characters
+SUPERADMIN_BOOTSTRAP_TOKEN=qwertyuiop1234567890qwertyuiop
+PDF_WORKER_URL=http://127.0.0.1:8790

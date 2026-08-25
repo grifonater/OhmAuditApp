@@ -1,0 +1,173 @@
+<main class="page dashboard-page">
+  <header class="page-header dashboard-heading">
+    <div>
+      <p class="eyebrow">Operations overview</p>
+      <h1>{{ greeting }}, {{ account()?.user?.displayName || 'there' }}</h1>
+      <p>
+        @if (currentMembership; as membership) {
+          Here is what is happening across {{ membership.organisation.name }} today.
+        } @else {
+          Select or create an Organisation using the switcher at the bottom of the navigation.
+        }
+      </p>
+    </div>
+    @if (organisationId; as id) {
+      <a class="button primary" [routerLink]="['/app/org', id, 'portfolio']">+ Add customer</a>
+    }
+  </header>
+
+  @if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+  }
+
+  @if (organisationId; as id) {
+    <section class="metric-grid" aria-label="Portfolio summary">
+      <article class="metric-card">
+        <span class="metric-icon clients">◫</span>
+        <div>
+          <small>Clients</small><strong>{{ metrics().customers }}</strong
+          ><span>Active portfolio</span>
+        </div>
+      </article>
+      <article class="metric-card">
+        <span class="metric-icon sites">⌖</span>
+        <div>
+          <small>Sites</small><strong>{{ metrics().sites }}</strong
+          ><span>Across all clients</span>
+        </div>
+      </article>
+      <article class="metric-card">
+        <span class="metric-icon assets">◇</span>
+        <div>
+          <small>Assets</small><strong>{{ metrics().assets }}</strong
+          ><span>Managed equipment</span>
+        </div>
+      </article>
+      <article class="metric-card">
+        <span class="metric-icon attention">!</span>
+        <div>
+          <small>Needs attention</small><strong>{{ metrics().attention }}</strong
+          ><span>Nothing urgent</span>
+        </div>
+      </article>
+    </section>
+
+    <div class="dashboard-grid">
+      <section class="card attention-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Priority queue</p>
+            <h2>Needs attention</h2>
+          </div>
+          <span class="badge success"><span class="status-dot"></span>All clear</span>
+        </div>
+        <div class="card-body empty-state">
+          <span class="empty-icon">✓</span>
+          <h3>You are all caught up</h3>
+          <p>
+            Inspections, defects, overdue servicing and missing records will appear here as those
+            workflows come online.
+          </p>
+        </div>
+      </section>
+
+      <section class="card setup-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Getting started</p>
+            <h2>Organisation setup</h2>
+          </div>
+          <strong class="progress-value">{{ checklistProgress }}%</strong>
+        </div>
+        <div class="card-body">
+          <div class="progress-track"><span [style.width.%]="checklistProgress"></span></div>
+          <p>
+            Complete your profile so reports, invitations and future certificates are ready to use.
+          </p>
+          <ul class="compact-checklist">
+            <li [class.done]="onboarding()?.checklist?.['brandingConfigured']">
+              <span>{{ onboarding()?.checklist?.['brandingConfigured'] ? '✓' : '1' }}</span
+              >Organisation details
+            </li>
+            <li [class.done]="onboarding()?.checklist?.['accreditationAdded']">
+              <span>{{ onboarding()?.checklist?.['accreditationAdded'] ? '✓' : '2' }}</span
+              >Accreditations
+            </li>
+            <li [class.done]="onboarding()?.checklist?.['teamInvited']">
+              <span>{{ onboarding()?.checklist?.['teamInvited'] ? '✓' : '3' }}</span
+              >Invite your team
+            </li>
+          </ul>
+          <a class="button secondary full" [routerLink]="['/app/org', id, 'onboarding']"
+            >Continue setup</a
+          >
+        </div>
+      </section>
+
+      <section class="card activity-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Audit trail</p>
+            <h2>Recent activity</h2>
+          </div>
+          <button class="text-button" type="button">View all</button>
+        </div>
+        <div class="card-body activity-list">
+          <div class="activity-item">
+            <span class="activity-dot"></span>
+            <div>
+              <strong>Workspace ready</strong>
+              <p>Your secure Organisation workspace is active.</p>
+              <small>Recently</small>
+            </div>
+          </div>
+          @if (metrics().customers > 0) {
+            <div class="activity-item">
+              <span class="activity-dot teal"></span>
+              <div>
+                <strong>Portfolio established</strong>
+                <p>{{ metrics().customers }} client records are available.</p>
+                <small>Current state</small>
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+
+      <section class="card module-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Subscriptions</p>
+            <h2>Module access</h2>
+          </div>
+        </div>
+        <div class="card-body module-list">
+          @for (item of entitlements(); track item.module.key) {
+            <div>
+              <span class="module-symbol">{{ item.module.name.charAt(0) }}</span
+              ><span
+                ><strong>{{ item.module.name }}</strong
+                ><small>{{
+                  item.status === 'TRIAL'
+                    ? item.daysRemaining + ' trial days remaining'
+                    : item.status
+                }}</small></span
+              ><span class="badge" [class.trial]="item.status === 'TRIAL'">{{ item.status }}</span>
+            </div>
+          }
+        </div>
+      </section>
+    </div>
+  } @else if (!loading()) {
+    <section class="card no-organisation">
+      <div class="card-body empty-state">
+        <span class="empty-icon">+</span>
+        <h2>Create your first Organisation</h2>
+        <p>
+          The Organisation switcher at the bottom-left lets you create a secure tenant workspace and
+          begin your 30-day module trial.
+        </p>
+      </div>
+    </section>
+  }
+</main>

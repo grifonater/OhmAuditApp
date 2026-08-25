@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ohmaudit-worker-pdf",
+  "account_id": "488131b4b757ad9a4541451b792e83e5",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "browser": { "binding": "BROWSER", "remote": true },
+  "vars": { "APP_ENV": "local", "APP_VERSION": "0.6.0", "RENDER_TIMEOUT_MS": "30000" },
+  "observability": { "enabled": true },
+  "env": {
+    "local": { "name": "ohmaudit-worker-pdf-local" },
+    "development": { "name": "ohmaudit-worker-pdf-development" },
+    "staging": { "name": "ohmaudit-worker-pdf-staging" },
+    "production": {
+      "name": "ohmaudit-worker-pdf-production",
+      "browser": { "binding": "BROWSER", "remote": true },
+      "vars": {
+        "APP_ENV": "production",
+        "APP_VERSION": "0.6.0",
+        "RENDER_TIMEOUT_MS": "30000",
+      },
+    },
+  },
+}

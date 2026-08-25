@@ -1,0 +1,20 @@
+{
+  "name": "ohm-audit-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ohmaudit/worker-pdf --filter @ohmaudit/api --filter @ohmaudit/web dev",
+    "install:projects": "pnpm -r install",
+    "format": "pnpm -r --if-present format",
+    "format:check": "pnpm -r --if-present format:check",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "publish:cloudflare": "pwsh -NoProfile -File ./scripts/publish-cloudflare.ps1"
+  }
+}

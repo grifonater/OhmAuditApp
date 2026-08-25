@@ -1,0 +1,343 @@
+<div class="app-frame" [class.drawer-visible]="drawerOpen()">
+  <aside class="sidebar" aria-label="Primary navigation">
+    <div class="sidebar-brand">
+      <span class="brand-mark" aria-hidden="true">Ω</span>
+      <span class="brand-wordmark">OhmAudit</span>
+      <button
+        class="sidebar-close"
+        type="button"
+        (click)="toggleDrawer()"
+        aria-label="Close navigation"
+      >
+        ×
+      </button>
+    </div>
+
+    <nav class="primary-nav">
+      <p class="nav-label">Workspace</p>
+      <a routerLink="/app" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+        <span class="nav-icon">⌂</span><span>Dashboard</span>
+      </a>
+      @if (activeMembership(); as membership) {
+        <a
+          [routerLink]="organisationLink()"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: true }"
+        >
+          <span class="nav-icon">▦</span><span>Overview</span>
+        </a>
+        @if (hasCapability('customers.read') && hasCapability('sites.read')) {
+          <a [routerLink]="organisationLink('/portfolio')" routerLinkActive="active">
+            <span class="nav-icon">◫</span><span>Clients</span>
+          </a>
+        }
+        @if (hasCapability('sites.read')) {
+          <a [routerLink]="organisationLink('/visits')" routerLinkActive="active">
+            <span class="nav-icon">V</span><span>Visits</span>
+          </a>
+          <a [routerLink]="organisationLink('/calendar')" routerLinkActive="active">
+            <span class="nav-icon">□</span><span>Schedule</span>
+          </a>
+        }
+        @if (hasCapability('inspections.review')) {
+          <a [routerLink]="organisationLink('/inspections')" routerLinkActive="active">
+            <span class="nav-icon">✓</span><span>Inspections</span>
+          </a>
+        }
+        <span class="nav-item disabled"
+          ><span class="nav-icon">≡</span><span>Documents</span><small>Soon</small></span
+        >
+
+        <p class="nav-label nav-label-secondary">Organisation</p>
+        @if (hasCapability('organisation.manage')) {
+          <a [routerLink]="organisationLink('/onboarding')" routerLinkActive="active">
+            <span class="nav-icon">◇</span><span>Org setup</span>
+          </a>
+        }
+        <a [routerLink]="organisationLink('/security')" routerLinkActive="active">
+          <span class="nav-icon">⚙</span><span>Org settings</span>
+        </a>
+        @if (hasCapability('organisation.users.manage')) {
+          <a [routerLink]="organisationLink('/access')" routerLinkActive="active">
+            <span class="nav-icon">U</span><span>Users &amp; roles</span>
+          </a>
+        }
+      }
+      @if (account(); as currentAccount) {
+        @if (!currentAccount.supportSession) {
+          <p class="nav-label nav-label-secondary">Platform</p>
+          <a routerLink="/app/platform" routerLinkActive="active">
+            <span class="nav-icon">S</span
+            ><span>{{
+              currentAccount.user.platformRole === 'PLATFORM_ADMIN'
+                ? 'Superadmin'
+                : 'Platform setup'
+            }}</span>
+          </a>
+        }
+      }
+    </nav>
+
+    <div class="sidebar-footer">
+      @if (account(); as currentAccount) {
+        <button class="user-button" type="button" (click)="signOut()">
+          <span class="avatar">{{ userInitials() }}</span>
+          <span
+            ><strong>{{ currentAccount.user.displayName || 'Account' }}</strong
+            ><small>Sign out</small></span
+          >
+        </button>
+      }
+      <div class="organisation-switcher">
+        <button
+          class="organisation-current"
+          type="button"
+          (click)="toggleOrganisationMenu()"
+          [attr.aria-expanded]="organisationMenuOpen()"
+        >
+          <span class="organisation-avatar">
+            @if (organisationLogoUrl(activeMembership()?.organisation?.id); as logoUrl) {
+              <img [src]="logoUrl" alt="" />
+            } @else {
+              {{ activeMembership()?.organisation?.name?.charAt(0) || '+' }}
+            }
+          </span>
+          <span
+            ><small>Current Organisation</small
+            ><strong>{{
+              activeMembership()?.organisation?.name || 'Select Organisation'
+            }}</strong></span
+          >
+          <span class="chevron">›</span>
+        </button>
+        @if (organisationMenuOpen()) {
+          <div class="organisation-menu">
+            <div class="menu-heading">
+              <strong>Switch Organisation</strong
+              ><button type="button" (click)="toggleOrganisationMenu()" aria-label="Close">
+                ×
+              </button>
+            </div>
+            <div class="organisation-options">
+              @for (membership of account()?.memberships || []; track membership.id) {
+                <button
+                  type="button"
+                  (click)="switchOrganisation(membership.organisation.id)"
+                  [class.selected]="
+                    membership.organisation.id === activeMembership()?.organisation?.id
+                  "
+                >
+                  <span class="organisation-avatar small">
+                    @if (organisationLogoUrl(membership.organisation.id); as logoUrl) {
+                      <img [src]="logoUrl" alt="" />
+                    } @else {
+                      {{ membership.organisation.name.charAt(0) }}
+                    }
+                  </span>
+                  <span
+                    ><strong>{{ membership.organisation.name }}</strong
+                    ><small>{{ membership.role.name }}</small></span
+                  >
+                  @if (membership.organisation.id === activeMembership()?.organisation?.id) {
+                    <span class="selected-mark">✓</span>
+                  }
+                </button>
+              }
+            </div>
+            @if (!supportSession()) {
+              <form class="create-organisation" (submit)="createOrganisation($event)">
+                <label for="new-organisation-name">Create a new organisation</label>
+                <div class="create-organisation-row">
+                  <input
+                    id="new-organisation-name"
+                    [formControl]="organisationName"
+                    placeholder="Organisation name"
+                    autocomplete="organization"
+                  />
+                  <button
+                    class="button primary compact"
+                    type="submit"
+                    [disabled]="organisationName.invalid || creatingOrganisation()"
+                  >
+                    {{ creatingOrganisation() ? 'Creating…' : 'Create' }}
+                  </button>
+                </div>
+              </form>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </aside>
+
+  @if (drawerOpen()) {
+    <button
+      class="drawer-scrim"
+      type="button"
+      (click)="toggleDrawer()"
+      aria-label="Close navigation"
+    ></button>
+  }
+
+  <div class="app-main">
+    @if (account()?.supportSession; as support) {
+      <div class="support-mode-banner" role="status">
+        <span aria-hidden="true">◉</span>
+        <strong>Support mode</strong>
+        <span
+          >Viewing {{ activeMembership()?.organisation?.name }} as
+          {{ account()?.user?.displayName || account()?.user?.email }}</span
+        >
+        <small>Ends {{ supportExpiry(support.expiresAt) }}</small>
+        <button type="button" (click)="leaveSupportMode()">Exit support mode</button>
+      </div>
+    }
+    <header class="desktop-toolbar">
+      <div class="global-search" [class.open]="searchOpen()">
+        <span class="search-symbol" aria-hidden="true"></span>
+        <input
+          type="search"
+          [formControl]="globalSearch"
+          (focus)="showSearch()"
+          (keydown.escape)="clearSearch()"
+          placeholder="Search clients or sites…"
+          aria-label="Search clients or sites"
+          autocomplete="off"
+        />
+        @if (searching()) {
+          <span class="search-spinner" aria-label="Searching"></span>
+        } @else if (globalSearch.value) {
+          <button
+            type="button"
+            class="search-clear"
+            (click)="clearSearch()"
+            aria-label="Clear search"
+          >
+            ×
+          </button>
+        }
+        @if (searchOpen()) {
+          <section class="global-search-results" aria-label="Portfolio search results">
+            <div class="search-result-heading">
+              <span>Search results</span>
+              <small>{{ activeMembership()?.organisation?.name }}</small>
+            </div>
+            @if (searchError()) {
+              <p class="search-message error">{{ searchError() }}</p>
+            } @else {
+              @if (clientResults().length) {
+                <p class="result-label">Clients</p>
+                @for (client of clientResults(); track client.id) {
+                  <button type="button" class="global-result" (click)="openClient(client.id)">
+                    <span class="result-icon client">C</span>
+                    <span class="result-copy">
+                      <strong>{{ client.name }}</strong>
+                      <small>Client</small>
+                    </span>
+                    <span class="result-arrow">→</span>
+                  </button>
+                }
+              }
+              @if (siteResults().length) {
+                <p class="result-label">Sites</p>
+                @for (site of siteResults(); track site.id) {
+                  <button type="button" class="global-result" (click)="openSite(site)">
+                    <span class="result-icon site">S</span>
+                    <span class="result-copy">
+                      <strong>
+                        <span>{{ site.customer?.name || 'Client' }}</span>
+                        <span class="breadcrumb-chevron">›</span>
+                        <span>{{ site.name }}</span>
+                      </strong>
+                      <small>
+                        Site{{ site.postcode ? ' · ' + site.postcode : '' }}
+                        {{ site._count?.assets ? ' · ' + site._count.assets + ' assets' : '' }}
+                      </small>
+                    </span>
+                    <span class="result-arrow">→</span>
+                  </button>
+                }
+              }
+              @if (!searching() && !clientResults().length && !siteResults().length) {
+                <p class="search-message">No clients or sites match “{{ globalSearch.value }}”.</p>
+              }
+            }
+          </section>
+        }
+      </div>
+      <span class="toolbar-context">
+        @if (organisationLogoUrl(activeMembership()?.organisation?.id); as logoUrl) {
+          <img [src]="logoUrl" alt="" />
+        }
+        <span>{{ activeMembership()?.organisation?.name || 'Workspace' }}</span>
+      </span>
+    </header>
+    <header class="mobile-header">
+      <button
+        class="menu-button"
+        type="button"
+        (click)="toggleDrawer()"
+        aria-label="Open navigation"
+        [attr.aria-expanded]="drawerOpen()"
+      >
+        <span></span><span></span><span></span>
+      </button>
+      <a class="mobile-brand" routerLink="/app"
+        ><span class="brand-mark small-mark" aria-hidden="true">Ω</span>OhmAudit</a
+      >
+      <span class="avatar mobile-avatar">{{ userInitials() }}</span>
+    </header>
+    @if (error()) {
+      <div class="shell-error" role="alert">{{ error() }}</div>
+    }
+    <router-outlet />
+    <footer class="deployment-footer" [class.update-available]="cacheStatus() === 'update'">
+      @if (deployment(); as release) {
+        <div class="deployment-copy">
+          <span class="deployment-dot" aria-hidden="true"></span>
+          <span>
+            <small>Cloudflare web deployment</small>
+            <code>{{ release.id }}</code>
+          </span>
+          <button
+            type="button"
+            class="copy-deployment"
+            (click)="copyDeploymentId()"
+            [attr.aria-label]="deploymentCopied() ? 'Deployment ID copied' : 'Copy deployment ID'"
+          >
+            {{ deploymentCopied() ? 'Copied' : 'Copy ID' }}
+          </button>
+        </div>
+        <div class="deployment-state" role="status">
+          @switch (cacheStatus()) {
+            @case ('update') {
+              <strong>Cached page is out of date</strong>
+              <span>A newer application version is ready.</span>
+              <button type="button" (click)="reloadLatestVersion()">Reload latest</button>
+            }
+            @case ('latest') {
+              <strong>Latest application</strong>
+              <span>Published {{ deploymentTime(release.createdAt) }}</span>
+            }
+            @case ('checking') {
+              <strong>Checking page version…</strong>
+              <span>Published {{ deploymentTime(release.createdAt) }}</span>
+            }
+            @default {
+              <strong>Could not verify cache</strong>
+              <span>Deployment metadata is current, but the page cache could not be checked.</span>
+            }
+          }
+        </div>
+      } @else {
+        <div class="deployment-copy unavailable" role="status">
+          <span class="deployment-dot" aria-hidden="true"></span>
+          <span
+            ><small>Cloudflare web deployment</small
+            ><strong>{{ deploymentError() || 'Checking deployment…' }}</strong></span
+          >
+        </div>
+      }
+    </footer>
+  </div>
+</div>

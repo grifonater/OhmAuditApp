@@ -1,0 +1,49 @@
+# Dependencies and package-manager state
+**/node_modules/
+.pnpm-store/
+
+# Build, test and framework output
+**/dist/
+**/dist-*/
+**/coverage/
+**/.angular/
+**/.wrangler/
+**/out-tsc/
+**/.cache/
+output/
+tmp/
+
+# Local environment variables and Cloudflare development secrets
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
+**/.dev.vars
+**/.dev.vars.*
+!**/.dev.vars.example
+!**/.dev.vars.*.example
+
+# Local databases, credentials and certificates
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.tsbuildinfo
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vs/
+.vscode/

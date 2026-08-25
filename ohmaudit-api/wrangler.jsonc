@@ -1,0 +1,67 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ohmaudit-api",
+  "account_id": "488131b4b757ad9a4541451b792e83e5",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "APP_ENV": "local",
+    "APP_VERSION": "0.7.0",
+    "SUPABASE_URL": "https://replace-me.supabase.co",
+    "SUPABASE_JWT_AUDIENCE": "authenticated",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ggas-APHHgjEHk15bEXFdg_tcVMHm7S",
+    "WEB_APP_URL": "http://localhost:4200",
+    "ALLOWED_ORIGINS": "http://localhost:4200",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA_BUCKET",
+      "bucket_name": "ohmaudit-media",
+    },
+  ],
+  "env": {
+    "local": {
+      "name": "ohmaudit-api-local",
+    },
+    "development": {
+      "name": "ohmaudit-api-development",
+    },
+    "staging": {
+      "name": "ohmaudit-api-staging",
+    },
+    "production": {
+      "name": "ohmaudit-api-production",
+      "vars": {
+        "APP_ENV": "production",
+        "APP_VERSION": "0.7.0",
+        "SUPABASE_URL": "https://cgynntzcxptnvsqrttsz.supabase.co",
+        "SUPABASE_JWT_AUDIENCE": "authenticated",
+        "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ggas-APHHgjEHk15bEXFdg_tcVMHm7S",
+        "WEB_APP_URL": "https://ohmaudit-web.ohmaudit.workers.dev",
+        "ALLOWED_ORIGINS": "https://ohmaudit-web.ohmaudit.workers.dev,https://ohmaudit.com",
+      },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "1b9c83b57a96418f9dc6e40126a34372",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA_BUCKET",
+          "bucket_name": "ohmaudit-media-production",
+        },
+      ],
+      "services": [
+        {
+          "binding": "PDF_WORKER",
+          "service": "ohmaudit-worker-pdf-production",
+        },
+      ],
+    },
+  },
+}

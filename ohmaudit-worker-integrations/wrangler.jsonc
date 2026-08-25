@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ohmaudit-worker-integrations",
+  "account_id": "488131b4b757ad9a4541451b792e83e5",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": { "APP_ENV": "local", "APP_VERSION": "0.1.0", "WEBHOOK_MAX_BYTES": "262144" },
+  "observability": { "enabled": true },
+  "env": {
+    "local": { "name": "ohmaudit-worker-integrations-local" },
+    "development": { "name": "ohmaudit-worker-integrations-development" },
+    "staging": { "name": "ohmaudit-worker-integrations-staging" },
+    "production": { "name": "ohmaudit-worker-integrations-production" },
+  },
+}

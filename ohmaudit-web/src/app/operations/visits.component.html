@@ -1,0 +1,398 @@
+<main class="page operations-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Field operations</p>
+      <h1>Visits</h1>
+      <p>Find a site quickly, assign work in bulk, and prepare an offline-ready engineer pack.</p>
+    </div>
+    <button class="button primary" type="button" (click)="showCreate.set(!showCreate())">
+      + Create visit
+    </button>
+  </header>
+  @if (guestLink()) {
+    <div class="notice" role="status">Guest link copied: {{ guestLink() }}</div>
+  }
+
+  @if (showCreate()) {
+    <section class="card panel visit-planner">
+      <div class="section-heading">
+        <div>
+          <p class="step-label">Step 1 of 3</p>
+          <h2>Choose the site</h2>
+          <p>Search by client, site, reference, or postcode.</p>
+        </div>
+        <button class="button ghost compact" type="button" (click)="showCreate.set(false)">
+          Close
+        </button>
+      </div>
+      @if (selectedSite(); as site) {
+        <div class="selected-site-card">
+          <div>
+            <span class="badge success">Selected site</span
+            ><strong>{{ site.customer?.name }} › {{ site.name }}</strong
+            ><small
+              >{{ site.reference || 'No reference' }} · {{ site.postcode || 'No postcode' }}</small
+            >
+          </div>
+          <button class="button ghost compact" type="button" (click)="clearSite()">Change</button>
+        </div>
+      } @else {
+        <label class="search-control large-search"
+          ><span aria-hidden="true">⌕</span
+          ><input
+            type="search"
+            placeholder="Search client, site, postcode or reference…"
+            [value]="siteQuery()"
+            (input)="searchSites($any($event.target).value)"
+        /></label>
+        @if (siteSearching()) {
+          <div class="searching-indicator" role="status"><span></span> Searching sites…</div>
+        }
+        <div class="picker-results" role="listbox" aria-label="Site search results">
+          @for (site of filteredSites(); track site.id) {
+            <button class="picker-result" type="button" (click)="selectSite(site)">
+              <span
+                ><strong>{{ site.name }}</strong
+                ><small
+                  >{{ site.customer?.name }} › {{ site.postcode || 'No postcode'
+                  }}{{ site.reference ? ' · ' + site.reference : '' }}</small
+                ></span
+              ><span aria-hidden="true">→</span>
+            </button>
+          } @empty {
+            <div class="inline-empty">No sites match that search.</div>
+          }
+        </div>
+      }
+
+      @if (selectedSite()) {
+        <div class="planner-divider"></div>
+        <div class="section-heading">
+          <div>
+            <p class="step-label">Step 2 of 3</p>
+            <h2>Choose the inspection</h2>
+            <p>Select the work type, then choose any assets required for that inspection.</p>
+          </div>
+          <span class="selection-count">{{ selectedAssetIds().size }} selected</span>
+        </div>
+        <label class="field module-choice"
+          >Inspection module<select [formControl]="form.controls.moduleKey">
+            @if (evEnabled()) {
+              <option value="ev-charging">EV Charging</option>
+            }
+            @if (thermalEnabled()) {
+              <option value="thermal-imaging">Thermal Imaging</option>
+            }
+            <option value="core">General inspection</option>
+          </select></label
+        >
+        @if (form.controls.moduleKey.value === 'thermal-imaging') {
+          <div class="discovery-option thermal-callout">
+            <span aria-hidden="true">◉</span>
+            <span
+              ><strong>One site-wide thermal imaging report</strong
+              ><small
+                >The engineer will upload infrared and standard images, then group them into fuse
+                boards, enclosures, and other target items.</small
+              ></span
+            >
+          </div>
+        } @else {
+          <div class="asset-toolbar">
+            <label class="search-control"
+              ><span>⌕</span
+              ><input
+                type="search"
+                placeholder="Search name, reference, make, model or serial…"
+                [value]="assetQuery()"
+                (input)="assetQuery.set($any($event.target).value)"
+            /></label>
+            <label class="field compact-field"
+              >Asset type<select
+                [value]="assetType()"
+                (change)="assetType.set($any($event.target).value)"
+              >
+                <option value="ALL">All asset types</option>
+                @for (type of assetTypes(); track type) {
+                  <option [value]="type">{{ type }}</option>
+                }
+              </select></label
+            >
+            <button class="button secondary compact" type="button" (click)="selectFiltered()">
+              Select all {{ filteredAssets().length }}
+            </button>
+            @if (selectedAssetIds().size) {
+              <button class="button ghost compact" type="button" (click)="clearAssets()">
+                Clear
+              </button>
+            }
+          </div>
+          <div class="asset-picker-list">
+            @for (asset of filteredAssets(); track asset.id) {
+              <label class="asset-pick-row" [class.selected]="selectedAssetIds().has(asset.id)"
+                ><input
+                  type="checkbox"
+                  [checked]="selectedAssetIds().has(asset.id)"
+                  (change)="toggleAsset(asset.id, $any($event.target).checked)"
+                /><span class="asset-pick-icon">{{
+                  asset.assetType.toLowerCase().includes('ev') ? 'EV' : 'A'
+                }}</span
+                ><span class="record-copy"
+                  ><strong>{{ asset.displayName }}</strong
+                  ><small
+                    >{{ asset.assetReference }} · {{ asset.manufacturer || 'Make not set' }}
+                    {{ asset.model || '' }} · {{ asset.serialNumber || 'No serial' }}</small
+                  ></span
+                ><span class="badge">{{ asset.assetType }}</span></label
+              >
+            } @empty {
+              <div class="inline-empty">No assets match these filters.</div>
+            }
+          </div>
+          <label class="discovery-option">
+            <input
+              type="checkbox"
+              [checked]="allowDiscovery()"
+              (change)="allowDiscovery.set($any($event.target).checked)"
+            />
+            <span
+              ><strong>Allow the engineer to add chargers found on site</strong
+              ><small
+                >Use this for incomplete or empty asset registers. A new charger remains provisional
+                until the office approves it.</small
+              ></span
+            >
+          </label>
+        }
+
+        <div class="planner-divider"></div>
+        <div class="section-heading">
+          <div>
+            <p class="step-label">Step 3 of 3</p>
+            <h2>Visit details</h2>
+            <p>Assign the engineer and confirm when the work should happen.</p>
+          </div>
+        </div>
+        <form [formGroup]="form" (ngSubmit)="create()" class="form-grid">
+          <label class="field">Visit title<input formControlName="title" /></label>
+          <label class="field"
+            >Scheduled start<input type="datetime-local" formControlName="scheduledStart"
+          /></label>
+          <label class="field"
+            >Permanent engineer<select formControlName="assignedUserId">
+              <option value="">Unassigned / guest</option>
+              @for (member of members(); track member.id) {
+                <option [value]="member.user.id">
+                  {{ member.user.displayName || member.user.email }}
+                </option>
+              }
+            </select></label
+          >
+          <label class="field"
+            >Guest engineer name<input formControlName="guestEngineerName"
+          /></label>
+          <label class="field"
+            >Guest email<input type="email" formControlName="guestEmail"
+          /></label>
+          <label class="field full"
+            >Engineer notes<textarea formControlName="engineerNotes"></textarea>
+          </label>
+          <div class="form-actions full sticky-planner-action">
+            <span
+              ><strong>{{
+                form.controls.moduleKey.value === 'thermal-imaging' ? 1 : selectedAssetIds().size
+              }}</strong>
+              inspection task(s) will be created</span
+            ><button
+              class="button primary"
+              type="submit"
+              [disabled]="
+                busy() ||
+                form.invalid ||
+                (form.controls.moduleKey.value !== 'thermal-imaging' &&
+                  selectedAssetIds().size === 0 &&
+                  !allowDiscovery())
+              "
+            >
+              Create visit →
+            </button>
+          </div>
+        </form>
+      }
+    </section>
+  }
+
+  <section class="visits-index">
+    <div class="section-heading visits-heading">
+      <div>
+        <h2>Visits register</h2>
+        <p>{{ visitRange() }} · newest scheduled visits shown first</p>
+      </div>
+    </div>
+
+    <div class="visit-filters card">
+      <label class="search-control visit-search">
+        <span aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          placeholder="Search visit, client, site, postcode or engineer…"
+          [value]="visitQuery()"
+          (input)="searchVisits($any($event.target).value)"
+        />
+      </label>
+      <label class="filter-field"
+        ><span>Status</span
+        ><select [value]="visitStatus()" (change)="setVisitStatus($any($event.target).value)">
+          <option value="ALL">All statuses</option>
+          <option value="SCHEDULED">Scheduled</option>
+          <option value="IN_PROGRESS">In progress</option>
+          <option value="SUBMITTED">Awaiting review</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="CANCELLED">Cancelled</option>
+          <option value="DRAFT">Draft</option>
+        </select></label
+      >
+      <label class="filter-field"
+        ><span>Date type</span
+        ><select [value]="visitDateField()" (change)="setVisitDateField($any($event.target).value)">
+          <option value="scheduled">Scheduled date</option>
+          <option value="completed">Completed date</option>
+        </select></label
+      >
+      <label class="filter-field"
+        ><span>From</span
+        ><input
+          type="date"
+          [value]="visitFrom()"
+          (change)="setVisitDate('from', $any($event.target).value)"
+      /></label>
+      <label class="filter-field"
+        ><span>To</span
+        ><input
+          type="date"
+          [value]="visitTo()"
+          (change)="setVisitDate('to', $any($event.target).value)"
+      /></label>
+      <label class="filter-field"
+        ><span>Order by</span
+        ><select [value]="visitSort()" (change)="setVisitSort($any($event.target).value)">
+          <option value="scheduled-desc">Scheduled · newest</option>
+          <option value="scheduled-asc">Scheduled · oldest</option>
+          <option value="completed-desc">Completed · newest</option>
+          <option value="title-asc">Visit title · A–Z</option>
+          <option value="status-asc">Status · A–Z</option>
+        </select></label
+      >
+      <label class="filter-field compact-page-size"
+        ><span>Per page</span
+        ><select [value]="visitPageSize()" (change)="setVisitPageSize($any($event.target).value)">
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select></label
+      >
+      @if (visitFiltersActive()) {
+        <button
+          class="button ghost compact clear-filters"
+          type="button"
+          (click)="clearVisitFilters()"
+        >
+          Clear filters
+        </button>
+      }
+    </div>
+
+    @if (listBusy()) {
+      <div class="visit-list-loading" role="status"><span></span> Updating visits…</div>
+    }
+    <div class="visit-register" [class.loading]="listBusy()">
+      @for (visit of visits(); track visit.id) {
+        <article class="visit-row card">
+          <time class="visit-date" [attr.datetime]="visit.scheduledStart">
+            <strong>{{ formatDate(visit.scheduledStart).split(',')[0] }}</strong>
+            <span>{{ formatDate(visit.scheduledStart).split(',').slice(1).join(',') }}</span>
+          </time>
+          <a class="visit-copy" [routerLink]="['/app/org', organisationId, 'visits', visit.id]">
+            <span class="visit-path">{{ visit.customer.name }} › {{ visit.site.name }}</span>
+            <strong>{{ visit.title }}</strong>
+            <small>
+              {{ visit.site.postcode || 'No postcode' }} ·
+              {{
+                visit.guestEngineerName ||
+                  (visit.assignedUserId ? 'Assigned engineer' : 'Unassigned')
+              }}
+            </small>
+          </a>
+          <div class="visit-progress">
+            <span
+              ><strong>{{ completedTasks(visit) }}/{{ visit.tasks.length }}</strong
+              ><small>tasks complete</small></span
+            >
+            @if (visit.completedAt) {
+              <span
+                ><strong>{{ formatDate(visit.completedAt) }}</strong
+                ><small>completed</small></span
+              >
+            } @else if (visit.submittedAt) {
+              <span
+                ><strong>{{ formatDate(visit.submittedAt) }}</strong
+                ><small>submitted</small></span
+              >
+            }
+          </div>
+          <div class="visit-actions">
+            <span
+              class="badge visit-status"
+              [class.success]="visit.status === 'COMPLETED'"
+              [class.warning]="visit.status === 'SUBMITTED'"
+              >{{ visit.status === 'SUBMITTED' ? 'AWAITING REVIEW' : visit.status }}</span
+            >
+            <button
+              class="button secondary compact"
+              type="button"
+              (click)="createGuestLink(visit.id)"
+            >
+              Guest link
+            </button>
+          </div>
+        </article>
+      } @empty {
+        <div class="empty-state card">
+          <span class="empty-icon">⌕</span>
+          <h3>No visits match</h3>
+          <p>Adjust the search, status, or date filters to widen the results.</p>
+          @if (visitFiltersActive()) {
+            <button class="button secondary" type="button" (click)="clearVisitFilters()">
+              Clear all filters
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    @if (visitPagination().pageCount > 1) {
+      <nav class="visit-pagination" aria-label="Visit result pages">
+        <button
+          class="button secondary compact"
+          type="button"
+          [disabled]="visitPagination().page === 1 || listBusy()"
+          (click)="goToVisitPage(visitPagination().page - 1)"
+        >
+          ← Previous
+        </button>
+        <span>Page {{ visitPagination().page }} of {{ visitPagination().pageCount }}</span>
+        <button
+          class="button secondary compact"
+          type="button"
+          [disabled]="visitPagination().page === visitPagination().pageCount || listBusy()"
+          (click)="goToVisitPage(visitPagination().page + 1)"
+        >
+          Next →
+        </button>
+      </nav>
+    }
+  </section>
+  @if (error()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>
