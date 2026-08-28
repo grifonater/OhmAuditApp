@@ -3,18 +3,31 @@
   "name": "ohmaudit-worker-ai",
   "account_id": "488131b4b757ad9a4541451b792e83e5",
   "main": "src/index.ts",
+  "workers_dev": false,
   "compatibility_date": "2026-08-13",
   "compatibility_flags": ["nodejs_compat"],
+  "ai": { "binding": "AI", "remote": true },
   "vars": {
     "APP_ENV": "local",
     "APP_VERSION": "0.1.0",
     "AI_MODEL_ID": "configure-per-environment",
   },
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+  },
   "env": {
     "local": { "name": "ohmaudit-worker-ai-local" },
     "development": { "name": "ohmaudit-worker-ai-development" },
     "staging": { "name": "ohmaudit-worker-ai-staging" },
-    "production": { "name": "ohmaudit-worker-ai-production" },
+    "production": {
+      "name": "ohmaudit-worker-ai-production",
+      "ai": { "binding": "AI" },
+      "vars": {
+        "APP_ENV": "production",
+        "APP_VERSION": "0.1.0",
+        "AI_MODEL_ID": "@cf/moondream/moondream3.1-9B-A2B",
+      },
+    },
   },
 }

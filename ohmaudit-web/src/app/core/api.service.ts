@@ -177,6 +177,7 @@ export interface SiteSummary {
   city?: string;
   county?: string;
   countryCode?: string;
+  mainPhotoMediaId?: string | null;
   parkingInformation?: string;
   accessInstructions?: string;
   openingTimes?: string;
@@ -224,6 +225,7 @@ export interface AssetMedia {
   originalFilename?: string;
   tags?: string[];
   sortOrder?: number;
+  isPrimary?: boolean;
   mimeType: string;
   createdAt?: string;
 }
@@ -399,6 +401,14 @@ export interface EvChargePoint {
     supplyMappings: Array<{ supplyId: string; supply?: { label: string } }>;
   }>;
 }
+export type ChargerDataPlateField =
+  'manufacturer' | 'model' | 'serialNumber' | 'maximumPowerKw' | 'connectorTypes';
+export interface ChargerDataPlateCandidate {
+  field: ChargerDataPlateField;
+  value: string;
+  confidence?: number;
+  requiresHumanConfirmation: true;
+}
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -419,7 +429,11 @@ export class ApiService {
       headers.set('x-ohmaudit-support-session', supportToken);
     if (typeof init.body === 'string' && !headers.has('content-type'))
       headers.set('content-type', 'application/json');
-    const response = await fetch(`${this.config.config.apiBaseUrl}${path}`, { ...init, headers });
+    const response = await fetch(`${this.config.config.apiBaseUrl}${path}`, {
+      ...init,
+      headers,
+      cache: 'no-store',
+    });
     const body = await this.readJson<T>(response);
     if (!response.ok) throw new Error(body?.message ?? 'The request failed.');
     if (body === undefined && response.status !== 204)
@@ -645,6 +659,14 @@ export class ApiService {
       { method: 'PATCH', body: JSON.stringify({ mediaId }) },
     );
   }
+  archiveCustomer(organisationId: string, customerId: string) {
+    return this.request(
+      `/customers/${customerId}?organisationId=${encodeURIComponent(organisationId)}`,
+      {
+        method: 'DELETE',
+      },
+    );
+  }
   createSite(
     organisationId: string,
     input: {
@@ -767,6 +789,12 @@ export class ApiService {
       method: 'DELETE',
     });
   }
+  setSitePhotoPrimary(organisationId: string, siteId: string, mediaId: string | null) {
+    return this.request(
+      `/sites/${siteId}/photos/primary?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PATCH', body: JSON.stringify({ mediaId }) },
+    );
+  }
   async downloadMedia(organisationId: string, mediaId: string): Promise<Blob> {
     const accessToken = this.auth.session()?.access_token;
     if (accessToken === undefined) throw new Error('Sign in to continue.');
@@ -775,7 +803,7 @@ export class ApiService {
       { headers: this.authenticatedHeaders(accessToken) },
     );
     if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
+      const body: { message?: string } = await response.json();
       throw new Error(body.message ?? 'The media could not be opened.');
     }
     return response.blob();
@@ -789,7 +817,7 @@ export class ApiService {
     );
     if (response.status === 404) return null;
     if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
+      const body: { message?: string } = await response.json();
       throw new Error(body.message ?? 'The charger image could not be opened.');
     }
     return response.blob();
@@ -886,7 +914,7 @@ export class ApiService {
       availableImageCount: number;
     }>(`/platform/ev-stock-images?q=${encodeURIComponent(query)}&limit=${limit}`);
   }
-  registerEvStockImage(organisationId: string, manufacturer: string, models: string[], file: File) {
+  registerEvStockImage(organisationId: string, manufacturer: string, models: string[], file: Blob) {
     return this.request<{ media: { id: string } }>('/platform/ev-stock-images', {
       method: 'POST',
       body: JSON.stringify({
@@ -928,7 +956,7 @@ export class ApiService {
       { headers: this.authenticatedHeaders(accessToken) },
     );
     if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
+      const body: { message?: string } = await response.json();
       throw new Error(body.message ?? 'The PDF could not be generated.');
     }
     return response.blob();
@@ -955,7 +983,7 @@ export class ApiService {
       { headers: this.authenticatedHeaders(accessToken) },
     );
     if (!response.ok) {
-      const body = (await response.json()) as { message?: string };
+      const body: { message?: string } = await response.json();
       throw new Error(body.message ?? 'The visit report could not be generated.');
     }
     return response.blob();
@@ -1204,6 +1232,24 @@ export class ApiService {
     return this.publicRequest<{ inspection: InspectionSummary }>(
       `/guest/visits/${encodeURIComponent(token)}/tasks/${taskId}/start`,
       { method: 'POST' },
+    );
+  }
+  analyseChargerDataPlate(organisationId: string, inspectionId: string, image: Blob) {
+    return this.request<{
+      candidates: ChargerDataPlateCandidate[];
+      missingFields: ChargerDataPlateField[];
+    }>(
+      `/inspections/${inspectionId}/data-plate-analysis?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', headers: { 'content-type': image.type }, body: image },
+    );
+  }
+  analyseGuestChargerDataPlate(token: string, inspectionId: string, image: Blob) {
+    return this.publicRequest<{
+      candidates: ChargerDataPlateCandidate[];
+      missingFields: ChargerDataPlateField[];
+    }>(
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/data-plate-analysis`,
+      { method: 'POST', headers: { 'content-type': image.type }, body: image },
     );
   }
   listInspections(organisationId: string, status = '') {

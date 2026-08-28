@@ -96,8 +96,12 @@ function Assert-ApiBindings([object]$Production) {
   if ($null -eq $Production.r2_buckets -or @($Production.r2_buckets).Count -eq 0) {
     throw 'ohmaudit-api env.production requires the MEDIA_BUCKET R2 binding.'
   }
-  if ($null -eq $Production.services -or @($Production.services).Count -eq 0) {
+  $serviceBindings = @($Production.services | ForEach-Object { $_.binding })
+  if (-not $serviceBindings.Contains('PDF_WORKER')) {
     throw 'ohmaudit-api env.production requires the PDF_WORKER service binding.'
+  }
+  if (-not $serviceBindings.Contains('AI_WORKER')) {
+    throw 'ohmaudit-api env.production requires the AI_WORKER service binding.'
   }
   if ([string]::IsNullOrWhiteSpace([string]$Production.vars.SUPABASE_URL)) {
     throw 'ohmaudit-api env.production requires SUPABASE_URL.'
@@ -169,6 +173,7 @@ Invoke-Pnpm -Arguments @('--filter', '@ohmaudit/api', 'exec', 'wrangler', 'whoam
 
 Write-Step 'Validating production configuration'
 $pdfProduction = Assert-ProductionWorkerConfig 'ohmaudit-worker-pdf'
+$null = Assert-ProductionWorkerConfig 'ohmaudit-worker-ai'
 $apiProduction = Assert-ProductionWorkerConfig 'ohmaudit-api'
 Assert-ApiBindings $apiProduction
 Assert-WebConfig $apiProduction
@@ -176,7 +181,6 @@ Assert-WebConfig $apiProduction
 if ($Scope -eq 'All') {
   foreach ($project in @(
     'ohmaudit-worker-notifications',
-    'ohmaudit-worker-ai',
     'ohmaudit-worker-integrations',
     'ohmaudit-worker-scheduler'
   )) {
@@ -226,9 +230,9 @@ if ($ApplyMigrations) {
 
 # Deploy dependencies before their consumers.
 Deploy-Worker 'ohmaudit-worker-pdf'
+Deploy-Worker 'ohmaudit-worker-ai'
 if ($Scope -eq 'All') {
   Deploy-Worker 'ohmaudit-worker-notifications'
-  Deploy-Worker 'ohmaudit-worker-ai'
   Deploy-Worker 'ohmaudit-worker-integrations'
 }
 Deploy-Worker 'ohmaudit-api'

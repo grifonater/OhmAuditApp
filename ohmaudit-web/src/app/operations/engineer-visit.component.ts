@@ -5,11 +5,14 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { debounceTime, merge } from 'rxjs';
 import {
   ApiService,
+  type ChargerDataPlateCandidate,
+  type ChargerDataPlateField,
   type EvChargePoint,
   type InspectionSummary,
   type VisitSummary,
   type VisitTask,
 } from '../core/api.service';
+import { compressImage, compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
 
 type ResultChoice = 'PASS' | 'FAIL' | 'NOT_TESTED';
@@ -68,6 +71,12 @@ export class EngineerVisitComponent {
   protected readonly recentlySubmittedTaskId = signal('');
   protected readonly addingCharger = signal(false);
   protected readonly recordingFault = signal(false);
+  protected readonly dataPlateBusy = signal(false);
+  protected readonly dataPlateError = signal('');
+  protected readonly dataPlatePreviewUrl = signal('');
+  protected readonly dataPlateCandidates = signal<ChargerDataPlateCandidate[]>([]);
+  protected readonly missingDataPlateFields = signal<ChargerDataPlateField[]>([]);
+  protected readonly appliedDataPlateFields = signal<ChargerDataPlateField[]>([]);
 
   protected readonly form = new FormGroup({
     outcome: new FormControl('PASS', { nonNullable: true, validators: Validators.required }),
@@ -123,7 +132,10 @@ export class EngineerVisitComponent {
     merge(this.evAssetForm.controls.dcRcdType.valueChanges, this.connectorTests.valueChanges)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyAutomaticRcdOutcome());
-    this.destroyRef.onDestroy(() => this.revokeAssetImage());
+    this.destroyRef.onDestroy(() => {
+      this.revokeAssetImage();
+      this.revokeDataPlatePreview();
+    });
     void this.load();
   }
 
@@ -284,6 +296,81 @@ export class EngineerVisitComponent {
     group.controls.supplyIds.setValue(supplyId === '' ? [] : [supplyId]);
   }
 
+  protected async analyseDataPlate(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    const inspection = this.inspection();
+    if (!file || !inspection) return;
+    if (!this.offline.online()) {
+      this.dataPlateError.set('Connect to the internet to analyse a data plate.');
+      return;
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      this.dataPlateError.set('Use a JPEG, PNG, or WebP photo.');
+      return;
+    }
+
+    this.dataPlateBusy.set(true);
+    this.dataPlateError.set('');
+    this.dataPlateCandidates.set([]);
+    this.missingDataPlateFields.set([]);
+    this.appliedDataPlateFields.set([]);
+    try {
+      const image = await compressImage(file, { maxDimension: 3072, targetBytes: 1_000_000 });
+      if (image.size > 2_000_000) throw new Error('The photo is too large. Try moving closer.');
+      this.revokeDataPlatePreview();
+      this.dataPlatePreviewUrl.set(URL.createObjectURL(image));
+      const result = this.guestToken
+        ? await this.api.analyseGuestChargerDataPlate(this.guestToken, inspection.id, image)
+        : await this.api.analyseChargerDataPlate(this.organisationId, inspection.id, image);
+      this.dataPlateCandidates.set(result.candidates);
+      this.missingDataPlateFields.set(result.missingFields);
+      if (result.candidates.length === 0)
+        this.dataPlateError.set(
+          'No supported details were readable. Try a closer photo with less glare.',
+        );
+    } catch (error: unknown) {
+      this.dataPlateError.set(
+        error instanceof Error ? error.message : 'The data plate could not be analysed.',
+      );
+    } finally {
+      this.dataPlateBusy.set(false);
+    }
+  }
+
+  protected applyDataPlateCandidate(candidate: ChargerDataPlateCandidate): void {
+    if (candidate.field === 'maximumPowerKw') {
+      const power = Number(candidate.value);
+      if (Number.isFinite(power) && power > 0)
+        this.evAssetForm.controls.maximumPowerKw.setValue(power);
+    } else if (candidate.field === 'connectorTypes') {
+      const types = candidate.value
+        .split(',')
+        .map((value) => this.normaliseConnectorType(value))
+        .filter((value): value is string => value !== undefined);
+      types.forEach((type, index) => {
+        if (index >= this.connectorTests.length) this.addConnector();
+        this.connectorTests.at(index).controls.connectorType.setValue(type);
+      });
+    } else {
+      this.evAssetForm.controls[candidate.field].setValue(candidate.value);
+    }
+    this.appliedDataPlateFields.update((fields) =>
+      fields.includes(candidate.field) ? fields : [...fields, candidate.field],
+    );
+  }
+
+  protected dataPlateFieldLabel(field: ChargerDataPlateField): string {
+    return {
+      manufacturer: 'Make',
+      model: 'Model',
+      serialNumber: 'Serial number',
+      maximumPowerKw: 'Power output',
+      connectorTypes: 'Connectors',
+    }[field];
+  }
+
   protected async addCharger(): Promise<void> {
     const visit = this.visit();
     if (!visit || this.newChargerForm.invalid) return;
@@ -369,13 +456,18 @@ export class EngineerVisitComponent {
       this.error.set('Use a JPEG, PNG, or WebP photo.');
       return;
     }
+    const compressed = await compressPhoto(file);
+    if (compressed.size > 2_000_000) {
+      this.error.set('The photo is too large after compression. Try a smaller image.');
+      return;
+    }
     await this.offline.storePhoto(
       visit.organisationId,
       visit.id,
       inspection.id,
       assetId,
       this.guestToken || undefined,
-      file,
+      compressed,
     );
     this.photoCount.set(await this.offline.photoCount(inspection.id));
   }
@@ -512,6 +604,10 @@ export class EngineerVisitComponent {
     this.inspection.set(undefined);
     this.submitted.set(false);
     this.revokeAssetImage();
+    this.revokeDataPlatePreview();
+    this.dataPlateCandidates.set([]);
+    this.missingDataPlateFields.set([]);
+    this.dataPlateError.set('');
   }
 
   private prepareEvForms(task: VisitTask): void {
@@ -583,6 +679,22 @@ export class EngineerVisitComponent {
       dcRamp0Ma: new FormControl<number | null>(null),
       dcRamp180Ma: new FormControl<number | null>(null),
     });
+  }
+
+  private normaliseConnectorType(value: string): string | undefined {
+    const compact = value.trim().toLowerCase().replace(/[\s-]/gu, '');
+    if (compact === 'type2') return 'Type 2';
+    if (compact === 'ccs' || compact === 'ccs2') return 'CCS';
+    if (compact === 'chademo') return 'CHAdeMO';
+    if (compact === 'type1') return 'Type 1';
+    if (compact === 'socket') return 'Socket';
+    return undefined;
+  }
+
+  private revokeDataPlatePreview(): void {
+    const url = this.dataPlatePreviewUrl();
+    if (url) URL.revokeObjectURL(url);
+    this.dataPlatePreviewUrl.set('');
   }
 
   private buildEvSubmission(task: VisitTask): Record<string, unknown> {

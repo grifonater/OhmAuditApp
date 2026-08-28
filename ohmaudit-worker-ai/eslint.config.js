@@ -2,7 +2,9 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', '.wrangler', 'eslint.config.js'] },
+  {
+    ignores: ['dist', 'coverage', '.wrangler', 'eslint.config.js', 'worker-configuration.d.ts'],
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {

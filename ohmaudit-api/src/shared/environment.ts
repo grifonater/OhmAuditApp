@@ -15,6 +15,7 @@ const environmentSchema = z.object({
   SUPERADMIN_BOOTSTRAP_TOKEN: z.string().min(24).optional(),
   PDF_WORKER: z.custom<Fetcher>().optional(),
   PDF_WORKER_URL: z.url().optional(),
+  AI_WORKER: z.custom<Fetcher>().optional(),
 });
 
 export type ApiBindings = z.infer<typeof environmentSchema>;

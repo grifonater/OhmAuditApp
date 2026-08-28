@@ -8,9 +8,6 @@ importers:
 
   .:
     devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^5.20260813.1
-        version: 5.20260813.1
       '@eslint/js':
         specifier: ^9.0.0
         version: 9.39.5
@@ -1520,7 +1517,8 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260811.1':
     optional: true
 
-  '@cloudflare/workers-types@5.20260813.1': {}
+  '@cloudflare/workers-types@5.20260813.1':
+    optional: true
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:

@@ -56,7 +56,7 @@ pnpm publish:cloudflare -- -RequireBootstrapSecret
 
 ## Publish only the currently required core application
 
-This publishes only PDF, API, and web:
+This publishes only PDF, AI, API, and web:
 
 ```powershell
 pnpm publish:cloudflare -- -Scope Core

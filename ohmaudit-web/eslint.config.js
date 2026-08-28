@@ -3,7 +3,16 @@ import angular from 'angular-eslint';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', '.angular', 'eslint.config.js'] },
+  {
+    ignores: [
+      'dist',
+      'dist-*',
+      'coverage',
+      '.angular',
+      'eslint.config.js',
+      'worker-configuration.d.ts',
+    ],
+  },
   eslint.configs.recommended,
   {
     files: ['**/*.ts'],

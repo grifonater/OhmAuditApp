@@ -1,6 +1,13 @@
 # Ohm Audit worker-ai
 
-Provider-neutral asynchronous AI boundary. Extracted plate data is always returned as review candidates and never silently mutates authoritative records.
+Provider-neutral AI boundary. Extracted plate data is always returned as review candidates and never silently mutates authoritative records.
+
+EV charger data plates are analysed on demand with Cloudflare Workers AI using
+`@cf/moondream/moondream3.1-9B-A2B`. Images are processed transiently and are not stored by this
+Worker.
+
+The Worker has no public `workers.dev` route. `ohmaudit-api` reaches it through the `AI_WORKER`
+service binding.
 
 ## Development
 
@@ -17,4 +24,5 @@ pnpm build
 pnpm exec wrangler deploy --env development
 ```
 
-Cross-worker messages must use versioned schemas from `@ohmaudit/contracts`. Configure provider credentials as Cloudflare secrets, never plaintext variables.
+Workers AI requires the `AI` binding configured in `wrangler.jsonc`; it does not require an API-key
+secret. Cross-worker messages must use validated, versioned payloads.

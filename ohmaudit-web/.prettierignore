@@ -1,4 +1,6 @@
 dist
+dist-*
 coverage
 .angular
 pnpm-lock.yaml
+worker-configuration.d.ts

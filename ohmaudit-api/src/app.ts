@@ -4,13 +4,13 @@ import { z } from 'zod';
 import { authenticate } from './auth/auth.middleware';
 import { supportSession } from './auth/support-session.middleware';
 import { SupabaseTokenVerifier } from './auth/supabase-token-verifier';
-import type { TokenVerifier } from './auth/auth.types';
+import type { AuthenticatedActor, TokenVerifier } from './auth/auth.types';
 import { createPrismaClient } from './database/prisma';
 import { IdentityService } from './identity/identity.service';
 import type { IdentityStore } from './identity/identity.store';
 import { PrismaIdentityStore } from './identity/prisma-identity.store';
 import { AccessService } from './identity/access.service';
-import { capabilities } from './authorization/capabilities';
+import { capabilities, type Capability } from './authorization/capabilities';
 import { EntitlementService } from './entitlements/entitlement.service';
 import { OnboardingService } from './onboarding/onboarding.service';
 import { PortfolioService } from './portfolio/portfolio.service';
@@ -89,6 +89,17 @@ const accreditationInput = z.object({
   registrationNumber: z.string().trim().min(1).max(80),
 });
 const invitationInput = z.object({ email: z.email(), roleKey: z.string().min(1) });
+const dataPlateCandidateSchema = z.object({
+  field: z.enum(['manufacturer', 'model', 'serialNumber', 'maximumPowerKw', 'connectorTypes']),
+  value: z.string().min(1).max(500),
+  confidence: z.number().min(0).max(1).optional(),
+  requiresHumanConfirmation: z.literal(true),
+});
+const dataPlateFieldSchema = dataPlateCandidateSchema.shape.field;
+const dataPlateAnalysisSchema = z.object({
+  candidates: z.array(dataPlateCandidateSchema).max(5),
+  missingFields: z.array(dataPlateFieldSchema).max(5),
+});
 const capabilityKey = z.enum(capabilities);
 const roleInput = z.object({
   name: z.string().trim().min(2).max(80),
@@ -171,7 +182,7 @@ const mediaInput = z.object({
   tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
   sortOrder: z.number().int().min(0).max(100_000).optional(),
   mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
-  size: z.number().int().positive().max(20_000_000),
+  size: z.number().int().positive().max(2_000_000),
 });
 const mediaUpdateInput = z
   .object({
@@ -214,14 +225,14 @@ const stockImageInput = z.object({
   manufacturer: z.string().trim().min(1).max(160),
   models: z.array(z.string().trim().min(1).max(160)).min(1).max(50),
   mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
-  size: z.number().int().positive().max(20_000_000),
+  size: z.number().int().positive().max(2_000_000),
 });
 const stockImageModelsInput = z.object({
   manufacturer: z.string().trim().min(1).max(160),
   models: z.array(z.string().trim().min(1).max(160)).min(1).max(50),
 });
 const stockImageContentType = z.enum(['image/jpeg', 'image/png', 'image/webp']);
-const stockImageContentSize = z.coerce.number().int().positive().max(20_000_000);
+const stockImageContentSize = z.coerce.number().int().positive().max(2_000_000);
 const inspectionOverrideInput = z.object({
   reason: z.string().trim().min(3).max(1000),
   data: z.record(z.string(), z.unknown()),
@@ -373,7 +384,7 @@ async function requireVisitTaskModule(
   prisma: ReturnType<typeof prismaFor>,
   organisationId: string,
   visitTaskId: string,
-): Promise<void> {
+): Promise<string> {
   const task = await prisma.visitTask.findFirst({
     where: { id: visitTaskId, organisationId },
     select: { moduleKey: true },
@@ -381,13 +392,14 @@ async function requireVisitTaskModule(
   if (task === null)
     throw new DomainError('VISIT_TASK_NOT_FOUND', 'The visit task was not found.', 404);
   await requireModuleForKey(prisma, organisationId, task.moduleKey);
+  return task.moduleKey;
 }
 
 async function requireInspectionModule(
   prisma: ReturnType<typeof prismaFor>,
   organisationId: string,
   inspectionId: string,
-): Promise<void> {
+): Promise<string> {
   const inspection = await prisma.inspection.findFirst({
     where: { id: inspectionId, organisationId },
     select: { moduleKey: true },
@@ -395,6 +407,172 @@ async function requireInspectionModule(
   if (inspection === null)
     throw new DomainError('INSPECTION_NOT_FOUND', 'The inspection was not found.', 404);
   await requireModuleForKey(prisma, organisationId, inspection.moduleKey);
+  return inspection.moduleKey;
+}
+
+function specialistCapability(
+  moduleKey: string,
+  operation:
+    'asset-read' | 'asset-manage' | 'perform' | 'issue' | 'equipment-read' | 'equipment-manage',
+): Capability | undefined {
+  if (moduleKey === 'ev-charging') {
+    if (operation === 'asset-read') return 'ev.assets.read';
+    if (operation === 'asset-manage') return 'ev.assets.manage';
+    if (operation === 'perform') return 'ev.inspections.perform';
+    if (operation === 'issue') return 'ev.certificates.issue';
+  }
+  if (moduleKey === 'thermal-imaging') {
+    if (operation === 'perform') return 'thermal.inspections.perform';
+    if (operation === 'issue') return 'thermal.reports.issue';
+    if (operation === 'equipment-read') return 'thermal.equipment.read';
+    if (operation === 'equipment-manage') return 'thermal.equipment.manage';
+  }
+  return undefined;
+}
+
+async function requireSpecialistRoleCapability(
+  environment: ApiBindings,
+  options: AppOptions,
+  actor: AuthenticatedActor,
+  organisationId: string,
+  moduleKey: string,
+  operation: Parameters<typeof specialistCapability>[1],
+): Promise<void> {
+  const capability = specialistCapability(moduleKey, operation);
+  if (capability !== undefined)
+    await identityService(environment, options).requireMembership(
+      actor,
+      organisationId,
+      capability,
+    );
+}
+
+async function analyseChargerDataPlate(
+  environment: ApiBindings,
+  request: Request,
+  correlationId: string,
+  metadata: { organisationId: string; inspectionId: string; access: 'member' | 'guest' },
+) {
+  const log = (
+    level: 'info' | 'warn' | 'error',
+    event: string,
+    details: Record<string, unknown>,
+  ) => {
+    const message = JSON.stringify({ event, correlationId, ...metadata, ...details });
+    if (level === 'error') console.error(message);
+    else if (level === 'warn') console.warn(message);
+    else console.log(message);
+  };
+  if (environment.AI_WORKER === undefined) {
+    log('error', 'api.ai_dataplate.not_configured', {});
+    throw new DomainError(
+      'AI_NOT_CONFIGURED',
+      'Data plate analysis is not configured. Please contact support.',
+      503,
+    );
+  }
+  const mimeType = request.headers.get('content-type')?.split(';', 1)[0]?.toLowerCase() ?? '';
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) {
+    log('warn', 'api.ai_dataplate.rejected', { reason: 'unsupported_image_type', mimeType });
+    throw new DomainError('IMAGE_TYPE_INVALID', 'Use a JPEG, PNG, or WebP image.', 415);
+  }
+  const declaredSize = Number(request.headers.get('content-length') ?? 0);
+  if (declaredSize > 2_000_000) {
+    log('warn', 'api.ai_dataplate.rejected', { reason: 'image_too_large', declaredSize });
+    throw new DomainError('IMAGE_TOO_LARGE', 'The image must be 2 MB or smaller.', 413);
+  }
+  if (request.body === null) {
+    log('warn', 'api.ai_dataplate.rejected', { reason: 'image_empty' });
+    throw new DomainError('IMAGE_EMPTY', 'Select an image to analyse.', 422);
+  }
+
+  let response: Response;
+  try {
+    response = await environment.AI_WORKER.fetch(
+      'https://ohmaudit-ai.internal/v1/extract/charger-dataplate',
+      {
+        method: 'POST',
+        headers: { 'content-type': mimeType, 'x-correlation-id': correlationId },
+        body: request.body,
+      },
+    );
+  } catch (error: unknown) {
+    log('error', 'api.ai_dataplate.worker_unreachable', {
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw new DomainError(
+      'AI_ANALYSIS_FAILED',
+      'The AI service is temporarily unavailable. Please try the photo again.',
+      502,
+    );
+  }
+  if (!response.ok) {
+    const error = z
+      .object({ message: z.string().optional() })
+      .catch({})
+      .parse(await response.json().catch(() => ({})));
+    const status = [413, 415, 422, 502, 503].includes(response.status)
+      ? (response.status as 413 | 415 | 422 | 502 | 503)
+      : 502;
+    log('error', 'api.ai_dataplate.worker_rejected', {
+      downstreamStatus: response.status,
+      returnedStatus: status,
+      message: error.message ?? 'No downstream message',
+    });
+    throw new DomainError(
+      'AI_ANALYSIS_FAILED',
+      error.message ?? 'The image could not be analysed.',
+      status,
+    );
+  }
+  const result = dataPlateAnalysisSchema.safeParse(await response.json().catch(() => undefined));
+  if (!result.success) {
+    log('error', 'api.ai_dataplate.invalid_worker_response', {
+      issueCount: result.error.issues.length,
+    });
+    throw new DomainError(
+      'AI_ANALYSIS_FAILED',
+      'The AI returned an invalid result. Please try the photo again.',
+      502,
+    );
+  }
+  log(result.data.missingFields.length === 0 ? 'info' : 'warn', 'api.ai_dataplate.completed', {
+    extractedFields: result.data.candidates.map(({ field }) => field),
+    missingFields: result.data.missingFields,
+  });
+  return result.data;
+}
+
+async function requireVisitModules(
+  prisma: ReturnType<typeof prismaFor>,
+  organisationId: string,
+  visitId: string,
+): Promise<string[]> {
+  const visit = await prisma.visit.findFirst({
+    where: { id: visitId, organisationId },
+    select: { tasks: { select: { moduleKey: true } } },
+  });
+  if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The visit was not found.', 404);
+  const moduleKeys = [...new Set(visit.tasks.map((task) => task.moduleKey))];
+  await Promise.all(
+    moduleKeys.map((moduleKey) => requireModuleForKey(prisma, organisationId, moduleKey)),
+  );
+  return moduleKeys;
+}
+
+function isEvAssetType(assetType: string | undefined): boolean {
+  return assetType !== undefined && /\bev\b|electric vehicle|charger/iu.test(assetType);
+}
+
+function mediaWriteCapability(
+  entityType: 'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection',
+): Capability {
+  if (entityType === 'Organisation') return 'organisation.manage';
+  if (entityType === 'Customer') return 'customers.manage';
+  if (entityType === 'Site') return 'sites.manage';
+  if (entityType === 'Inspection') return 'inspections.perform';
+  return 'assets.manage';
 }
 
 interface ReportMediaImage {
@@ -774,6 +952,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ],
     }),
   );
+  app.use('/api/*', async (context, next) => {
+    await next();
+    const response = context.res;
+    if (response.headers.get('cache-control')) return;
+    response.headers.set('cache-control', 'no-store');
+  });
   app.openapi(healthRoute, (context) => {
     const environment = parseEnvironment(context.env);
     return context.json(
@@ -1022,23 +1206,32 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       context.req.param('organisationId'),
+      'thermal.equipment.read',
+    );
+    const prisma = prismaFor(environment);
+    await new EntitlementService(prisma).requireModule(
+      context.req.param('organisationId'),
+      'thermal-imaging',
     );
     return context.json({
-      equipment: await new EquipmentService(prismaFor(environment)).list(
-        context.req.param('organisationId'),
-      ),
+      equipment: await new EquipmentService(prisma).list(context.req.param('organisationId')),
     });
   });
   app.post('/api/v1/organisations/:organisationId/equipment', async (context) => {
     const environment = parseEnvironment(context.env);
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       context.req.param('organisationId'),
-      'organisation.manage',
+      ['organisation.manage', 'thermal.equipment.manage'],
+    );
+    const prisma = prismaFor(environment);
+    await new EntitlementService(prisma).requireModule(
+      context.req.param('organisationId'),
+      'thermal-imaging',
     );
     return context.json(
       {
-        equipment: await new EquipmentService(prismaFor(environment)).create(
+        equipment: await new EquipmentService(prisma).create(
           context.req.param('organisationId'),
           equipmentInput.parse(await context.req.json()),
         ),
@@ -1048,13 +1241,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   });
   app.patch('/api/v1/organisations/:organisationId/equipment/:equipmentId', async (context) => {
     const environment = parseEnvironment(context.env);
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       context.req.param('organisationId'),
-      'organisation.manage',
+      ['organisation.manage', 'thermal.equipment.manage'],
+    );
+    const prisma = prismaFor(environment);
+    await new EntitlementService(prisma).requireModule(
+      context.req.param('organisationId'),
+      'thermal-imaging',
     );
     return context.json({
-      equipment: await new EquipmentService(prismaFor(environment)).update(
+      equipment: await new EquipmentService(prisma).update(
         context.req.param('organisationId'),
         z.uuid().parse(context.req.param('equipmentId')),
         equipmentUpdateInput.parse(await context.req.json()),
@@ -1063,12 +1261,17 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   });
   app.delete('/api/v1/organisations/:organisationId/equipment/:equipmentId', async (context) => {
     const environment = parseEnvironment(context.env);
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       context.req.param('organisationId'),
-      'organisation.manage',
+      ['organisation.manage', 'thermal.equipment.manage'],
     );
-    await new EquipmentService(prismaFor(environment)).archive(
+    const prisma = prismaFor(environment);
+    await new EntitlementService(prisma).requireModule(
+      context.req.param('organisationId'),
+      'thermal-imaging',
+    );
+    await new EquipmentService(prisma).archive(
       context.req.param('organisationId'),
       z.uuid().parse(context.req.param('equipmentId')),
     );
@@ -1076,14 +1279,20 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   });
   app.get('/api/v1/organisations/:organisationId/onboarding', async (context) => {
     const environment = parseEnvironment(context.env);
-    await identityService(environment, options).requireMembership(
+    const { membership } = await identityService(environment, options).requireMembership(
       context.get('actor'),
       context.req.param('organisationId'),
       'organisation.manage',
     );
-    return context.json(
-      await new OnboardingService(prismaFor(environment)).get(context.req.param('organisationId')),
+    const onboarding = await new OnboardingService(prismaFor(environment)).get(
+      context.req.param('organisationId'),
     );
+    return context.json({
+      ...onboarding,
+      invitations: membership.role.capabilities.includes('organisation.users.manage')
+        ? onboarding.invitations
+        : [],
+    });
   });
   app.put('/api/v1/organisations/:organisationId/brand-profile', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -1273,6 +1482,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ),
     });
   });
+  app.delete('/api/v1/customers/:customerId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    const customerId = z.uuid().parse(context.req.param('customerId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'customers.manage',
+    );
+    await new PortfolioService(prismaFor(environment)).archiveCustomer(
+      organisationId,
+      customerId,
+      user.id,
+      context.get('correlationId'),
+    );
+    return context.body(null, 204);
+  });
   app.post('/api/v1/sites', async (context) => {
     const environment = parseEnvironment(context.env);
     const input = siteInput.extend({ organisationId: z.uuid() }).parse(await context.req.json());
@@ -1337,8 +1563,14 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       'assets.manage',
     );
     const prisma = prismaFor(environment);
-    if (/\bev\b|electric vehicle|charger/iu.test(input.assetType))
+    if (isEvAssetType(input.assetType))
       await new EntitlementService(prisma).requireModule(input.organisationId, 'ev-charging');
+    if (isEvAssetType(input.assetType))
+      await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        input.organisationId,
+        'ev.assets.manage',
+      );
     const { organisationId, ...asset } = input;
     return context.json(
       {
@@ -1361,8 +1593,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'assets.manage',
     );
+    const prisma = prismaFor(environment);
+    const existing = await prisma.asset.findFirst({
+      where: { id: context.req.param('assetId'), organisationId },
+      select: { assetType: true },
+    });
+    if (isEvAssetType(existing?.assetType)) {
+      await new EntitlementService(prisma).requireModule(organisationId, 'ev-charging');
+      await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'ev.assets.manage',
+      );
+    }
     return context.json({
-      asset: await new PortfolioService(prismaFor(environment)).updateAssetStatus(
+      asset: await new PortfolioService(prisma).updateAssetStatus(
         organisationId,
         context.req.param('assetId'),
         user.id,
@@ -1381,8 +1626,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'assets.manage',
     );
+    const prisma = prismaFor(environment);
+    const existing = await prisma.asset.findFirst({
+      where: { id: context.req.param('assetId'), organisationId },
+      select: { assetType: true },
+    });
+    if (isEvAssetType(existing?.assetType) || isEvAssetType(input.assetType))
+      await new EntitlementService(prisma).requireModule(organisationId, 'ev-charging');
+    if (isEvAssetType(existing?.assetType) || isEvAssetType(input.assetType))
+      await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'ev.assets.manage',
+      );
     return context.json({
-      asset: await new PortfolioService(prismaFor(environment)).updateAsset(
+      asset: await new PortfolioService(prisma).updateAsset(
         organisationId,
         context.req.param('assetId'),
         user.id,
@@ -1413,10 +1671,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   app.get('/api/v1/tags', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.read',
+      ['assets.read', 'ev.assets.read'],
     );
     return context.json({
       tags: await new PortfolioService(prismaFor(environment)).listTags(organisationId),
@@ -1463,20 +1721,24 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const { user } = await identityService(environment, options).requireMembership(
       context.get('actor'),
       input.organisationId,
-      input.entityType === 'Inspection'
-        ? 'inspections.perform'
-        : input.entityType === 'Organisation'
-          ? 'organisation.manage'
-          : 'assets.manage',
+      mediaWriteCapability(input.entityType),
     );
+    const prisma = prismaFor(environment);
+    if (input.entityType === 'Inspection') {
+      const moduleKey = await requireInspectionModule(prisma, input.organisationId, input.entityId);
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        input.organisationId,
+        moduleKey,
+        'perform',
+      );
+    }
     const { organisationId, ...media } = input;
     return context.json(
       {
-        media: await new PortfolioService(prismaFor(environment)).registerMedia(
-          organisationId,
-          user.id,
-          media,
-        ),
+        media: await new PortfolioService(prisma).registerMedia(organisationId, user.id, media),
       },
       201,
     );
@@ -1492,12 +1754,25 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       organisationId,
-      media.entityType === 'Inspection'
-        ? 'inspections.perform'
-        : media.entityType === 'Organisation'
-          ? 'organisation.manage'
-          : 'assets.manage',
+      mediaWriteCapability(
+        media.entityType as 'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection',
+      ),
     );
+    if (media.entityType === 'Inspection') {
+      const moduleKey = await requireInspectionModule(
+        prismaFor(environment),
+        organisationId,
+        media.entityId,
+      );
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        moduleKey,
+        'perform',
+      );
+    }
     const contentType = context.req.header('content-type') ?? '';
     if (contentType !== media.mimeType)
       throw new DomainError(
@@ -1506,8 +1781,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         422,
       );
     const contentLength = Number(context.req.header('content-length') ?? 0);
-    if (contentLength > 20_000_000)
-      throw new DomainError('MEDIA_TOO_LARGE', 'Images must be 20 MB or smaller.', 413);
+    if (contentLength > 2_000_000)
+      throw new DomainError('MEDIA_TOO_LARGE', 'Images must be 2 MB or smaller.', 413);
     await environment.MEDIA_BUCKET.put(media.storageKey, context.req.raw.body, {
       httpMetadata: { contentType: media.mimeType },
     });
@@ -1521,10 +1796,24 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'inspections.perform',
     );
+    const prisma = prismaFor(environment);
+    const mediaId = z.uuid().parse(context.req.param('mediaId'));
+    const media = await new PortfolioService(prisma).getMedia(organisationId, mediaId);
+    if (media.entityType !== 'Inspection')
+      throw new DomainError('INVALID_MEDIA_ENTITY', 'Only inspection media can be updated.', 422);
+    const moduleKey = await requireInspectionModule(prisma, organisationId, media.entityId);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      moduleKey,
+      'perform',
+    );
     return context.json({
-      media: await new PortfolioService(prismaFor(environment)).updateInspectionMedia(
+      media: await new PortfolioService(prisma).updateInspectionMedia(
         organisationId,
-        z.uuid().parse(context.req.param('mediaId')),
+        mediaId,
         mediaUpdateInput.parse(await context.req.json()),
       ),
     });
@@ -1544,12 +1833,32 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         context.get('actor'),
         organisationId,
       );
-    else
+    else if (media.entityType === 'Customer')
+      await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'customers.read',
+      );
+    else if (media.entityType === 'Site')
+      await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'sites.read',
+      );
+    else if (media.entityType === 'Asset')
+      await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'assets.read',
+      );
+    else {
       await identityService(environment, options).requireAnyCapability(
         context.get('actor'),
         organisationId,
-        ['customers.read', 'sites.read', 'assets.read'],
+        ['inspections.perform', 'inspections.review', 'inspections.approve'],
       );
+      await requireInspectionModule(prismaFor(environment), organisationId, media.entityId);
+    }
     const object = await environment.MEDIA_BUCKET.get(media.storageKey);
     if (object === null)
       throw new DomainError('MEDIA_CONTENT_NOT_FOUND', 'The media content was not found.', 404);
@@ -1566,16 +1875,48 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       organisationId,
-      existingMedia.entityType === 'Inspection'
-        ? 'inspections.perform'
-        : existingMedia.entityType === 'Organisation'
-          ? 'organisation.manage'
-          : 'assets.manage',
+      mediaWriteCapability(
+        existingMedia.entityType as 'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection',
+      ),
     );
+    if (existingMedia.entityType === 'Inspection') {
+      const moduleKey = await requireInspectionModule(
+        prismaFor(environment),
+        organisationId,
+        existingMedia.entityId,
+      );
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        moduleKey,
+        'perform',
+      );
+    }
     const media = await portfolio.deleteMedia(organisationId, mediaId);
     if (environment.MEDIA_BUCKET !== undefined)
       await environment.MEDIA_BUCKET.delete(media.storageKey);
     return context.json({ deleted: true });
+  });
+  app.patch('/api/v1/sites/:siteId/photos/primary', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    const siteId = context.req.param('siteId');
+    const actor = context.get('actor');
+    await identityService(environment, options).requireMembership(
+      actor,
+      organisationId,
+      'sites.manage',
+    );
+    const body = await context.req.json<{ mediaId: string | null }>();
+    const prisma = prismaFor(environment);
+    await new PortfolioService(prisma).setSitePhotoPrimary(
+      organisationId,
+      siteId,
+      body.mediaId ?? null,
+    );
+    return context.json({ updated: true });
   });
   app.get('/api/v1/sites', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -2001,8 +2342,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const size = Number(
       context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
     );
-    if (!Number.isSafeInteger(size) || size < 1 || size > 20_000_000)
-      throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 20 MB or smaller.', 422);
+    if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
+      throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
     const visitService = new VisitService(prismaFor(environment));
     const owner = await visitService.guestInspectionAsset(
       context.req.param('token'),
@@ -2034,8 +2375,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       const size = Number(
         context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
       );
-      if (!Number.isSafeInteger(size) || size < 1 || size > 20_000_000)
-        throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 20 MB or smaller.', 422);
+      if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
+        throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
       const kind = z.enum(['unclassified', 'thermal', 'standard']).parse(context.req.query('kind'));
       const originalFilename = optionalTrimmed(500).parse(context.req.query('name'));
       const prisma = prismaFor(environment);
@@ -2124,7 +2465,15 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       'inspections.perform',
     );
     const prisma = prismaFor(environment);
-    await requireVisitTaskModule(prisma, input.organisationId, input.visitTaskId);
+    const moduleKey = await requireVisitTaskModule(prisma, input.organisationId, input.visitTaskId);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      input.organisationId,
+      moduleKey,
+      'perform',
+    );
     return context.json(
       {
         inspection: await new InspectionService(prisma).start(
@@ -2143,12 +2492,53 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       ['inspections.perform', 'inspections.review', 'inspections.approve'],
     );
+    await requireInspectionModule(
+      prismaFor(environment),
+      organisationId,
+      context.req.param('inspectionId'),
+    );
     return context.json({
       inspection: await new InspectionService(prismaFor(environment)).detail(
         organisationId,
         context.req.param('inspectionId'),
       ),
     });
+  });
+  app.post('/api/v1/inspections/:inspectionId/data-plate-analysis', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const moduleKey = await requireInspectionModule(
+      prismaFor(environment),
+      organisationId,
+      inspectionId,
+    );
+    if (moduleKey !== 'ev-charging')
+      throw new DomainError(
+        'DATA_PLATE_ANALYSIS_UNAVAILABLE',
+        'Data plate analysis is only available for EV charger inspections.',
+        422,
+      );
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      moduleKey,
+      'perform',
+    );
+    return context.json(
+      await analyseChargerDataPlate(environment, context.req.raw, context.get('correlationId'), {
+        organisationId,
+        inspectionId,
+        access: 'member',
+      }),
+    );
   });
   app.post('/api/v1/inspections/:inspectionId/submit', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -2160,7 +2550,19 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       'inspections.perform',
     );
     const prisma = prismaFor(environment);
-    await requireInspectionModule(prisma, organisationId, context.req.param('inspectionId'));
+    const moduleKey = await requireInspectionModule(
+      prisma,
+      organisationId,
+      context.req.param('inspectionId'),
+    );
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      moduleKey,
+      'perform',
+    );
     return context.json(
       {
         revision: await new InspectionService(prisma).submit(
@@ -2205,6 +2607,33 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       201,
     );
   });
+  app.post(
+    '/api/v1/guest/visits/:token/inspections/:inspectionId/data-plate-analysis',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const visit = await new VisitService(prismaFor(environment)).guestPack(
+        context.req.param('token'),
+      );
+      const inspection = await new InspectionService(prismaFor(environment)).detail(
+        visit.organisationId,
+        z.uuid().parse(context.req.param('inspectionId')),
+      );
+      if (inspection.visitId !== visit.id || inspection.moduleKey !== 'ev-charging')
+        throw new DomainError(
+          'INSPECTION_NOT_FOUND',
+          'The EV inspection is not assigned to this visit.',
+          404,
+        );
+      await requireModuleForKey(prismaFor(environment), visit.organisationId, inspection.moduleKey);
+      return context.json(
+        await analyseChargerDataPlate(environment, context.req.raw, context.get('correlationId'), {
+          organisationId: visit.organisationId,
+          inspectionId: inspection.id,
+          access: 'guest',
+        }),
+      );
+    },
+  );
   app.post('/api/v1/inspections/:inspectionId/review', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
@@ -2214,8 +2643,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'inspections.approve',
     );
+    const prisma = prismaFor(environment);
+    await requireInspectionModule(prisma, organisationId, context.req.param('inspectionId'));
     return context.json({
-      inspection: await new InspectionService(prismaFor(environment)).review(
+      inspection: await new InspectionService(prisma).review(
         organisationId,
         context.req.param('inspectionId'),
         user.id,
@@ -2233,8 +2664,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       ['inspections.review', 'inspections.approve'],
     );
+    const prisma = prismaFor(environment);
+    await requireInspectionModule(prisma, organisationId, context.req.param('inspectionId'));
     return context.json({
-      revision: await new InspectionService(prismaFor(environment)).overrideSubmission(
+      revision: await new InspectionService(prisma).overrideSubmission(
         organisationId,
         context.req.param('inspectionId'),
         user.id,
@@ -2276,9 +2709,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'certificates.issue',
     );
+    const prisma = prismaFor(environment);
+    const moduleKey = await requireInspectionModule(
+      prisma,
+      organisationId,
+      context.req.param('inspectionId'),
+    );
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      moduleKey,
+      'issue',
+    );
     return context.json(
       {
-        document: await new InspectionService(prismaFor(environment)).issueDocument(
+        document: await new InspectionService(prisma).issueDocument(
           organisationId,
           context.req.param('inspectionId'),
           user.id,
@@ -2296,11 +2743,26 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'certificates.issue',
     );
+    const prisma = prismaFor(environment);
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const moduleKeys = await requireVisitModules(prisma, organisationId, visitId);
+    await Promise.all(
+      moduleKeys.map((moduleKey) =>
+        requireSpecialistRoleCapability(
+          environment,
+          options,
+          context.get('actor'),
+          organisationId,
+          moduleKey,
+          'issue',
+        ),
+      ),
+    );
     return context.json(
       {
-        documents: await new InspectionService(prismaFor(environment)).issueVisitDocuments(
+        documents: await new InspectionService(prisma).issueVisitDocuments(
           organisationId,
-          z.uuid().parse(context.req.param('visitId')),
+          visitId,
           user.id,
           context.get('correlationId'),
         ),
@@ -2317,6 +2779,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'certificates.generate',
     );
+    await requireVisitModules(prismaFor(environment), organisationId, visitId);
     if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
       throw new DomainError(
         'PDF_RENDERER_UNAVAILABLE',
@@ -2783,9 +3246,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'assets.read',
     );
-    await new EntitlementService(prismaFor(environment)).require(
+    await new EntitlementService(prismaFor(environment)).requireModule(
       organisationId,
-      'ev.assets.manage',
+      'ev-charging',
     );
     return context.json({
       asset: await new EvService(prismaFor(environment)).detail(
@@ -2798,10 +3261,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
     const input = evChargePointInput.parse(await context.req.json());
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.manage',
+      ['assets.manage', 'ev.assets.manage'],
     );
     await new EntitlementService(prismaFor(environment)).require(
       organisationId,
@@ -2819,10 +3282,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
     const input = evSupplyInput.parse(await context.req.json());
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.manage',
+      ['assets.manage', 'ev.assets.manage'],
     );
     await new EntitlementService(prismaFor(environment)).require(
       organisationId,
@@ -2843,10 +3306,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
     const input = evSupplyInput.parse(await context.req.json());
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.manage',
+      ['assets.manage', 'ev.assets.manage'],
     );
     await new EntitlementService(prismaFor(environment)).requireModule(
       organisationId,
@@ -2864,10 +3327,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   app.delete('/api/v1/modules/ev/assets/:assetId/supplies/:supplyId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.manage',
+      ['assets.manage', 'ev.assets.manage'],
     );
     await new EntitlementService(prismaFor(environment)).requireModule(
       organisationId,
@@ -2884,10 +3347,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
     const input = evConnectorInput.parse(await context.req.json());
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.manage',
+      ['assets.manage', 'ev.assets.manage'],
     );
     await new EntitlementService(prismaFor(environment)).require(
       organisationId,
@@ -2908,10 +3371,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
     const input = evConnectorInput.parse(await context.req.json());
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.manage',
+      ['assets.manage', 'ev.assets.manage'],
     );
     await new EntitlementService(prismaFor(environment)).requireModule(
       organisationId,
@@ -2929,10 +3392,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   app.delete('/api/v1/modules/ev/assets/:assetId/connectors/:connectorId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAllCapabilities(
       context.get('actor'),
       organisationId,
-      'assets.manage',
+      ['assets.manage', 'ev.assets.manage'],
     );
     await new EntitlementService(prismaFor(environment)).requireModule(
       organisationId,
@@ -3257,12 +3720,32 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   });
   app.onError((error, context) => {
     if (error instanceof DomainError) {
+      console.warn(
+        JSON.stringify({
+          event: 'api.domain_error',
+          correlationId: context.get('correlationId'),
+          method: context.req.method,
+          path: context.req.path,
+          code: error.code,
+          status: error.status,
+        }),
+      );
       return context.json(
         { code: error.code, message: error.message, correlationId: context.get('correlationId') },
         error.status,
       );
     }
     if (error instanceof z.ZodError) {
+      console.warn(
+        JSON.stringify({
+          event: 'api.validation_failed',
+          correlationId: context.get('correlationId'),
+          method: context.req.method,
+          path: context.req.path,
+          issueCount: error.issues.length,
+          issuePaths: error.issues.map((issue) => issue.path.join('.')),
+        }),
+      );
       return context.json(
         {
           code: 'VALIDATION_FAILED',

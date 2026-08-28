@@ -2,4 +2,4 @@ dist
 coverage
 .wrangler
 pnpm-lock.yaml
-
+worker-configuration.d.ts

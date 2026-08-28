@@ -1,10 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import {
-  FormControl,
-  FormGroup,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import type { AbstractControl, ValidationErrors } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';

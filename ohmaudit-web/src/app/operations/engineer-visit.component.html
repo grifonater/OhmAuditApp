@@ -207,6 +207,77 @@
                   </p>
                 </div>
               </div>
+              <div class="data-plate-assistant">
+                <div class="data-plate-intro">
+                  <span class="data-plate-icon" aria-hidden="true">AI</span>
+                  <span>
+                    <strong>Scan charger data plate</strong>
+                    <small>
+                      Take a clear, close photo. AI will suggest any details it can read for you to
+                      review.
+                    </small>
+                  </span>
+                  <label class="button secondary compact data-plate-capture">
+                    {{ dataPlateBusy() ? 'Analysing…' : 'Take or upload photo' }}
+                    <input
+                      hidden
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      capture="environment"
+                      [disabled]="dataPlateBusy()"
+                      (change)="analyseDataPlate($event)"
+                    />
+                  </label>
+                </div>
+                @if (dataPlatePreviewUrl()) {
+                  <img
+                    class="data-plate-preview"
+                    [src]="dataPlatePreviewUrl()"
+                    alt="Charger data plate selected for analysis"
+                  />
+                }
+                @if (dataPlateBusy()) {
+                  <p class="data-plate-status" role="status">Reading the data plate…</p>
+                }
+                @if (dataPlateError()) {
+                  <p class="error data-plate-error" role="alert">{{ dataPlateError() }}</p>
+                }
+                @if (missingDataPlateFields().length > 0) {
+                  <p class="data-plate-missing" role="status">
+                    <strong>Enter these manually:</strong>
+                    @for (field of missingDataPlateFields(); track field) {
+                      <span>{{ dataPlateFieldLabel(field) }}</span>
+                    }
+                  </p>
+                }
+                @if (dataPlateCandidates().length > 0) {
+                  <div class="data-plate-results">
+                    <p>
+                      <strong>Suggested details</strong>
+                      <small>Check the plate and apply only values that are correct.</small>
+                    </p>
+                    @for (candidate of dataPlateCandidates(); track candidate.field) {
+                      <article>
+                        <span>
+                          <small>{{ dataPlateFieldLabel(candidate.field) }}</small>
+                          <strong>{{ candidate.value }}</strong>
+                        </span>
+                        <button
+                          class="button compact"
+                          [class.secondary]="!appliedDataPlateFields().includes(candidate.field)"
+                          type="button"
+                          [disabled]="appliedDataPlateFields().includes(candidate.field)"
+                          (click)="applyDataPlateCandidate(candidate)"
+                        >
+                          {{
+                            appliedDataPlateFields().includes(candidate.field) ? 'Applied' : 'Apply'
+                          }}
+                        </button>
+                      </article>
+                    }
+                  </div>
+                }
+              </div>
               <div class="form-grid">
                 <label class="field">Make<input formControlName="manufacturer" /></label
                 ><label class="field">Model<input formControlName="model" /></label
