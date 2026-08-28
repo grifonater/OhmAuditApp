@@ -54,6 +54,7 @@ function isDrawerMarker(state: unknown): state is DrawerMarker {
 const DRAWER_MARKER: DrawerMarker = { ohmauditDrawer: true };
 const DRAWER_MAX_WIDTH_PX = 288;
 const DRAWER_EDGE_THRESHOLD_PX = 32;
+const DRAWER_DRAG_INTENT_PX = 6;
 
 @Component({
   selector: 'oa-app-shell',
@@ -97,6 +98,7 @@ export class AppShellComponent {
   private touchActive = false;
   private touchStartX = 0;
   private touchStartY = 0;
+  private dragIntended = false;
   private searchRequest = 0;
   protected readonly organisationName = new FormControl('', {
     nonNullable: true,
@@ -193,10 +195,8 @@ export class AppShellComponent {
     this.touchStartX = touch.clientX;
     this.touchStartY = touch.clientY;
     this.touchActive = this.drawerOpen() || touch.clientX <= DRAWER_EDGE_THRESHOLD_PX;
-    if (this.touchActive) {
-      this.drawerDrag.set(0);
-      this.drawerDragging.set(true);
-    }
+    this.dragIntended = false;
+    if (this.touchActive) this.drawerDrag.set(0);
   }
 
   protected onTouchMove(event: TouchEvent): void {
@@ -205,9 +205,14 @@ export class AppShellComponent {
     if (touch === undefined) return;
     const dx = touch.clientX - this.touchStartX;
     const dy = Math.abs(touch.clientY - this.touchStartY);
-    if (!this.drawerOpen() && Math.abs(dx) < dy) {
-      this.cancelDrawerDrag();
-      return;
+    if (!this.dragIntended) {
+      const horizontal = Math.abs(dx) >= Math.abs(dy) && Math.abs(dx) >= DRAWER_DRAG_INTENT_PX;
+      if (!horizontal) {
+        if (!this.drawerOpen() && dy >= DRAWER_DRAG_INTENT_PX) this.cancelDrawerDrag();
+        return;
+      }
+      this.dragIntended = true;
+      this.drawerDragging.set(true);
     }
     const width = this.drawerWidthPx();
     if (this.drawerOpen()) {
@@ -223,6 +228,7 @@ export class AppShellComponent {
   protected onTouchEnd(): void {
     if (!this.touchActive) return;
     this.touchActive = false;
+    this.dragIntended = false;
     this.drawerDragging.set(false);
     const width = this.drawerWidthPx();
     const drag = this.drawerDrag();
