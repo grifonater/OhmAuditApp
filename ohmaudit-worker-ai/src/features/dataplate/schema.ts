@@ -1,9 +1,4 @@
-export const candidateFields = [
-  'manufacturer',
-  'model',
-  'serialNumber',
-  'maximumPowerKw',
-] as const;
+export const candidateFields = ['manufacturer', 'model', 'serialNumber', 'maximumPowerKw'] as const;
 
 export type ChargerDataPlateField = (typeof candidateFields)[number];
 

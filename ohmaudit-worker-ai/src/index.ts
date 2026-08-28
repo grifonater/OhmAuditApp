@@ -3,7 +3,11 @@ import { extractRoute, debugExtractRoute } from './features/dataplate/routes';
 
 export type { AiBindings };
 export type { ChargerDataPlateField, ExtractionCandidate } from './features/dataplate/schema';
-export { candidateFields, createCandidate, parseExtractionAnswer } from './features/dataplate/schema';
+export {
+  candidateFields,
+  createCandidate,
+  parseExtractionAnswer,
+} from './features/dataplate/schema';
 
 export default {
   async fetch(request: Request, env: AiBindings): Promise<Response> {
