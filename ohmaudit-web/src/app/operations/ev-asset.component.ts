@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, type AssetSummary, type EvChargePoint } from '../core/api.service';
+import { compressPhoto } from '../core/image-compression';
 
 type EvAssetDetail = AssetSummary & {
   customer: { id: string; name: string };
@@ -214,16 +215,21 @@ export class EvAssetComponent {
       this.error.set('Use a JPEG, PNG, or WebP image.');
       return;
     }
+    const compressed = await compressPhoto(file);
+    if (compressed.size > 2_000_000) {
+      this.error.set('The image is too large after compression. Try a smaller image.');
+      return;
+    }
     await this.run(async () => {
       const { media } = await this.api.registerMedia(this.organisationId, {
         entityType: 'Asset',
         entityId: this.assetId,
         category: 'asset-image',
         caption: 'EV charger image',
-        mimeType: file.type as 'image/jpeg' | 'image/png' | 'image/webp',
-        size: file.size,
+        mimeType: 'image/jpeg',
+        size: compressed.size,
       });
-      await this.api.uploadMedia(this.organisationId, media.id, file);
+      await this.api.uploadMedia(this.organisationId, media.id, compressed);
       this.success.set('Asset image uploaded');
       await this.load();
     });

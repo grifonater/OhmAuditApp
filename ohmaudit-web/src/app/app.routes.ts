@@ -1,5 +1,6 @@
 import type { Routes } from '@angular/router';
 import { authGuard } from './core/auth.guard';
+import { authorizationGuard } from './core/authorization.guard';
 
 export const routes: Routes = [
   {
@@ -57,11 +58,30 @@ export const routes: Routes = [
       },
       {
         path: 'platform',
+        canActivate: [authorizationGuard],
+        data: { platformAdmin: true },
         loadComponent: () =>
           import('./platform/platform.component').then((module) => module.PlatformComponent),
       },
       {
+        path: 'platform/testing',
+        canActivate: [authorizationGuard],
+        data: { platformAdmin: true },
+        loadComponent: () =>
+          import('./platform/feature-testing.component').then(
+            (module) => module.FeatureTestingComponent,
+          ),
+      },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./settings/user-settings.component').then(
+            (module) => module.UserSettingsComponent,
+          ),
+      },
+      {
         path: 'org/:organisationId',
+        canActivate: [authorizationGuard],
         loadComponent: () =>
           import('./organisation/organisation.component').then(
             (module) => module.OrganisationComponent,
@@ -69,16 +89,22 @@ export const routes: Routes = [
       },
       {
         path: 'org/:organisationId/equipment',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['organisation.manage'], module: 'thermal-imaging' },
         loadComponent: () =>
           import('./organisation/equipment.component').then((module) => module.EquipmentComponent),
       },
       {
         path: 'org/:organisationId/portfolio',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['customers.read', 'sites.read'] },
         loadComponent: () =>
           import('./portfolio/portfolio.component').then((module) => module.PortfolioComponent),
       },
       {
         path: 'org/:organisationId/portfolio/clients/:customerId',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['customers.read', 'sites.read'] },
         loadComponent: () =>
           import('./portfolio/client-detail.component').then(
             (module) => module.ClientDetailComponent,
@@ -86,11 +112,15 @@ export const routes: Routes = [
       },
       {
         path: 'org/:organisationId/portfolio/clients/:customerId/sites/:siteId',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['sites.read', 'assets.read'] },
         loadComponent: () =>
           import('./portfolio/site-detail.component').then((module) => module.SiteDetailComponent),
       },
       {
         path: 'org/:organisationId/onboarding',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['organisation.manage'] },
         loadComponent: () =>
           import('./organisation/onboarding.component').then(
             (module) => module.OnboardingComponent,
@@ -98,26 +128,35 @@ export const routes: Routes = [
       },
       {
         path: 'org/:organisationId/security',
+        canActivate: [authorizationGuard],
         loadComponent: () =>
           import('./organisation/security.component').then((module) => module.SecurityComponent),
       },
       {
         path: 'org/:organisationId/access',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['organisation.users.manage'] },
         loadComponent: () =>
           import('./organisation/access.component').then((module) => module.AccessComponent),
       },
       {
         path: 'org/:organisationId/calendar',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['sites.read'] },
         loadComponent: () =>
           import('./operations/calendar.component').then((module) => module.CalendarComponent),
       },
       {
         path: 'org/:organisationId/visits',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['sites.read'] },
         loadComponent: () =>
           import('./operations/visits.component').then((module) => module.VisitsComponent),
       },
       {
         path: 'org/:organisationId/visits/:visitId/thermal/:taskId',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['inspections.perform'], module: 'thermal-imaging' },
         loadComponent: () =>
           import('./operations/thermal-inspection.component').then(
             (module) => module.ThermalInspectionComponent,
@@ -125,6 +164,8 @@ export const routes: Routes = [
       },
       {
         path: 'org/:organisationId/visits/:visitId',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['sites.read'] },
         loadComponent: () =>
           import('./operations/engineer-visit.component').then(
             (module) => module.EngineerVisitComponent,
@@ -132,6 +173,8 @@ export const routes: Routes = [
       },
       {
         path: 'org/:organisationId/inspections',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['inspections.review'] },
         loadComponent: () =>
           import('./operations/inspections.component').then(
             (module) => module.InspectionsComponent,
@@ -139,6 +182,8 @@ export const routes: Routes = [
       },
       {
         path: 'org/:organisationId/inspections/review/:reviewId',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['inspections.review'] },
         loadComponent: () =>
           import('./operations/inspection-review.component').then(
             (module) => module.InspectionReviewComponent,
@@ -146,6 +191,8 @@ export const routes: Routes = [
       },
       {
         path: 'org/:organisationId/assets/:assetId/ev',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['assets.read'], module: 'ev-charging' },
         loadComponent: () =>
           import('./operations/ev-asset.component').then((module) => module.EvAssetComponent),
       },

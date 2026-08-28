@@ -11,6 +11,13 @@
     "local": { "name": "ohmaudit-worker-notifications-local" },
     "development": { "name": "ohmaudit-worker-notifications-development" },
     "staging": { "name": "ohmaudit-worker-notifications-staging" },
-    "production": { "name": "ohmaudit-worker-notifications-production" },
+    "production": {
+      "name": "ohmaudit-worker-notifications-production",
+      "vars": {
+        "APP_ENV": "production",
+        "APP_VERSION": "0.4.0",
+        "NOTIFICATION_BATCH_SIZE": "25",
+      },
+    },
   },
 }

@@ -1,0 +1,120 @@
+<main class="page feature-page">
+  <header class="feature-hero">
+    <div>
+      <p class="eyebrow">Feature testing</p>
+      <h1>AI data plate debug</h1>
+      <p>
+        Upload an EV charger data plate and inspect exactly what the vision model returns, how it is
+        interpreted, and the confidence level of every field. Useful for diagnosing why a plate is
+        not being recognised.
+      </p>
+    </div>
+    <span class="superadmin-badge">Platform access</span>
+  </header>
+
+  @if (error()) {
+    <p class="message error" role="alert">{{ error() }}</p>
+  }
+
+  <section class="feature-card upload-card">
+    <div class="section-heading">
+      <div>
+        <h2>1. Choose an image</h2>
+        <p>JPEG, PNG or WebP, up to 2 MB. A clear, close photo without glare reads best.</p>
+      </div>
+    </div>
+    <label class="button secondary compact">
+      Choose photo
+      <input
+        hidden
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        (change)="onDataPlateFile($event)"
+      />
+    </label>
+
+    @if (selectedFile(); as file) {
+      <div class="selection-preview">
+        @if (previewUrl()) {
+          <img [src]="previewUrl()" alt="Selected data plate preview" />
+        }
+        <div class="selection-copy">
+          <strong>{{ file.name }}</strong>
+          <small>{{ (file.size / 1024).toFixed(0) }} KB</small>
+        </div>
+        <button class="button compact" type="button" (click)="clear()">Clear</button>
+      </div>
+    }
+
+    <button
+      class="button primary"
+      type="button"
+      [disabled]="!selectedFile() || busy()"
+      (click)="analyse()"
+    >
+      {{ busy() ? 'Analysing…' : '2. Run extraction' }}
+    </button>
+  </section>
+
+  @if (result(); as result) {
+    <section class="feature-card result-card">
+      <div class="section-heading">
+        <div>
+          <h2>Extraction result</h2>
+          <p>
+            Model <code>{{ result.model }}</code> · {{ result.durationMs }} ms ·
+            {{ (result.imageBytes / 1024).toFixed(0) }} KB submitted
+          </p>
+        </div>
+      </div>
+
+      <h3>Raw model answer</h3>
+      @if (result.parseError) {
+        <p class="message error parse-error" role="alert">
+          The model returned text that could not be interpreted: {{ result.parseError }}
+        </p>
+      }
+      <pre class="raw-answer" [class.empty]="result.rawAnswer.trim() === ''"><code>{{
+        result.rawAnswer.trim() || 'The model returned an empty response.'
+      }}</code></pre>
+
+      <h3>Interpreted candidates ({{ result.candidates.length }})</h3>
+      @if (result.candidates.length === 0) {
+        <p class="empty-note">No supported fields were read from this plate.</p>
+      } @else {
+        <div class="candidate-list">
+          @for (candidate of result.candidates; track candidate.field) {
+            <article class="candidate" [class.low-confidence]="(candidate.confidence ?? 1) < 0.6">
+              <span class="candidate-field">{{ fieldLabel(candidate.field) }}</span>
+              <strong class="candidate-value">{{ candidate.value }}</strong>
+              <span
+                class="confidence-pill"
+                [class.low]="(candidate.confidence ?? 1) < 0.6"
+                [title]="
+                  candidate.confidence === undefined
+                    ? 'No confidence provided by the model'
+                    : 'Model confidence'
+                "
+              >
+                {{ confidencePercent(candidate.confidence) }}
+              </span>
+            </article>
+          }
+        </div>
+      }
+
+      @if (result.missingFields.length > 0) {
+        <div class="missing-block">
+          <h3>Missing fields</h3>
+          <div class="missing-tags">
+            @for (field of result.missingFields; track field) {
+              <span class="missing-tag">{{ fieldLabel(field) }}</span>
+            }
+          </div>
+        </div>
+      } @else {
+        <p class="empty-note">All supported fields were read from this plate.</p>
+      }
+    </section>
+  }
+</main>

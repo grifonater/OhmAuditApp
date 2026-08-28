@@ -186,7 +186,7 @@ export class AccessComponent {
         this.inviteForm.getRawValue(),
       );
       await this.load(false);
-      this.inviteUrl.set(result.inviteUrl);
+      this.inviteUrl.set(new URL(result.inviteUrl, location.origin).href);
       this.inviteForm.controls.email.reset();
       this.message.set('Invitation created. Share the link with the new user.');
     } catch (error: unknown) {

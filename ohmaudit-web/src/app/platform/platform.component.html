@@ -73,6 +73,13 @@
       <button type="button" [class.active]="activeTab() === 'users'" (click)="setTab('users')">
         Users &amp; access
       </button>
+      <button
+        type="button"
+        [class.active]="activeTab() === 'instructions'"
+        (click)="setTab('instructions')"
+      >
+        EV step instructions
+      </button>
     </nav>
 
     @if (activeTab() === 'organisations') {
@@ -500,7 +507,7 @@
                 accept="image/jpeg,image/png,image/webp"
                 (change)="chooseFile($event)"
               /><strong>{{ selectedFile()?.name || 'Choose charger image' }}</strong
-              ><span>JPEG, PNG or WebP · maximum 20 MB</span></label
+              ><span>JPEG, PNG or WebP · maximum 2 MB</span></label
             >
             <button
               class="button primary full"
@@ -518,6 +525,8 @@
           </form>
         </aside>
       </section>
+    } @else if (activeTab() === 'instructions') {
+      <oa-ev-test-instructions />
     } @else {
       <section class="platform-card users-card">
         <div class="section-heading">

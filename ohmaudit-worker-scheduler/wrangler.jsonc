@@ -17,6 +17,14 @@
     "local": { "name": "ohmaudit-worker-scheduler-local" },
     "development": { "name": "ohmaudit-worker-scheduler-development" },
     "staging": { "name": "ohmaudit-worker-scheduler-staging" },
-    "production": { "name": "ohmaudit-worker-scheduler-production" },
+    "production": {
+      "name": "ohmaudit-worker-scheduler-production",
+      "vars": {
+        "APP_ENV": "production",
+        "APP_VERSION": "0.4.0",
+        "SCHEDULE_HORIZON_YEARS": "5",
+        "API_BASE_URL": "https://ohmaudit-api-production.ohmaudit.workers.dev/api",
+      },
+    },
   },
 }

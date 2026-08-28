@@ -439,6 +439,13 @@
   color: var(--oa-navy-950);
   background: #edf2fa;
 }
+.site-thumb {
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  object-fit: cover;
+}
 .site-name > span:last-child {
   min-width: 0;
   display: grid;

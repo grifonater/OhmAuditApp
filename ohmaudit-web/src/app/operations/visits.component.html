@@ -5,9 +5,11 @@
       <h1>Visits</h1>
       <p>Find a site quickly, assign work in bulk, and prepare an offline-ready engineer pack.</p>
     </div>
-    <button class="button primary" type="button" (click)="showCreate.set(!showCreate())">
-      + Create visit
-    </button>
+    @if (canCreate()) {
+      <button class="button primary" type="button" (click)="showCreate.set(!showCreate())">
+        + Create visit
+      </button>
+    }
   </header>
   @if (guestLink()) {
     <div class="notice" role="status">Guest link copied: {{ guestLink() }}</div>
@@ -178,22 +180,24 @@
           <label class="field"
             >Scheduled start<input type="datetime-local" formControlName="scheduledStart"
           /></label>
-          <label class="field"
-            >Permanent engineer<select formControlName="assignedUserId">
-              <option value="">Unassigned / guest</option>
-              @for (member of members(); track member.id) {
-                <option [value]="member.user.id">
-                  {{ member.user.displayName || member.user.email }}
-                </option>
-              }
-            </select></label
-          >
-          <label class="field"
-            >Guest engineer name<input formControlName="guestEngineerName"
-          /></label>
-          <label class="field"
-            >Guest email<input type="email" formControlName="guestEmail"
-          /></label>
+          @if (canAssign()) {
+            <label class="field"
+              >Permanent engineer<select formControlName="assignedUserId">
+                <option value="">Unassigned / guest</option>
+                @for (member of members(); track member.id) {
+                  <option [value]="member.user.id">
+                    {{ member.user.displayName || member.user.email }}
+                  </option>
+                }
+              </select></label
+            >
+            <label class="field"
+              >Guest engineer name<input formControlName="guestEngineerName"
+            /></label>
+            <label class="field"
+              >Guest email<input type="email" formControlName="guestEmail"
+            /></label>
+          }
           <label class="field full"
             >Engineer notes<textarea formControlName="engineerNotes"></textarea>
           </label>
@@ -347,13 +351,15 @@
               [class.warning]="visit.status === 'SUBMITTED'"
               >{{ visit.status === 'SUBMITTED' ? 'AWAITING REVIEW' : visit.status }}</span
             >
-            <button
-              class="button secondary compact"
-              type="button"
-              (click)="createGuestLink(visit.id)"
-            >
-              Guest link
-            </button>
+            @if (canAssign()) {
+              <button
+                class="button secondary compact"
+                type="button"
+                (click)="createGuestLink(visit.id)"
+              >
+                Guest link
+              </button>
+            }
           </div>
         </article>
       } @empty {

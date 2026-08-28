@@ -7,6 +7,12 @@ import {
 } from '@supabase/supabase-js';
 import { AppConfigService } from './app-config.service';
 
+export interface UserProfile {
+  email: string;
+  displayName: string;
+  mobile: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly config = inject(AppConfigService);
@@ -73,6 +79,24 @@ export class AuthService {
     const { error } = await this.client.auth.updateUser({ password });
     if (error !== null) throw error;
     this.passwordRecoveryState.set(false);
+  }
+
+  async userProfile(): Promise<UserProfile> {
+    const { data, error } = await this.client.auth.getUser();
+    if (error !== null) throw error;
+    const metadata = data.user.user_metadata;
+    return {
+      email: data.user.email ?? '',
+      displayName: typeof metadata['display_name'] === 'string' ? metadata['display_name'] : '',
+      mobile: typeof metadata['mobile'] === 'string' ? metadata['mobile'] : '',
+    };
+  }
+
+  async updateProfile(displayName: string, mobile: string): Promise<void> {
+    const { error } = await this.client.auth.updateUser({
+      data: { display_name: displayName, mobile },
+    });
+    if (error !== null) throw error;
   }
 
   async signOut(): Promise<void> {

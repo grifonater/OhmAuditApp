@@ -11,11 +11,14 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
   ApiService,
+  type AssetMedia,
   type AssetSummary,
   type Entitlement,
   type ReportSummary,
   type SiteDetail,
 } from '../core/api.service';
+import { AuthService } from '../core/auth.service';
+import { compressPhoto } from '../core/image-compression';
 
 type SiteTab = 'overview' | 'assets' | 'reports' | 'reminders';
 @Component({
@@ -27,11 +30,18 @@ type SiteTab = 'overview' | 'assets' | 'reports' | 'reminders';
 })
 export class SiteDetailComponent {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly customerId = this.route.snapshot.paramMap.get('customerId') ?? '';
   protected readonly siteId = this.route.snapshot.paramMap.get('siteId') ?? '';
+  protected readonly capabilities = signal<string[]>([]);
+  protected readonly canManageSite = computed(() => this.capabilities().includes('sites.manage'));
+  protected readonly canManageAssets = computed(() =>
+    this.capabilities().includes('assets.manage'),
+  );
+  protected readonly canCreateVisit = computed(() => this.capabilities().includes('visits.create'));
   protected readonly site = signal<SiteDetail | undefined>(undefined);
   protected readonly entitlements = signal<Entitlement[]>([]);
   protected readonly evEnabled = computed(
@@ -45,6 +55,11 @@ export class SiteDetailComponent {
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly siteImageUrls = signal<Record<string, string>>({});
+  protected readonly heroImage = computed(() => {
+    const media = this.site()?.media;
+    if (!media?.length) return undefined;
+    return media.find((m) => m.isPrimary) ?? media[0];
+  });
   protected readonly assetSearch = new FormControl('', { nonNullable: true });
   protected readonly statusFilter = new FormControl('ALL', { nonNullable: true });
   private readonly assetQuery = toSignal(this.assetSearch.valueChanges, { initialValue: '' });
@@ -126,25 +141,55 @@ export class SiteDetailComponent {
     const files = [...(input.files ?? [])];
     input.value = '';
     if (!files.length) return;
+    const uploaded: AssetMedia[] = [];
     await this.run(async () => {
       for (const file of files) {
+        const compressed = await compressPhoto(file);
+        if (compressed.size > 2_000_000)
+          throw new Error(`${file.name} is too large after compression. Try a smaller image.`);
         const { media } = await this.api.registerMedia(this.organisationId, {
           entityType: 'Site',
           entityId: this.siteId,
           category: 'site-image',
           ...(this.site()?.name === undefined ? {} : { caption: this.site()!.name }),
-          mimeType: file.type as 'image/jpeg' | 'image/png' | 'image/webp',
-          size: file.size,
+          mimeType: 'image/jpeg',
+          size: compressed.size,
         });
-        await this.api.uploadMedia(this.organisationId, media.id, file);
+        await this.api.uploadMedia(this.organisationId, media.id, compressed);
+        const blob = await this.api.downloadMedia(this.organisationId, media.id).catch(() => null);
+        const url = blob ? URL.createObjectURL(blob) : '';
+        uploaded.push(media);
+        if (url) this.siteImageUrls.update((map) => ({ ...map, [media.id]: url }));
       }
-      await this.load();
+      this.site.update((s) => (s ? { ...s, media: [...(s.media ?? []), ...uploaded] } : s));
     });
   }
   protected async deleteSiteImage(mediaId: string): Promise<void> {
     await this.run(async () => {
       await this.api.deleteMedia(this.organisationId, mediaId);
-      await this.load();
+      const url = this.siteImageUrls()[mediaId];
+      if (url) URL.revokeObjectURL(url);
+      this.siteImageUrls.update((map) => {
+        const next = { ...map };
+        delete next[mediaId];
+        return next;
+      });
+      this.site.update((s) =>
+        s ? { ...s, media: (s.media ?? []).filter((m) => m.id !== mediaId) } : s,
+      );
+    });
+  }
+  protected async setAsMainPhoto(mediaId: string): Promise<void> {
+    await this.run(async () => {
+      await this.api.setSitePhotoPrimary(this.organisationId, this.siteId, mediaId);
+      this.site.update((s) =>
+        s
+          ? {
+              ...s,
+              media: (s.media ?? []).map((m) => ({ ...m, isPrimary: m.id === mediaId })),
+            }
+          : s,
+      );
     });
   }
   protected setTab(tab: SiteTab): void {
@@ -167,10 +212,11 @@ export class SiteDetailComponent {
   }
   protected async saveSite(): Promise<void> {
     if (this.siteForm.invalid) return;
+    const formValue = this.siteForm.getRawValue();
     await this.run(async () => {
-      await this.api.updateSite(this.organisationId, this.siteId, this.siteForm.getRawValue());
+      await this.api.updateSite(this.organisationId, this.siteId, formValue);
+      this.site.update((s) => (s ? { ...s, ...formValue } : s));
       this.editingSite.set(false);
-      await this.load();
     });
   }
   protected async createAsset(): Promise<void> {
@@ -216,6 +262,22 @@ export class SiteDetailComponent {
       await this.load();
     });
   }
+  protected async removeAsset(asset: AssetSummary): Promise<void> {
+    if (
+      !confirm(
+        `Remove "${asset.displayName}" (${asset.assetReference}) from this site?\n\n` +
+          `The asset record is retained for existing certificates and reports but will no longer ` +
+          `appear in the site asset register.`,
+      )
+    )
+      return;
+    await this.run(async () => {
+      await this.api.updateAssetLifecycle(this.organisationId, asset.id, 'REMOVED');
+      this.site.update((s) =>
+        s ? { ...s, assets: s.assets.filter((a) => a.id !== asset.id) } : s,
+      );
+    });
+  }
   protected async openReport(report: ReportSummary): Promise<void> {
     if (!report.visitId && !report.mediaId && !report.inspectionRevisionId) return;
     await this.run(async () => {
@@ -240,6 +302,11 @@ export class SiteDetailComponent {
   }
   private async load(): Promise<void> {
     await this.run(async () => {
+      const account = await this.api.currentUser();
+      const membership = account.memberships.find(
+        (item) => item.organisation.id === this.organisationId,
+      );
+      this.capabilities.set(membership?.role.capabilities ?? []);
       const [siteResult, entitlementResult] = await Promise.all([
         this.api.getSite(this.organisationId, this.siteId),
         this.api.entitlements(this.organisationId),

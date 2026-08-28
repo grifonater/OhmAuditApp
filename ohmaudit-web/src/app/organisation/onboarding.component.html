@@ -5,7 +5,7 @@
       <h1>Set up your Organisation</h1>
       <p>Complete these steps at your own pace. Your progress is saved as you go.</p>
     </div>
-    <span class="badge trial">30-day trial active</span>
+    <span class="badge info">Module access configured</span>
   </header>
 
   <div class="setup-layout">
@@ -36,14 +36,16 @@
         <span>3</span>
         <div><strong>Accreditations</strong><small>Registration schemes</small></div>
       </button>
-      <button
-        type="button"
-        [class.active]="activeSection() === 'team'"
-        (click)="activeSection.set('team')"
-      >
-        <span>4</span>
-        <div><strong>Team</strong><small>Invite staff and engineers</small></div>
-      </button>
+      @if (canManageUsers()) {
+        <button
+          type="button"
+          [class.active]="activeSection() === 'team'"
+          (click)="activeSection.set('team')"
+        >
+          <span>4</span>
+          <div><strong>Team</strong><small>Invite staff and engineers</small></div>
+        </button>
+      }
       <button
         type="button"
         [class.active]="activeSection() === 'modules'"
@@ -128,7 +130,7 @@
                   alt="Current organisation logo"
                 />
               }
-              <small>PNG, JPEG or WebP · maximum 20 MB</small
+              <small>PNG, JPEG or WebP · maximum 2 MB</small
               ><span class="button secondary compact">Choose file</span></label
             >
           </div>
@@ -211,7 +213,7 @@
           </div>
         }
       }
-      @if (activeSection() === 'team') {
+      @if (activeSection() === 'team' && canManageUsers()) {
         <div class="setup-heading">
           <span class="setup-icon">+</span>
           <div>
@@ -263,7 +265,7 @@
           <span class="setup-icon">◇</span>
           <div>
             <h2>Module access</h2>
-            <p>All specialist modules are available during your initial trial.</p>
+            <p>Specialist features are available only while their module is active.</p>
           </div>
         </div>
         <div class="module-grid">
@@ -271,13 +273,18 @@
             <article>
               <div class="module-top">
                 <span class="module-icon">{{ item.module.name.charAt(0) }}</span
-                ><span class="badge trial">{{ item.status }}</span>
+                ><span class="badge" [class.success]="item.entitled">{{ item.status }}</span>
               </div>
               <h3>{{ item.module.name }}</h3>
               <p>{{ item.module.description }}</p>
               <footer>
-                <strong>{{ item.daysRemaining }}</strong
-                ><span>days remaining</span>
+                @if (item.entitled && item.expiresAt) {
+                  <strong>{{ item.daysRemaining }}</strong
+                  ><span>days remaining</span>
+                } @else {
+                  <strong>{{ item.entitled ? 'Active' : 'Unavailable' }}</strong
+                  ><span>{{ item.entitled ? 'module access' : 'contact your administrator' }}</span>
+                }
               </footer>
             </article>
           }

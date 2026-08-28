@@ -53,6 +53,10 @@
   border-radius: 0.65rem;
   background: var(--oa-canvas-soft);
 }
+.site-gallery figure.main-photo {
+  outline: 2px solid var(--oa-teal-600);
+  outline-offset: -2px;
+}
 .site-gallery img {
   width: 100%;
   height: 10rem;
@@ -66,10 +70,24 @@
   color: var(--oa-ink-muted);
   font-size: 0.72rem;
 }
-.site-gallery button {
+.site-photo-actions {
   position: absolute;
   right: 0.45rem;
   bottom: 0.45rem;
+  display: flex;
+  gap: 0.3rem;
+}
+.main-photo-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.4rem;
+  background: var(--oa-teal-600);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
 }
 .site-gallery-empty {
   grid-column: 1 / -1;

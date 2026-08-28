@@ -19,6 +19,10 @@ export class CalendarComponent {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
+  protected readonly capabilities = signal<string[]>([]);
+  protected readonly canManageSchedules = computed(() =>
+    this.capabilities().includes('sites.manage'),
+  );
   protected readonly month = signal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   protected readonly occurrences = signal<ScheduleOccurrence[]>([]);
   protected readonly sites = signal<SiteSummary[]>([]);
@@ -92,10 +96,15 @@ export class CalendarComponent {
   }
   private async initialise(): Promise<void> {
     await this.run(async () => {
-      const [sites, entitlements] = await Promise.all([
+      const [account, sites, entitlements] = await Promise.all([
+        this.api.currentUser(),
         this.api.listSites(this.organisationId),
         this.api.entitlements(this.organisationId),
       ]);
+      const membership = account.memberships.find(
+        (item) => item.organisation.id === this.organisationId,
+      );
+      this.capabilities.set(membership?.role.capabilities ?? []);
       this.sites.set(sites.sites);
       this.entitlements.set(entitlements.entitlements);
       if (

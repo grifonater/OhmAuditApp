@@ -206,6 +206,15 @@
                     the office for approval.
                   </p>
                 </div>
+                <button
+                  class="step-help"
+                  type="button"
+                  (click)="openHelp('unit')"
+                  [attr.aria-label]="helpLabel('unit')"
+                  [class.active]="helpStep() === 'unit'"
+                >
+                  ?
+                </button>
               </div>
               <div class="data-plate-assistant">
                 <div class="data-plate-intro">
@@ -217,17 +226,29 @@
                       review.
                     </small>
                   </span>
-                  <label class="button secondary compact data-plate-capture">
-                    {{ dataPlateBusy() ? 'Analysing…' : 'Take or upload photo' }}
-                    <input
-                      hidden
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      capture="environment"
-                      [disabled]="dataPlateBusy()"
-                      (change)="analyseDataPlate($event)"
-                    />
-                  </label>
+                  <span class="data-plate-actions">
+                    <label class="button secondary compact data-plate-capture">
+                      {{ dataPlateBusy() ? 'Uploading…' : 'Upload photo' }}
+                      <input
+                        hidden
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        [disabled]="dataPlateBusy()"
+                        (change)="analyseDataPlate($event)"
+                      />
+                    </label>
+                    <label class="button compact data-plate-capture">
+                      Take photo
+                      <input
+                        hidden
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        capture="environment"
+                        [disabled]="dataPlateBusy()"
+                        (change)="analyseDataPlate($event)"
+                      />
+                    </label>
+                  </span>
                 </div>
                 @if (dataPlatePreviewUrl()) {
                   <img
@@ -307,6 +328,15 @@
                     Confirm the stored supply details first, then record Zs followed by maximum PFC.
                   </p>
                 </div>
+                <button
+                  class="step-help"
+                  type="button"
+                  (click)="openHelp('supplies')"
+                  [attr.aria-label]="helpLabel('supplies')"
+                  [class.active]="helpStep() === 'supplies'"
+                >
+                  ?
+                </button>
               </div>
               <div class="repeat-stack">
                 @for (
@@ -394,6 +424,15 @@
                   <h2>Test each connector</h2>
                   <p>Complete the four functional checks, then the RCD times in the order shown.</p>
                 </div>
+                <button
+                  class="step-help"
+                  type="button"
+                  (click)="openHelp('connectors')"
+                  [attr.aria-label]="helpLabel('connectors')"
+                  [class.active]="helpStep() === 'connectors'"
+                >
+                  ?
+                </button>
               </div>
               <div class="repeat-stack">
                 @for (
@@ -634,6 +673,17 @@
                 <h2>Were any faults found?</h2>
                 <p>Choose one option. Fault details are only needed when a fault is found.</p>
               </div>
+              @if (isEvTask()) {
+                <button
+                  class="step-help"
+                  type="button"
+                  (click)="openHelp('condition')"
+                  [attr.aria-label]="helpLabel('condition')"
+                  [class.active]="helpStep() === 'condition'"
+                >
+                  ?
+                </button>
+              }
             </div>
             <div class="fault-choice-grid">
               <button
@@ -712,6 +762,17 @@
                   Choose the overall outcome, sign, and send the completed inspection to the office.
                 </p>
               </div>
+              @if (isEvTask()) {
+                <button
+                  class="step-help"
+                  type="button"
+                  (click)="openHelp('submit')"
+                  [attr.aria-label]="helpLabel('submit')"
+                  [class.active]="helpStep() === 'submit'"
+                >
+                  ?
+                </button>
+              }
             </div>
             <div class="choice-grid">
               <button
@@ -786,3 +847,79 @@
     <p class="error floating-error" role="alert">{{ error() }}</p>
   }
 </main>
+
+@if (helpStep(); as step) {
+  <div
+    class="step-help-overlay"
+    (click)="closeHelp()"
+    (keydown.enter)="closeHelp()"
+    tabindex="0"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="helpLabel(step)"
+  >
+    <div
+      class="step-help-panel"
+      (click)="$event.stopPropagation()"
+      (keydown.enter)="$event.stopPropagation()"
+      tabindex="0"
+    >
+      <div class="step-help-header">
+        <div>
+          <p class="step-help-eyebrow">Step instructions</p>
+          <h2>{{ helpLabel(step) }}</h2>
+        </div>
+        <button class="step-help-close" type="button" (click)="closeHelp()" aria-label="Close help">
+          ×
+        </button>
+      </div>
+      @if (helpLoading()) {
+        <div class="step-help-state">Loading instructions…</div>
+      } @else if (helpError(); as error) {
+        <div class="step-help-state error">
+          <p>{{ error }}</p>
+          <button class="button secondary compact" type="button" (click)="openHelp(step)">
+            Try again
+          </button>
+        </div>
+      } @else if (helpContent(); as content) {
+        @if (content.video) {
+          <div class="step-help-video">
+            @if (content.video.mimeType === 'image/gif') {
+              <img [src]="helpVideoSrc()" [alt]="content.title" />
+            } @else {
+              <video controls playsinline preload="metadata" [src]="helpVideoSrc()"></video>
+            }
+          </div>
+        } @else {
+          <p class="step-help-no-video">No demonstration video is available for this step.</p>
+        }
+        <div class="step-help-body">
+          <p class="step-help-provenance">
+            @if (content.matchedManufacturer) {
+              Instructions for {{ helpManufacturer() || 'this charger' }}
+            } @else {
+              Generic instructions{{
+                helpManufacturer()
+                  ? ' — no specific guide for “' + helpManufacturer() + '” yet'
+                  : ''
+              }}
+            }
+          </p>
+          <ol class="step-help-steps">
+            @for (stepText of content.steps; track stepText) {
+              <li>{{ stepText }}</li>
+            }
+          </ol>
+          @if (content.notes) {
+            <p class="step-help-notes">{{ content.notes }}</p>
+          }
+        </div>
+      } @else {
+        <div class="step-help-state">
+          <p>No instructions have been set up for this step yet.</p>
+        </div>
+      }
+    </div>
+  </div>
+}

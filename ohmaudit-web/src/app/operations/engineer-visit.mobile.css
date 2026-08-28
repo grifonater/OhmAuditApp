@@ -287,6 +287,14 @@
   line-height: 1.4;
 }
 
+.ev-mobile-app .step-help {
+  width: 1.85rem;
+  height: 1.85rem;
+  color: #14625a;
+  border-color: #9cc8c0;
+  background: #eef8f5;
+}
+
 .ev-mobile-app .data-plate-assistant {
   display: grid;
   gap: 0.65rem;
@@ -334,8 +342,14 @@
   letter-spacing: 0.04em;
 }
 
-.ev-mobile-app .data-plate-capture {
+.ev-mobile-app .data-plate-actions {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.ev-mobile-app .data-plate-capture {
   width: 100%;
   justify-content: center;
   cursor: pointer;

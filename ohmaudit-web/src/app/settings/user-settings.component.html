@@ -1,0 +1,122 @@
+<main class="page settings-page">
+  <header class="page-header settings-header">
+    <div>
+      <p class="eyebrow">Your account</p>
+      <h1>Account settings</h1>
+      <p>Keep your personal details and sign-in credentials up to date.</p>
+    </div>
+    <span class="account-badge" aria-hidden="true">U</span>
+  </header>
+
+  @if (loading()) {
+    <section class="card loading-card" aria-live="polite">Loading your account…</section>
+  } @else {
+    <div class="settings-grid">
+      <section class="card settings-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Personal details</p>
+            <h2>Profile</h2>
+          </div>
+          <span class="section-icon" aria-hidden="true">ID</span>
+        </div>
+        <form class="card-body settings-form" [formGroup]="profileForm" (ngSubmit)="saveProfile()">
+          <label class="field">
+            Full name
+            <input formControlName="displayName" autocomplete="name" placeholder="Your full name" />
+            @if (
+              profileForm.controls.displayName.touched && profileForm.controls.displayName.invalid
+            ) {
+              <small class="field-error">Enter a name between 2 and 120 characters.</small>
+            }
+          </label>
+          <label class="field">
+            Email address
+            <input formControlName="email" type="email" autocomplete="email" />
+            <small>Your email is managed by your sign-in account.</small>
+          </label>
+          <label class="field">
+            Mobile number
+            <input
+              formControlName="mobile"
+              type="tel"
+              autocomplete="tel"
+              placeholder="e.g. +44 7700 900000"
+            />
+            @if (profileForm.controls.mobile.touched && profileForm.controls.mobile.invalid) {
+              <small class="field-error">Enter a valid mobile number.</small>
+            } @else {
+              <small>Include the country code if you work internationally.</small>
+            }
+          </label>
+          @if (profileMessage()) {
+            <p class="success-message form-message" role="status">{{ profileMessage() }}</p>
+          }
+          @if (profileError()) {
+            <p class="error form-message" role="alert">{{ profileError() }}</p>
+          }
+          <div class="form-actions">
+            <button
+              class="button primary"
+              type="submit"
+              [disabled]="profileBusy() || profileForm.invalid"
+            >
+              {{ profileBusy() ? 'Saving…' : 'Save changes' }}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card settings-card password-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Security</p>
+            <h2>Change password</h2>
+          </div>
+          <span class="section-icon secure" aria-hidden="true">••</span>
+        </div>
+        <form
+          class="card-body settings-form"
+          [formGroup]="passwordForm"
+          (ngSubmit)="changePassword()"
+        >
+          <p class="form-intro">
+            Use at least 10 characters and avoid reusing a password from another service.
+          </p>
+          <label class="field">
+            New password
+            <input formControlName="password" type="password" autocomplete="new-password" />
+            @if (passwordForm.controls.password.touched && passwordForm.controls.password.invalid) {
+              <small class="field-error">Use at least 10 characters.</small>
+            }
+          </label>
+          <label class="field">
+            Confirm new password
+            <input formControlName="confirmation" type="password" autocomplete="new-password" />
+            @if (
+              passwordForm.hasError('passwordsDoNotMatch') &&
+              passwordForm.controls.confirmation.touched
+            ) {
+              <small class="field-error">The passwords do not match.</small>
+            }
+          </label>
+          @if (passwordMessage()) {
+            <p class="success-message form-message" role="status">{{ passwordMessage() }}</p>
+          }
+          @if (passwordError()) {
+            <p class="error form-message" role="alert">{{ passwordError() }}</p>
+          }
+          <div class="form-actions">
+            <button
+              class="button secondary"
+              type="submit"
+              [disabled]="passwordBusy() || passwordForm.invalid"
+            >
+              {{ passwordBusy() ? 'Changing…' : 'Change password' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  }
+</main>

@@ -12,7 +12,15 @@ export const capabilities = [
   'inspections.approve',
   'certificates.generate',
   'certificates.issue',
+  'ev.assets.read',
+  'ev.assets.manage',
+  'ev.inspections.perform',
+  'ev.certificates.issue',
   'ev.remote-control',
+  'thermal.equipment.read',
+  'thermal.equipment.manage',
+  'thermal.inspections.perform',
+  'thermal.reports.issue',
   'billing.manage',
   'organisation.manage',
   'organisation.users.manage',
@@ -110,10 +118,61 @@ export const capabilityCatalogue: CapabilityDefinition[] = [
     sensitive: true,
   },
   {
+    key: 'ev.assets.read',
+    group: 'EV charging',
+    name: 'View EV chargers',
+    description: 'View EV charger configuration, supplies and connectors.',
+  },
+  {
+    key: 'ev.assets.manage',
+    group: 'EV charging',
+    name: 'Manage EV chargers',
+    description: 'Create and edit EV chargers, supplies and connectors.',
+  },
+  {
+    key: 'ev.inspections.perform',
+    group: 'EV charging',
+    name: 'Perform EV inspections',
+    description: 'Record and submit EV charger inspections and tests.',
+  },
+  {
+    key: 'ev.certificates.issue',
+    group: 'EV charging',
+    name: 'Issue EV certificates',
+    description: 'Issue final EV charging inspection certificates.',
+    sensitive: true,
+  },
+  {
     key: 'ev.remote-control',
     group: 'EV charging',
     name: 'Remote control',
     description: 'Operate supported EV equipment remotely.',
+    sensitive: true,
+  },
+  {
+    key: 'thermal.equipment.read',
+    group: 'Thermal imaging',
+    name: 'View thermal equipment',
+    description: 'View thermal cameras and calibration records.',
+  },
+  {
+    key: 'thermal.equipment.manage',
+    group: 'Thermal imaging',
+    name: 'Manage thermal equipment',
+    description: 'Create, edit and archive thermal imaging equipment.',
+    sensitive: true,
+  },
+  {
+    key: 'thermal.inspections.perform',
+    group: 'Thermal imaging',
+    name: 'Perform thermal surveys',
+    description: 'Capture evidence and submit thermal imaging surveys.',
+  },
+  {
+    key: 'thermal.reports.issue',
+    group: 'Thermal imaging',
+    name: 'Issue thermal reports',
+    description: 'Issue final thermal imaging reports.',
     sensitive: true,
   },
   {
@@ -139,13 +198,25 @@ export const capabilityCatalogue: CapabilityDefinition[] = [
   },
 ];
 
-const readOnly: Capability[] = ['customers.read', 'sites.read', 'assets.read'];
-const engineer: Capability[] = [...readOnly, 'inspections.perform'];
+const readOnly: Capability[] = [
+  'customers.read',
+  'sites.read',
+  'assets.read',
+  'ev.assets.read',
+  'thermal.equipment.read',
+];
+const engineer: Capability[] = [
+  ...readOnly,
+  'inspections.perform',
+  'ev.inspections.perform',
+  'thermal.inspections.perform',
+];
 const office: Capability[] = [
   ...readOnly,
   'customers.manage',
   'sites.manage',
   'assets.manage',
+  'ev.assets.manage',
   'visits.create',
   'visits.assign',
   'certificates.generate',
@@ -168,7 +239,14 @@ export const defaultRoles = [
     key: 'contract-manager',
     name: 'Contract Manager',
     privileged: false,
-    capabilities: [...office, 'inspections.review', 'inspections.approve', 'certificates.issue'],
+    capabilities: [
+      ...office,
+      'inspections.review',
+      'inspections.approve',
+      'certificates.issue',
+      'ev.certificates.issue',
+      'thermal.reports.issue',
+    ],
   },
   {
     key: 'office-administrator',

@@ -1,5 +1,13 @@
-<div class="app-frame" [class.drawer-visible]="drawerOpen()">
-  <aside class="sidebar" aria-label="Primary navigation">
+<div
+  class="app-frame"
+  [class.drawer-visible]="drawerOpen()"
+  [class.drawer-dragging]="drawerDragging()"
+  (touchstart)="onTouchStart($event)"
+  (touchmove)="onTouchMove($event)"
+  (touchend)="onTouchEnd()"
+  (touchcancel)="onTouchEnd()"
+>
+  <aside #sidebar class="sidebar" aria-label="Primary navigation">
     <div class="sidebar-brand">
       <span class="brand-mark" aria-hidden="true">Ω</span>
       <span class="brand-wordmark">OhmAudit</span>
@@ -66,7 +74,11 @@
       @if (account(); as currentAccount) {
         @if (!currentAccount.supportSession) {
           <p class="nav-label nav-label-secondary">Platform</p>
-          <a routerLink="/app/platform" routerLinkActive="active">
+          <a
+            routerLink="/app/platform"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: true }"
+          >
             <span class="nav-icon">S</span
             ><span>{{
               currentAccount.user.platformRole === 'PLATFORM_ADMIN'
@@ -74,19 +86,29 @@
                 : 'Platform setup'
             }}</span>
           </a>
+          @if (currentAccount.user.platformRole === 'PLATFORM_ADMIN') {
+            <a routerLink="/app/platform/testing" routerLinkActive="active">
+              <span class="nav-icon">D</span><span>Feature testing</span>
+            </a>
+          }
         }
       }
     </nav>
 
     <div class="sidebar-footer">
       @if (account(); as currentAccount) {
-        <button class="user-button" type="button" (click)="signOut()">
-          <span class="avatar">{{ userInitials() }}</span>
-          <span
-            ><strong>{{ currentAccount.user.displayName || 'Account' }}</strong
-            ><small>Sign out</small></span
-          >
-        </button>
+        <div class="sidebar-account">
+          <a class="user-button" routerLink="/app/settings">
+            <span class="avatar">{{ userInitials() }}</span>
+            <span
+              ><strong>{{ currentAccount.user.displayName || 'Account' }}</strong
+              ><small>Account settings</small></span
+            >
+          </a>
+          <button class="sidebar-signout" type="button" (click)="signOut()" aria-label="Sign out">
+            ↪
+          </button>
+        </div>
       }
       <div class="organisation-switcher">
         <button
@@ -285,7 +307,39 @@
       <a class="mobile-brand" routerLink="/app"
         ><span class="brand-mark small-mark" aria-hidden="true">Ω</span>OhmAudit</a
       >
-      <span class="avatar mobile-avatar">{{ userInitials() }}</span>
+      @if (account(); as currentAccount) {
+        <div class="mobile-user">
+          <button
+            class="mobile-user-button"
+            type="button"
+            (click)="toggleAccountMenu($event)"
+            [attr.aria-expanded]="accountMenuOpen()"
+            aria-haspopup="menu"
+          >
+            <span class="mobile-user-name">{{ currentAccount.user.displayName || 'Account' }}</span>
+            <span class="avatar mobile-avatar">{{ userInitials() }}</span>
+          </button>
+          @if (accountMenuOpen()) {
+            <div class="account-menu" role="menu">
+              <div class="account-menu-summary">
+                <strong>{{ currentAccount.user.displayName || 'Account' }}</strong>
+                <small>{{ currentAccount.user.email }}</small>
+              </div>
+              <a routerLink="/app/settings" role="menuitem">
+                <span class="account-menu-icon" aria-hidden="true">⚙</span>
+                <span
+                  ><strong>Account settings</strong
+                  ><small>Edit your profile and password</small></span
+                >
+              </a>
+              <button type="button" role="menuitem" (click)="signOut()">
+                <span class="account-menu-icon" aria-hidden="true">↪</span>
+                <span><strong>Log out</strong><small>End this session</small></span>
+              </button>
+            </div>
+          }
+        </div>
+      }
     </header>
     @if (error()) {
       <div class="shell-error" role="alert">{{ error() }}</div>
@@ -296,7 +350,7 @@
         <div class="deployment-copy">
           <span class="deployment-dot" aria-hidden="true"></span>
           <span>
-            <small>Cloudflare web deployment</small>
+            <small>Web Version</small>
             <code>{{ release.id }}</code>
           </span>
           <button

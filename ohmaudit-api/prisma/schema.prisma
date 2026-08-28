@@ -313,6 +313,7 @@ model Site {
   name                 String
   reference            String?
   status               RecordStatus   @default(ACTIVE)
+  mainPhotoMediaId     String?        @map("main_photo_media_id") @db.Uuid
   addressLine1         String?        @map("address_line_1")
   addressLine2         String?        @map("address_line_2")
   city                 String?
@@ -467,6 +468,7 @@ model Media {
   originalFilename String?      @map("original_filename")
   tags             String[]     @default([])
   sortOrder        Int          @default(0) @map("sort_order")
+  isPrimary        Boolean      @default(false) @map("is_primary")
   capturedAt       DateTime?    @map("captured_at")
   capturedByUserId String?      @map("captured_by_user_id") @db.Uuid
   mimeType         String       @map("mime_type")
@@ -1070,4 +1072,19 @@ model BillingWebhookEvent {
 
   @@unique([provider, providerEventId])
   @@map("billing_webhook_events")
+}
+
+model EvTestInstruction {
+  id            String       @id @default(uuid()) @db.Uuid
+  step          String
+  manufacturers String[]     @default([])
+  title         String
+  steps         String[]     @default([])
+  notes         String?
+  videoMediaId  String?      @map("video_media_id") @db.Uuid
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  @@index([step])
+  @@map("ev_test_instructions")
 }

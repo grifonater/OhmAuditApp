@@ -8,9 +8,11 @@
         visible.
       </p>
     </div>
-    <button class="button primary" type="button" (click)="showCreate.set(!showCreate())">
-      + New schedule
-    </button>
+    @if (canManageSchedules()) {
+      <button class="button primary" type="button" (click)="showCreate.set(!showCreate())">
+        + New schedule
+      </button>
+    }
   </header>
   @if (showCreate()) {
     <section class="card panel">

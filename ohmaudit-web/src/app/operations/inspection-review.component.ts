@@ -65,6 +65,19 @@ export class InspectionReviewComponent {
 
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   private readonly reviewId = this.route.snapshot.paramMap.get('reviewId') ?? '';
+  protected readonly capabilities = signal<string[]>([]);
+  protected readonly canApprove = computed(() =>
+    this.capabilities().includes('inspections.approve'),
+  );
+  protected readonly canIssueCertificates = computed(() =>
+    this.capabilities().includes('certificates.issue'),
+  );
+  protected readonly canIssueThermalReports = computed(() =>
+    this.capabilities().includes('thermal.reports.issue'),
+  );
+  protected readonly canManageAssets = computed(() =>
+    this.capabilities().includes('assets.manage'),
+  );
   protected readonly inspections = signal<InspectionSummary[]>([]);
   protected readonly selectedId = signal('');
   protected readonly inspection = signal<InspectionSummary | undefined>(undefined);
@@ -739,8 +752,15 @@ export class InspectionReviewComponent {
 
   private async loadSession(): Promise<void> {
     await this.run(async () => {
-      const all = (await this.api.listInspections(this.organisationId)).inspections;
-      const session = all
+      const [account, all] = await Promise.all([
+        this.api.currentUser(),
+        this.api.listInspections(this.organisationId),
+      ]);
+      const membership = account.memberships.find(
+        (item) => item.organisation.id === this.organisationId,
+      );
+      this.capabilities.set(membership?.role.capabilities ?? []);
+      const session = all.inspections
         .filter((item) => item.visit?.id === this.reviewId || item.id === this.reviewId)
         .sort((left, right) =>
           (left.asset?.assetReference ?? left.inspectionType).localeCompare(

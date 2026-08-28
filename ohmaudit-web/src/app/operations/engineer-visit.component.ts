@@ -8,6 +8,8 @@ import {
   type ChargerDataPlateCandidate,
   type ChargerDataPlateField,
   type EvChargePoint,
+  type EvTestInstructionContent,
+  type EvTestStep,
   type InspectionSummary,
   type VisitSummary,
   type VisitTask,
@@ -77,6 +79,11 @@ export class EngineerVisitComponent {
   protected readonly dataPlateCandidates = signal<ChargerDataPlateCandidate[]>([]);
   protected readonly missingDataPlateFields = signal<ChargerDataPlateField[]>([]);
   protected readonly appliedDataPlateFields = signal<ChargerDataPlateField[]>([]);
+  protected readonly helpStep = signal<EvTestStep | ''>('');
+  protected readonly helpContent = signal<EvTestInstructionContent | null>(null);
+  protected readonly helpLoading = signal(false);
+  protected readonly helpError = signal('');
+  protected readonly helpManufacturer = signal('');
 
   protected readonly form = new FormGroup({
     outcome: new FormControl('PASS', { nonNullable: true, validators: Validators.required }),
@@ -135,6 +142,7 @@ export class EngineerVisitComponent {
     this.destroyRef.onDestroy(() => {
       this.revokeAssetImage();
       this.revokeDataPlatePreview();
+      if (this.helpStep() !== '') document.body.style.overflow = '';
     });
     void this.load();
   }
@@ -213,6 +221,64 @@ export class EngineerVisitComponent {
 
   protected scrollToSection(sectionId: string): void {
     document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  protected helpLabel(step: EvTestStep): string {
+    switch (step) {
+      case 'unit':
+        return 'Help for “Confirm the unit”';
+      case 'supplies':
+        return 'Help for “Test each supply”';
+      case 'connectors':
+        return 'Help for “Test each connector”';
+      case 'condition':
+        return 'Help for “Were any faults found?”';
+      case 'submit':
+        return 'Help for “Review & submit”';
+    }
+  }
+
+  protected async openHelp(step: EvTestStep): Promise<void> {
+    if (this.helpStep() === step) {
+      this.closeHelp();
+      return;
+    }
+    this.helpStep.set(step);
+    this.helpContent.set(null);
+    this.helpError.set('');
+    const manufacturer = this.isEvTask()
+      ? (this.evAssetForm.controls.manufacturer.value ?? '').trim()
+      : '';
+    this.helpManufacturer.set(manufacturer);
+    this.helpLoading.set(true);
+    document.body.style.overflow = 'hidden';
+    try {
+      const content = this.guestToken
+        ? await this.api.getGuestEvTestInstruction(this.guestToken, step, manufacturer)
+        : await this.api.getEvTestInstruction(this.organisationId, step, manufacturer);
+      this.helpContent.set(content);
+    } catch (error) {
+      this.helpError.set(
+        error instanceof Error ? error.message : 'Unable to load the step instructions.',
+      );
+    } finally {
+      this.helpLoading.set(false);
+    }
+  }
+
+  protected closeHelp(): void {
+    if (this.helpStep() === '') return;
+    this.helpStep.set('');
+    this.helpContent.set(null);
+    this.helpError.set('');
+    document.body.style.overflow = '';
+  }
+
+  protected helpVideoSrc(): string {
+    const video = this.helpContent()?.video;
+    return video === null || video === undefined
+      ? ''
+      : this.api.evTestInstructionVideoUrl(video.id);
   }
 
   protected tripReadingFailed(value: number | null, maximumMs: number): boolean {
@@ -344,15 +410,6 @@ export class EngineerVisitComponent {
       const power = Number(candidate.value);
       if (Number.isFinite(power) && power > 0)
         this.evAssetForm.controls.maximumPowerKw.setValue(power);
-    } else if (candidate.field === 'connectorTypes') {
-      const types = candidate.value
-        .split(',')
-        .map((value) => this.normaliseConnectorType(value))
-        .filter((value): value is string => value !== undefined);
-      types.forEach((type, index) => {
-        if (index >= this.connectorTests.length) this.addConnector();
-        this.connectorTests.at(index).controls.connectorType.setValue(type);
-      });
     } else {
       this.evAssetForm.controls[candidate.field].setValue(candidate.value);
     }
@@ -367,7 +424,6 @@ export class EngineerVisitComponent {
       model: 'Model',
       serialNumber: 'Serial number',
       maximumPowerKw: 'Power output',
-      connectorTypes: 'Connectors',
     }[field];
   }
 
@@ -679,16 +735,6 @@ export class EngineerVisitComponent {
       dcRamp0Ma: new FormControl<number | null>(null),
       dcRamp180Ma: new FormControl<number | null>(null),
     });
-  }
-
-  private normaliseConnectorType(value: string): string | undefined {
-    const compact = value.trim().toLowerCase().replace(/[\s-]/gu, '');
-    if (compact === 'type2') return 'Type 2';
-    if (compact === 'ccs' || compact === 'ccs2') return 'CCS';
-    if (compact === 'chademo') return 'CHAdeMO';
-    if (compact === 'type1') return 'Type 1';
-    if (compact === 'socket') return 'Socket';
-    return undefined;
   }
 
   private revokeDataPlatePreview(): void {

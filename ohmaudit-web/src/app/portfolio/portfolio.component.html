@@ -261,7 +261,15 @@
                                 site.id,
                               ]"
                             >
-                              <span class="preview-icon">⌖</span>
+                              @if (sitePhotoUrls()[site.id]; as photoUrl) {
+                                <img
+                                  class="preview-site-photo"
+                                  [src]="photoUrl"
+                                  [alt]="site.name"
+                                />
+                              } @else {
+                                <span class="preview-icon">⌖</span>
+                              }
                               <span>
                                 <strong>{{ site.name }}</strong>
                                 <small>{{
@@ -332,6 +340,15 @@
                       </div>
 
                       <footer class="preview-footer">
+                        @if (canManageClients()) {
+                          <button
+                            class="button danger compact"
+                            type="button"
+                            (click)="archiveCustomer(customer)"
+                          >
+                            Archive client
+                          </button>
+                        }
                         <a
                           class="button primary compact"
                           [routerLink]="[

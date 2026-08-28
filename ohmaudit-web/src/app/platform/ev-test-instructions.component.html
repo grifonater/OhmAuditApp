@@ -1,0 +1,240 @@
+<div class="platform-page">
+  <div class="section-heading instructions-hero">
+    <div>
+      <p class="eyebrow">EV charger testing</p>
+      <h2>Step instructions</h2>
+      <p>
+        Show engineers how to run each test step, tailored per manufacturer. Each set covers one
+        step and can apply to one or more manufacturers. Leave manufacturers empty for a generic set
+        used as the fallback for that step.
+      </p>
+    </div>
+    <button class="button primary compact" type="button" (click)="openEditor(null)">
+      + New set
+    </button>
+  </div>
+
+  @if (error()) {
+    <p class="message error" role="alert">{{ error() }}</p>
+  }
+  @if (success()) {
+    <p class="message success">{{ success() }}</p>
+  }
+
+  <form
+    id="ev-instructions-editor"
+    class="platform-card instructions-editor"
+    [formGroup]="draftForm"
+    (ngSubmit)="save()"
+  >
+    @if (editorOpen()) {
+      <div class="editor-heading">
+        <div>
+          <p class="eyebrow">{{ editing() === null ? 'New set' : 'Edit set' }}</p>
+          <h3>{{ currentlyEditingTitle() }}</h3>
+        </div>
+        <button class="step-help" type="button" (click)="closeEditor()" aria-label="Close editor">
+          ×
+        </button>
+      </div>
+      <div class="editor-fields">
+        <label class="field editor-step"
+          >Step<select formControlName="step">
+            @for (step of steps; track step) {
+              <option [value]="step">{{ stepLabel(step) }}</option>
+            }
+          </select></label
+        >
+        <label class="field editor-title"
+          >Set title<input
+            formControlName="title"
+            placeholder="e.g. ABB Terra range — unit check"
+            maxlength="160"
+        /></label>
+        <label class="field editor-manufacturers"
+          >Manufacturer(s)<input
+            formControlName="manufacturers"
+            placeholder="Comma separated, e.g. ABB, Schneider"
+          /><small>Leave empty for a generic fallback set for this step.</small></label
+        >
+        <label class="field editor-steps"
+          >Instructions (one per line)<textarea
+            formControlName="steps"
+            rows="7"
+            placeholder="Disconnect the unit from the supply using the local isolator.&#10;Wait 60 seconds for stored charge to discharge.&#10;Remove the front cover and record the data plate details."
+          ></textarea>
+        </label>
+        <label class="field editor-notes"
+          >Notes (optional)<textarea formControlName="notes" rows="3" maxlength="5000"></textarea>
+        </label>
+        <div class="editor-video">
+          <span class="field-label">Demonstration video or GIF</span>
+          @if (editing()?.video) {
+            <div class="editor-video-preview">
+              @if (existingVideoUrl(); as url) {
+                <video controls playsinline preload="metadata" [src]="url"></video>
+              }
+              <span
+                >Current {{ editing()?.video?.mimeType }} ·
+                <button type="button" (click)="removeVideo()" [disabled]="videoBusy()">
+                  {{ videoBusy() ? 'Removing…' : 'Remove video' }}
+                </button></span
+              >
+            </div>
+          }
+          @if (draftFile(); as file) {
+            <div class="editor-video-preview pending">
+              <span
+                >Ready to upload: {{ file.name }} ({{ Math.round(file.size / 1_000_000) }} MB)</span
+              >
+            </div>
+          }
+          <label class="button secondary compact">
+            {{ draftFile() ? 'Choose a different file' : 'Choose video or GIF' }}
+            <input
+              hidden
+              type="file"
+              accept="video/mp4,video/webm,image/gif"
+              (change)="chooseVideo($event)"
+            />
+          </label>
+          <small>MP4, WebM or GIF up to 50 MB. Uploaded to your own storage.</small>
+        </div>
+      </div>
+      <div class="editor-actions">
+        <button class="button secondary compact" type="button" (click)="closeEditor()">
+          Cancel
+        </button>
+        <button
+          class="button primary compact"
+          type="submit"
+          [disabled]="busy() || draftForm.invalid"
+        >
+          {{ busy() && draftFile() ? 'Uploading video…' : busy() ? 'Saving…' : 'Save set' }}
+        </button>
+      </div>
+    } @else {
+      <p class="muted">Choose “+ New set” or “Edit” on a set below to manage instructions.</p>
+    }
+  </form>
+
+  <div class="instructions-summary">
+    <span
+      ><b>{{ coverage()?.total ?? 0 }}</b> charger manufacturers</span
+    >
+    <span
+      ><b>{{ sets().length }}</b> instruction sets</span
+    >
+    <span
+      ><b>{{ coverage()?.genericSteps?.length ?? 0 }}/5</b> steps with a generic fallback</span
+    >
+  </div>
+
+  <div class="catalogue-layout">
+    <section class="platform-card">
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="eyebrow">Coverage</p>
+          <h3>Manufacturers &amp; missing instructions</h3>
+        </div>
+        <input
+          class="compact-search"
+          [formControl]="search"
+          type="search"
+          placeholder="Filter manufacturers…"
+          aria-label="Filter manufacturers"
+        />
+      </div>
+      @if (loading()) {
+        <p class="muted">Loading manufacturers…</p>
+      } @else {
+        <div class="coverage-list">
+          @for (item of coverage()?.manufacturers ?? []; track item.manufacturer) {
+            <div class="coverage-row" [class.fully-covered]="item.missingSteps.length === 0">
+              <div class="coverage-copy">
+                <strong>{{ item.manufacturer }}</strong>
+                <small
+                  >{{ item.count }} charger(s) · {{ item.coveredSteps.length }}/5 steps
+                  covered</small
+                >
+              </div>
+              <div class="coverage-badges">
+                @for (step of steps; track step) {
+                  <button
+                    class="coverage-badge"
+                    [class.covered]="item.coveredSteps.includes(step)"
+                    [class.missing]="item.missingSteps.includes(step)"
+                    type="button"
+                    [disabled]="item.coveredSteps.includes(step)"
+                    (click)="startFor(item.manufacturer, step)"
+                    [attr.title]="
+                      item.coveredSteps.includes(step)
+                        ? 'Covered'
+                        : 'Create instructions for ' + item.manufacturer
+                    "
+                  >
+                    {{ stepShortLabel(step) }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+          @if (coverage() !== null && (coverage()?.manufacturers ?? []).length === 0) {
+            <p class="muted">No EV charger manufacturers found in use.</p>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="platform-card library-column">
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="eyebrow">Library</p>
+          <h3>All sets</h3>
+        </div>
+      </div>
+      @if (setsLoading()) {
+        <p class="muted">Loading…</p>
+      } @else if (sets().length === 0) {
+        <p class="muted">No instruction sets yet. Create one to get started.</p>
+      } @else {
+        <div class="library-list">
+          @for (set of sets(); track set.id) {
+            <div class="library-row">
+              <div class="library-copy">
+                <span class="step-tag">{{ stepShortLabel(set.step) }}</span>
+                <div>
+                  <strong>{{ set.title }}</strong>
+                  <small
+                    >{{ set.generic ? 'Generic fallback' : set.manufacturers.join(', ') }} ·
+                    {{ set.steps.length }} instruction(s){{
+                      set.video?.status === 'AVAILABLE' ? ' · video' : ''
+                    }}</small
+                  >
+                </div>
+              </div>
+              <div class="library-actions">
+                <button class="button secondary compact" type="button" (click)="openEditor(set)">
+                  Edit
+                </button>
+                <button
+                  class="button secondary compact danger"
+                  type="button"
+                  [disabled]="busy()"
+                  (click)="remove(set)"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </section>
+  </div>
+
+  <p class="muted instructions-note">
+    Matching is case-insensitive. A manufacturer can appear in at most one set per step; a generic
+    set can only exist once per step.
+  </p>
+</div>

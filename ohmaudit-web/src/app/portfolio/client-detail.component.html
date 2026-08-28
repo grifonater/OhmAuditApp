@@ -45,12 +45,19 @@
             >
           </div>
           <div class="client-actions">
-            <button class="button secondary" type="button" (click)="startEditing()">
-              Edit client
-            </button>
-            <button class="button primary" type="button" (click)="openSiteCreator()">
-              Add site <span aria-hidden="true">＋</span>
-            </button>
+            @if (canManageClient()) {
+              <button class="button secondary" type="button" (click)="startEditing()">
+                Edit client
+              </button>
+              <button class="button danger" type="button" (click)="archiveClient()">
+                Archive client
+              </button>
+            }
+            @if (canManageSites()) {
+              <button class="button primary" type="button" (click)="openSiteCreator()">
+                Add site <span aria-hidden="true">＋</span>
+              </button>
+            }
           </div>
         </div>
 
@@ -109,10 +116,12 @@
             <small>No primary contact has been added.</small>
           }
         </section>
-        <button class="internal-note" type="button" (click)="startEditing()">
-          <span><b>Internal note</b><i>Edit note</i></span
-          ><small>{{ client.internalNotes || 'No internal note has been recorded.' }}</small>
-        </button>
+        @if (canManageClient()) {
+          <button class="internal-note" type="button" (click)="startEditing()">
+            <span><b>Internal note</b><i>Edit note</i></span
+            ><small>{{ client.internalNotes || 'No internal note has been recorded.' }}</small>
+          </button>
+        }
       </aside>
     </header>
 
@@ -170,9 +179,11 @@
               <h2>Sites</h2>
               <p>{{ client.sites.length }} sites across this client</p>
             </div>
-            <button class="button primary compact" type="button" (click)="openSiteCreator()">
-              Add site ＋
-            </button>
+            @if (canManageSites()) {
+              <button class="button primary compact" type="button" (click)="openSiteCreator()">
+                Add site ＋
+              </button>
+            }
           </header>
           <div class="site-controls">
             <label class="site-search"
@@ -214,9 +225,13 @@
                 @for (site of filteredSites(); track site.id) {
                   <tr>
                     <td data-label="Site">
-                      <a class="site-name" [routerLink]="['sites', site.id]"
-                        ><span>▦</span
-                        ><span
+                      <a class="site-name" [routerLink]="['sites', site.id]">
+                        @if (sitePhotoUrls()[site.id]; as photoUrl) {
+                          <img class="site-thumb" [src]="photoUrl" [alt]="site.name" />
+                        } @else {
+                          <span>▦</span>
+                        }
+                        <span
                           ><strong>{{ site.name }}</strong
                           ><small>{{ site.reference || 'No reference' }}</small></span
                         ></a
@@ -498,9 +513,11 @@
             <h2>Client details</h2>
             <p>Administrative information and internal context.</p>
           </div>
-          <button class="button secondary compact" type="button" (click)="startEditing()">
-            Edit details
-          </button>
+          @if (canManageClient()) {
+            <button class="button secondary compact" type="button" (click)="startEditing()">
+              Edit details
+            </button>
+          }
         </header>
         <dl>
           <div>

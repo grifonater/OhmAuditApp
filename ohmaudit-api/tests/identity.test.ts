@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import type { AuthenticatedActor, TokenVerifier } from '../src/auth/auth.types';
 import { MemoryIdentityStore } from './support/memory-identity.store';
+import { IdentityService } from '../src/identity/identity.service';
 
 const environment = {
   APP_ENV: 'local' as const,
@@ -106,5 +107,20 @@ describe('identity and tenant isolation', () => {
     );
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({ code: 'PLATFORM_ADMIN_REQUIRED' });
+  });
+
+  it('rejects a globally disabled user even when their membership is active', async () => {
+    const store = new MemoryIdentityStore();
+    const actor = await new TestVerifier().verify('user-a');
+    const user = await store.upsertUser(actor);
+    const organisation = await store.createOrganisation({
+      name: 'Disabled User Organisation',
+      ownerUserId: user.id,
+    });
+    user.status = 'DISABLED';
+
+    await expect(
+      new IdentityService(store).requireMembership(actor, organisation.id, 'sites.read'),
+    ).rejects.toMatchObject({ code: 'USER_DISABLED', status: 403 });
   });
 });

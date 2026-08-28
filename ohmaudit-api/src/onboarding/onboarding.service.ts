@@ -176,6 +176,18 @@ export class OnboardingService {
         'Sign in using the email address that was invited.',
         403,
       );
+    const existingMembership = await this.prisma.organisationMembership.findUnique({
+      where: {
+        organisationId_userId: { organisationId: invitation.organisationId, userId: user.id },
+      },
+      select: { status: true },
+    });
+    if (existingMembership?.status === 'INACTIVE')
+      throw new DomainError(
+        'MEMBERSHIP_INACTIVE',
+        'An Organisation administrator must restore this suspended membership.',
+        403,
+      );
     await this.prisma.$transaction(async (transaction) => {
       await transaction.organisationMembership.upsert({
         where: {

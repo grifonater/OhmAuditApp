@@ -27,6 +27,7 @@ export class VisitsComponent {
   protected readonly assets = signal<AssetSummary[]>([]);
   protected readonly members = signal<OrganisationMember[]>([]);
   protected readonly entitlements = signal<Entitlement[]>([]);
+  protected readonly capabilities = signal<string[]>([]);
   protected readonly showCreate = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
@@ -105,6 +106,8 @@ export class VisitsComponent {
     () =>
       this.entitlements().find((item) => item.module.key === 'thermal-imaging')?.entitled ?? false,
   );
+  protected readonly canCreate = computed(() => this.capabilities().includes('visits.create'));
+  protected readonly canAssign = computed(() => this.capabilities().includes('visits.assign'));
 
   protected readonly form = new FormGroup({
     siteId: new FormControl('', { nonNullable: true, validators: Validators.required }),
@@ -185,6 +188,7 @@ export class VisitsComponent {
   }
 
   protected async create(): Promise<void> {
+    if (!this.canCreate()) return;
     const isThermal = this.form.controls.moduleKey.value === 'thermal-imaging';
     if (
       this.form.invalid ||
@@ -216,6 +220,7 @@ export class VisitsComponent {
   }
 
   protected async createGuestLink(visitId: string): Promise<void> {
+    if (!this.canAssign()) return;
     await this.run(async () => {
       const result = await this.api.createGuestLink(this.organisationId, visitId);
       const url = `${location.origin}${result.guestUrl}`;
@@ -287,10 +292,17 @@ export class VisitsComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
+      const account = await this.api.currentUser();
+      const membership = account.memberships.find(
+        (item) => item.organisation.id === this.organisationId,
+      );
+      this.capabilities.set(membership?.role.capabilities ?? []);
       const [visits, sites, members, entitlements] = await Promise.all([
         this.fetchVisits(1),
         this.api.listSites(this.organisationId),
-        this.api.listMembers(this.organisationId),
+        this.canAssign()
+          ? this.api.listMembers(this.organisationId)
+          : Promise.resolve({ members: [] }),
         this.api.entitlements(this.organisationId),
       ]);
       this.visits.set(visits.visits);

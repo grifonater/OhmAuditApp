@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService, type Entitlement, type OnboardingState } from '../core/api.service';
+import { compressLogo } from '../core/image-compression';
 
 @Component({
   selector: 'oa-onboarding',
@@ -17,6 +18,7 @@ export class OnboardingComponent {
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly state = signal<OnboardingState | undefined>(undefined);
   protected readonly entitlements = signal<Entitlement[]>([]);
+  protected readonly canManageUsers = signal(false);
   protected readonly error = signal('');
   protected readonly message = signal('');
   protected readonly logoUrl = signal('');
@@ -72,7 +74,7 @@ export class OnboardingComponent {
       return;
     this.error.set('');
     try {
-      const logo = await this.logoAsJpeg(file);
+      const logo = await compressLogo(file);
       const result = await this.api.registerMedia(this.organisationId, {
         entityType: 'Organisation',
         entityId: this.organisationId,
@@ -99,7 +101,7 @@ export class OnboardingComponent {
     );
   }
   protected async invite(): Promise<void> {
-    if (this.invitationForm.invalid) return;
+    if (!this.canManageUsers() || this.invitationForm.invalid) return;
     this.error.set('');
     try {
       const result = await this.api.inviteMember(
@@ -126,10 +128,18 @@ export class OnboardingComponent {
   }
   private async load(): Promise<void> {
     try {
-      const [state, entitlementResult] = await Promise.all([
+      const [state, entitlementResult, account] = await Promise.all([
         this.api.onboarding(this.organisationId),
         this.api.entitlements(this.organisationId),
+        this.api.currentUser(),
       ]);
+      this.canManageUsers.set(
+        account.memberships
+          .find((item) => item.organisation.id === this.organisationId)
+          ?.role.capabilities.includes('organisation.users.manage') ?? false,
+      );
+      if (!this.canManageUsers() && this.activeSection() === 'team')
+        this.activeSection.set('details');
       this.state.set(state);
       this.entitlements.set(entitlementResult.entitlements);
       const profile = state.profile;
@@ -158,32 +168,5 @@ export class OnboardingComponent {
     const url = this.logoUrl();
     if (url) URL.revokeObjectURL(url);
     this.logoUrl.set('');
-  }
-
-  private async logoAsJpeg(file: File): Promise<Blob> {
-    const bitmap = await createImageBitmap(file);
-    try {
-      const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('This browser cannot prepare the organisation logo.');
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      return await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (blob) =>
-            blob
-              ? resolve(blob)
-              : reject(new Error('The organisation logo could not be prepared.')),
-          'image/jpeg',
-          0.9,
-        ),
-      );
-    } finally {
-      bitmap.close();
-    }
   }
 }

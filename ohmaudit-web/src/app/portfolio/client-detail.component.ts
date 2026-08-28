@@ -10,6 +10,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, type CustomerDetail, type ReportSummary } from '../core/api.service';
+import { compressLogo } from '../core/image-compression';
 
 @Component({
   selector: 'oa-client-detail',
@@ -25,6 +26,11 @@ export class ClientDetailComponent {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly customerId = this.route.snapshot.paramMap.get('customerId') ?? '';
+  protected readonly capabilities = signal<string[]>([]);
+  protected readonly canManageClient = computed(() =>
+    this.capabilities().includes('customers.manage'),
+  );
+  protected readonly canManageSites = computed(() => this.capabilities().includes('sites.manage'));
   protected readonly customer = signal<CustomerDetail | undefined>(undefined);
   protected readonly tab = signal<'overview' | 'sites' | 'reports' | 'contacts' | 'details'>(
     this.initialTab(),
@@ -33,6 +39,7 @@ export class ClientDetailComponent {
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly logoUrl = signal('');
+  protected readonly sitePhotoUrls = signal<Record<string, string>>({});
   protected readonly siteSearch = new FormControl('', { nonNullable: true });
   protected readonly siteStatus = new FormControl('ALL', { nonNullable: true });
   protected readonly siteSort = new FormControl<'ASC' | 'DESC'>('ASC', { nonNullable: true });
@@ -88,7 +95,10 @@ export class ClientDetailComponent {
   });
 
   constructor() {
-    this.destroyRef.onDestroy(() => this.revokeLogo());
+    this.destroyRef.onDestroy(() => {
+      this.revokeLogo();
+      this.revokeSitePhotos();
+    });
     void this.load();
   }
 
@@ -119,7 +129,7 @@ export class ClientDetailComponent {
     input.value = '';
     if (!file) return;
     await this.run(async () => {
-      const upload = await this.logoAsJpeg(file);
+      const upload = await compressLogo(file);
       const previousLogoId = this.customer()?.logoMediaId;
       const { media } = await this.api.registerMedia(this.organisationId, {
         entityType: 'Customer',
@@ -131,8 +141,6 @@ export class ClientDetailComponent {
       await this.api.uploadMedia(this.organisationId, media.id, upload);
       await this.api.setCustomerLogo(this.organisationId, this.customerId, media.id);
       if (previousLogoId && previousLogoId !== media.id) {
-        // The new logo is already active. Cleanup of an old/stale row must not make a successful
-        // replacement appear to have failed to the administrator.
         await this.api.deleteMedia(this.organisationId, previousLogoId).catch(() => undefined);
       }
       await this.load();
@@ -170,6 +178,20 @@ export class ClientDetailComponent {
       );
       this.editing.set(false);
       await this.load();
+    });
+  }
+
+  protected async archiveClient(): Promise<void> {
+    const client = this.customer();
+    if (
+      !confirm(
+        `Archive "${client?.name ?? 'this client'}"?\n\nIt will be removed from the client directory but existing sites, reports and certificates are retained.`,
+      )
+    )
+      return;
+    await this.run(async () => {
+      await this.api.archiveCustomer(this.organisationId, this.customerId);
+      await this.router.navigate(['/app/org', this.organisationId, 'portfolio']);
     });
   }
 
@@ -219,7 +241,15 @@ export class ClientDetailComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const customer = (await this.api.getCustomer(this.organisationId, this.customerId)).customer;
+      const [accountResult, customerResult] = await Promise.all([
+        this.api.currentUser(),
+        this.api.getCustomer(this.organisationId, this.customerId),
+      ]);
+      const membership = accountResult.memberships.find(
+        (item) => item.organisation.id === this.organisationId,
+      );
+      this.capabilities.set(membership?.role.capabilities ?? []);
+      const customer = customerResult.customer;
       this.customer.set(customer);
       this.revokeLogo();
       if (customer.logoMedia?.id) {
@@ -228,33 +258,36 @@ export class ClientDetailComponent {
           .then((blob) => this.logoUrl.set(URL.createObjectURL(blob)))
           .catch(() => undefined);
       }
+      await this.loadSitePhotos(customer.sites ?? []);
     });
+  }
+  private async loadSitePhotos(
+    sites: { id: string; mainPhotoMediaId?: string | null }[],
+  ): Promise<void> {
+    this.revokeSitePhotos();
+    const downloads = await Promise.all(
+      sites
+        .filter((site) => site.mainPhotoMediaId)
+        .map((site) =>
+          this.api
+            .downloadMedia(this.organisationId, site.mainPhotoMediaId!)
+            .then((blob) => [site.id, URL.createObjectURL(blob)] as const)
+            .catch(() => undefined),
+        ),
+    );
+    const entries = downloads.filter(
+      (entry): entry is readonly [string, string] => entry !== undefined,
+    );
+    this.sitePhotoUrls.set(Object.fromEntries(entries));
+  }
+  private revokeSitePhotos(): void {
+    Object.values(this.sitePhotoUrls()).forEach((url) => URL.revokeObjectURL(url));
+    this.sitePhotoUrls.set({});
   }
   private revokeLogo(): void {
     const url = this.logoUrl();
     if (url) URL.revokeObjectURL(url);
     this.logoUrl.set('');
-  }
-  private async logoAsJpeg(file: File): Promise<Blob> {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('This browser cannot prepare the client logo.');
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-    return new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (blob) =>
-          blob ? resolve(blob) : reject(new Error('The client logo could not be prepared.')),
-        'image/jpeg',
-        0.9,
-      ),
-    );
   }
   private async run(operation: () => Promise<unknown>): Promise<void> {
     this.busy.set(true);

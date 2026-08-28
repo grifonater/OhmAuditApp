@@ -472,6 +472,12 @@
   font-style: normal;
   font-weight: 800;
 }
+.preview-site-photo {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.35rem;
+  object-fit: cover;
+}
 .preview-count {
   display: grid;
   color: var(--oa-ink-muted);

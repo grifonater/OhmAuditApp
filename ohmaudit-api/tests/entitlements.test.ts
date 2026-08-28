@@ -53,9 +53,7 @@ describe('EntitlementService', () => {
               name: 'EV Charging',
               description: 'EV',
               capabilities: ['ev.inspections.perform'],
-              entitlements: [
-                { status: 'ACTIVE', trialEndsAt: null, currentPeriodEndsAt },
-              ],
+              entitlements: [{ status: 'ACTIVE', trialEndsAt: null, currentPeriodEndsAt }],
             },
           ]),
       },

@@ -3,7 +3,12 @@ export const moduleCatalogue = [
     key: 'ev-charging',
     name: 'EV Charging',
     description: 'EV charger assets, inspections, tests, certificates and integrations.',
-    capabilities: ['ev.assets.manage', 'ev.inspections.perform', 'ev.certificates.issue'],
+    capabilities: [
+      'ev.assets.read',
+      'ev.assets.manage',
+      'ev.inspections.perform',
+      'ev.certificates.issue',
+    ],
   },
   {
     key: 'thermal-imaging',
@@ -12,6 +17,7 @@ export const moduleCatalogue = [
     capabilities: [
       'thermal.inspections.perform',
       'thermal.reports.issue',
+      'thermal.equipment.read',
       'thermal.equipment.manage',
     ],
   },

@@ -20,6 +20,8 @@ export class SecurityComponent {
   );
   protected readonly message = signal('');
   protected readonly error = signal('');
+  protected readonly canManageUsers = signal(false);
+  protected readonly canManageOrganisation = signal(false);
   protected readonly code = new FormControl('', {
     nonNullable: true,
     validators: [Validators.required, Validators.pattern(/^\d{6}$/u)],
@@ -33,7 +35,7 @@ export class SecurityComponent {
   });
 
   constructor() {
-    void this.loadNotificationPreferences();
+    void this.loadPermissions();
   }
 
   protected get organisationId(): string {
@@ -64,6 +66,7 @@ export class SecurityComponent {
   }
 
   protected async requireMfa(): Promise<void> {
+    if (!this.canManageUsers()) return;
     try {
       await this.api.setMfaPolicy(this.organisationId, true);
       this.message.set('Privileged roles now require MFA.');
@@ -73,7 +76,7 @@ export class SecurityComponent {
   }
 
   protected async saveNotificationPreferences(): Promise<void> {
-    if (this.notificationForm.invalid) return;
+    if (!this.canManageOrganisation() || this.notificationForm.invalid) return;
     try {
       await this.api.updateNotificationPreferences(
         this.organisationId,
@@ -92,6 +95,20 @@ export class SecurityComponent {
       );
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to load preferences.');
+    }
+  }
+
+  private async loadPermissions(): Promise<void> {
+    try {
+      const account = await this.api.currentUser();
+      const capabilities =
+        account.memberships.find((item) => item.organisation.id === this.organisationId)?.role
+          .capabilities ?? [];
+      this.canManageUsers.set(capabilities.includes('organisation.users.manage'));
+      this.canManageOrganisation.set(capabilities.includes('organisation.manage'));
+      if (this.canManageOrganisation()) await this.loadNotificationPreferences();
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to load your permissions.');
     }
   }
 }

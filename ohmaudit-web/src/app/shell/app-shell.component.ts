@@ -6,7 +6,9 @@ import {
   computed,
   inject,
   signal,
+  viewChild,
 } from '@angular/core';
+import type { ElementRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -20,6 +22,7 @@ import {
 } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { OrganisationContextService } from '../core/organisation-context.service';
+import { clearPendingInvitation, readPendingInvitation } from '../core/pending-invitation';
 
 interface DeploymentMetadata {
   id: string;
@@ -40,6 +43,18 @@ function isDeploymentMetadata(value: unknown): value is DeploymentMetadata {
   );
 }
 
+interface DrawerMarker {
+  ohmauditDrawer: true;
+}
+
+function isDrawerMarker(state: unknown): state is DrawerMarker {
+  return typeof state === 'object' && state !== null && 'ohmauditDrawer' in state;
+}
+
+const DRAWER_MARKER: DrawerMarker = { ohmauditDrawer: true };
+const DRAWER_MAX_WIDTH_PX = 288;
+const DRAWER_EDGE_THRESHOLD_PX = 32;
+
 @Component({
   selector: 'oa-app-shell',
   imports: [ReactiveFormsModule, RouterLink, RouterLinkActive, RouterOutlet],
@@ -54,12 +69,14 @@ export class AppShellComponent {
   private readonly context = inject(OrganisationContextService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly updates = inject(SwUpdate);
+  private readonly sidebar = viewChild.required<ElementRef<HTMLElement>>('sidebar');
 
   protected readonly account = signal<CurrentUserResponse | undefined>(undefined);
   protected readonly routeOrganisationId = signal<string | null>(
     this.readOrganisationId(this.router.url),
   );
   protected readonly drawerOpen = signal(false);
+  protected readonly accountMenuOpen = signal(false);
   protected readonly organisationMenuOpen = signal(false);
   protected readonly creatingOrganisation = signal(false);
   protected readonly error = signal('');
@@ -75,6 +92,11 @@ export class AppShellComponent {
     'checking',
   );
   protected readonly deploymentCopied = signal(false);
+  protected readonly drawerDrag = signal(0);
+  protected readonly drawerDragging = signal(false);
+  private touchActive = false;
+  private touchStartX = 0;
+  private touchStartY = 0;
   private searchRequest = 0;
   protected readonly organisationName = new FormControl('', {
     nonNullable: true,
@@ -111,6 +133,7 @@ export class AppShellComponent {
         this.routeOrganisationId.set(organisationId);
         if (organisationId !== null) this.context.select(organisationId);
         this.drawerOpen.set(false);
+        this.accountMenuOpen.set(false);
         this.clearSearch();
       });
     this.globalSearch.valueChanges
@@ -139,8 +162,108 @@ export class AppShellComponent {
     return organisationId === undefined ? '' : (this.organisationLogoUrls()[organisationId] ?? '');
   }
 
+  protected openDrawer(): void {
+    if (this.drawerOpen()) return;
+    this.drawerOpen.set(true);
+    history.pushState(DRAWER_MARKER, '');
+  }
+
   protected toggleDrawer(): void {
-    this.drawerOpen.update((open) => !open);
+    if (this.drawerOpen()) this.closeDrawerForUI();
+    else this.openDrawer();
+  }
+
+  protected closeDrawerForUI(): void {
+    if (!this.drawerOpen()) return;
+    if (isDrawerMarker(history.state)) {
+      history.back();
+      return;
+    }
+    this.drawerOpen.set(false);
+  }
+
+  protected handlePopState(): void {
+    if (this.drawerOpen()) this.drawerOpen.set(false);
+  }
+
+  protected onTouchStart(event: TouchEvent): void {
+    if (window.matchMedia('(min-width: 62rem)').matches) return;
+    const touch = event.touches[0];
+    if (touch === undefined) return;
+    this.touchStartX = touch.clientX;
+    this.touchStartY = touch.clientY;
+    this.touchActive = this.drawerOpen() || touch.clientX <= DRAWER_EDGE_THRESHOLD_PX;
+    if (this.touchActive) {
+      this.drawerDrag.set(0);
+      this.drawerDragging.set(true);
+    }
+  }
+
+  protected onTouchMove(event: TouchEvent): void {
+    if (!this.touchActive) return;
+    const touch = event.touches[0];
+    if (touch === undefined) return;
+    const dx = touch.clientX - this.touchStartX;
+    const dy = Math.abs(touch.clientY - this.touchStartY);
+    if (!this.drawerOpen() && Math.abs(dx) < dy) {
+      this.cancelDrawerDrag();
+      return;
+    }
+    const width = this.drawerWidthPx();
+    if (this.drawerOpen()) {
+      if (dx < 0) this.drawerDrag.set(Math.max(dx, -width));
+      else this.drawerDrag.set(0);
+    } else if (dx > 0) {
+      this.drawerDrag.set(Math.min(dx, width));
+    }
+    this.applyDrawerDrag();
+    event.preventDefault();
+  }
+
+  protected onTouchEnd(): void {
+    if (!this.touchActive) return;
+    this.touchActive = false;
+    this.drawerDragging.set(false);
+    const width = this.drawerWidthPx();
+    const drag = this.drawerDrag();
+    this.drawerDrag.set(0);
+    const sidebar = this.sidebar()?.nativeElement;
+    if (this.drawerOpen()) {
+      if (drag < -width * 0.3) this.closeDrawerForUI();
+    } else if (drag > width * 0.25) {
+      this.openDrawer();
+    }
+    if (sidebar !== undefined) {
+      requestAnimationFrame(() => {
+        sidebar.style.transform = '';
+      });
+    }
+  }
+
+  private cancelDrawerDrag(): void {
+    this.touchActive = false;
+    this.drawerDragging.set(false);
+    this.drawerDrag.set(0);
+    const sidebar = this.sidebar()?.nativeElement;
+    if (sidebar !== undefined) requestAnimationFrame(() => (sidebar.style.transform = ''));
+  }
+
+  private applyDrawerDrag(): void {
+    const drag = this.drawerDrag();
+    const sidebar = this.sidebar()?.nativeElement;
+    if (sidebar === undefined) return;
+    sidebar.style.transform = this.drawerOpen()
+      ? `translate3d(${drag}px, 0, 0)`
+      : `translate3d(${drag - this.drawerWidthPx()}px, 0, 0)`;
+  }
+
+  private drawerWidthPx(): number {
+    return Math.min(DRAWER_MAX_WIDTH_PX, window.innerWidth - DRAWER_EDGE_THRESHOLD_PX - 20);
+  }
+
+  protected toggleAccountMenu(event: MouseEvent): void {
+    event.stopPropagation();
+    this.accountMenuOpen.update((open) => !open);
   }
 
   protected toggleOrganisationMenu(): void {
@@ -161,8 +284,21 @@ export class AppShellComponent {
   @HostListener('document:click', ['$event'])
   protected closeSearchFromOutside(event: MouseEvent): void {
     const target = event.target;
-    if (target instanceof Element && target.closest('.global-search') === null)
-      this.searchOpen.set(false);
+    if (!(target instanceof Element)) return;
+    if (target.closest('.global-search') === null) this.searchOpen.set(false);
+    if (target.closest('.mobile-user') === null) this.accountMenuOpen.set(false);
+  }
+
+  @HostListener('document:keydown.escape')
+  protected closeMenus(): void {
+    this.accountMenuOpen.set(false);
+    this.searchOpen.set(false);
+    this.closeDrawerForUI();
+  }
+
+  @HostListener('window:popstate')
+  protected closeDrawerFromBack(): void {
+    this.handlePopState();
   }
 
   @HostListener('window:ohmaudit:account-changed')
@@ -223,6 +359,7 @@ export class AppShellComponent {
   }
 
   protected async signOut(): Promise<void> {
+    this.accountMenuOpen.set(false);
     sessionStorage.removeItem('ohmaudit.supportSession');
     this.context.clear();
     await this.auth.signOut();
@@ -272,10 +409,29 @@ export class AppShellComponent {
   }
 
   private async loadAccount(): Promise<void> {
+    let acceptedOrganisationId: string | undefined;
+    const pendingInvitation = readPendingInvitation();
+    if (pendingInvitation !== null) {
+      try {
+        const result = await this.api.acceptInvitation(pendingInvitation);
+        acceptedOrganisationId = result.organisation.id;
+        clearPendingInvitation();
+      } catch (error: unknown) {
+        this.error.set(
+          error instanceof Error ? error.message : 'Unable to accept the organisation invitation.',
+        );
+      }
+    }
+
     try {
       const account = await this.api.currentUser();
       this.account.set(account);
       void this.loadOrganisationLogos(account);
+      if (acceptedOrganisationId !== undefined) {
+        this.context.select(acceptedOrganisationId);
+        await this.router.navigate(['/app/org', acceptedOrganisationId]);
+        return;
+      }
       const selected = this.context.activeOrganisationId();
       if (
         this.routeOrganisationId() === null &&

@@ -127,6 +127,33 @@ export class PortfolioService {
     });
   }
 
+  async archiveCustomer(
+    organisationId: string,
+    customerId: string,
+    actorUserId: string,
+    correlationId: string,
+  ) {
+    await this.requireCustomer(organisationId, customerId);
+    return this.prisma.$transaction(async (transaction) => {
+      const customer = await transaction.customer.update({
+        where: { id: customerId },
+        data: { status: 'ARCHIVED' },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'CustomerArchived',
+          entityType: 'Customer',
+          entityId: customerId,
+          data: { name: customer.name },
+        },
+      });
+      return customer;
+    });
+  }
+
   async getCustomer(organisationId: string, customerId: string) {
     const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, organisationId },
@@ -320,7 +347,7 @@ export class PortfolioService {
           category: 'site-image',
           status: 'AVAILABLE',
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
       }),
     ]);
     return { ...site, media, reports: this.groupVisitReports(documents) };
@@ -676,11 +703,48 @@ export class PortfolioService {
         where: { organisationId, logoMediaId: mediaId },
         data: { logoMediaId: null },
       });
-      // Media cleanup is intentionally idempotent. Two logo replacements can overlap after both
-      // have observed the old row; deleteMany avoids turning successful replacement into a 500.
+      if (media.entityType === 'Site' && media.isPrimary) {
+        await transaction.site.updateMany({
+          where: { organisationId, mainPhotoMediaId: mediaId },
+          data: { mainPhotoMediaId: null },
+        });
+      }
       await transaction.media.deleteMany({ where: { id: mediaId, organisationId } });
     });
     return media;
+  }
+
+  async setSitePhotoPrimary(organisationId: string, siteId: string, mediaId: string | null) {
+    await this.requireSite(organisationId, siteId);
+    if (mediaId !== null) {
+      const media = await this.prisma.media.findFirst({
+        where: {
+          id: mediaId,
+          organisationId,
+          entityType: 'Site',
+          entityId: siteId,
+          category: 'site-image',
+          status: 'AVAILABLE',
+        },
+      });
+      if (media === null) throw new DomainError('MEDIA_NOT_FOUND', 'The media was not found.', 404);
+    }
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.media.updateMany({
+        where: { organisationId, entityType: 'Site', entityId: siteId, isPrimary: true },
+        data: { isPrimary: false },
+      });
+      if (mediaId !== null) {
+        await transaction.media.update({
+          where: { id: mediaId },
+          data: { isPrimary: true },
+        });
+      }
+      await transaction.site.update({
+        where: { id: siteId },
+        data: { mainPhotoMediaId: mediaId },
+      });
+    });
   }
 
   private groupVisitReports<

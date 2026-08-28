@@ -19,6 +19,7 @@ import { VisitService } from './visits/visit.service';
 import { evRcdFailureReasons, InspectionService } from './inspections/inspection.service';
 import { EvService } from './modules/ev/ev.service';
 import { PlatformService } from './platform/platform.service';
+import { InstructionService } from './platform/instruction.service';
 import { EquipmentService } from './equipment/equipment.service';
 import { DomainError } from './shared/domain-error';
 import type { ApiBindings } from './shared/environment';
@@ -90,7 +91,7 @@ const accreditationInput = z.object({
 });
 const invitationInput = z.object({ email: z.email(), roleKey: z.string().min(1) });
 const dataPlateCandidateSchema = z.object({
-  field: z.enum(['manufacturer', 'model', 'serialNumber', 'maximumPowerKw', 'connectorTypes']),
+  field: z.enum(['manufacturer', 'model', 'serialNumber', 'maximumPowerKw']),
   value: z.string().min(1).max(500),
   confidence: z.number().min(0).max(1).optional(),
   requiresHumanConfirmation: z.literal(true),
@@ -99,6 +100,14 @@ const dataPlateFieldSchema = dataPlateCandidateSchema.shape.field;
 const dataPlateAnalysisSchema = z.object({
   candidates: z.array(dataPlateCandidateSchema).max(5),
   missingFields: z.array(dataPlateFieldSchema).max(5),
+});
+const dataPlateDebugSchema = dataPlateAnalysisSchema.extend({
+  debug: z.literal(true).default(true),
+  model: z.string().min(1),
+  rawAnswer: z.string().min(1),
+  durationMs: z.number().int().nonnegative(),
+  imageBytes: z.number().int().nonnegative(),
+  parseError: z.string().optional(),
 });
 const capabilityKey = z.enum(capabilities);
 const roleInput = z.object({
@@ -233,6 +242,41 @@ const stockImageModelsInput = z.object({
 });
 const stockImageContentType = z.enum(['image/jpeg', 'image/png', 'image/webp']);
 const stockImageContentSize = z.coerce.number().int().positive().max(2_000_000);
+const evTestStepSchema = z.enum(['unit', 'supplies', 'connectors', 'condition', 'submit']);
+const evTestInstructionInput = z.object({
+  step: evTestStepSchema,
+  manufacturers: z.array(z.string().trim().min(1).max(160)).max(50),
+  title: z.string().trim().min(1).max(160),
+  steps: z.array(z.string().trim().min(1).max(2000)).min(1).max(30),
+  notes: z.string().trim().max(5000).optional(),
+});
+const evInstructionVideoContentType = z.enum(['video/mp4', 'video/webm', 'image/gif']);
+const evInstructionVideoContentSize = z.coerce.number().int().positive().max(50_000_000);
+
+function parseByteRange(
+  header: string,
+  size: number,
+): { range: { offset: number; length: number }; start: number; end: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/iu.exec(header.trim());
+  if (match === null) return null;
+  const [, startPart, endPart] = match;
+  if (startPart === '' && endPart === '') return null;
+  if (startPart === '') {
+    const suffix = Number(endPart);
+    if (!Number.isInteger(suffix) || suffix <= 0) return null;
+    if (suffix >= size) return { range: { offset: 0, length: size }, start: 0, end: size - 1 };
+    return {
+      range: { offset: size - suffix, length: suffix },
+      start: size - suffix,
+      end: size - 1,
+    };
+  }
+  const start = Number(startPart);
+  if (!Number.isInteger(start) || start < 0 || start >= size) return null;
+  const end = endPart === '' ? size - 1 : Math.min(Number(endPart), size - 1);
+  if (!Number.isInteger(end) || end < start) return null;
+  return { range: { offset: start, length: end - start + 1 }, start, end };
+}
 const inspectionOverrideInput = z.object({
   reason: z.string().trim().min(3).max(1000),
   data: z.record(z.string(), z.unknown()),
@@ -993,6 +1037,60 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     context.executionCtx.waitUntil(stockImageCache.put(cacheKey, response.clone()));
     return response;
   });
+  app.get('/api/v1/test-instruction-videos/:mediaId/content', async (context) => {
+    const environment = parseEnvironment(context.env);
+    if (environment.MEDIA_BUCKET === undefined)
+      throw new DomainError('MEDIA_STORAGE_UNAVAILABLE', 'Media storage is not configured.', 503);
+    const media = await new InstructionService(prismaFor(environment)).videoForContent(
+      z.uuid().parse(context.req.param('mediaId')),
+    );
+    const bucket = environment.MEDIA_BUCKET;
+    const baseHeaders = {
+      'content-type': media.mimeType,
+      'cache-control': 'public, max-age=600, s-maxage=86400',
+      'accept-ranges': 'bytes',
+      'x-content-type-options': 'nosniff',
+    };
+    const rangeHeader = context.req.header('range');
+    if (rangeHeader === undefined) {
+      const object = await bucket.get(media.storageKey);
+      if (object === null)
+        throw new DomainError(
+          'MEDIA_CONTENT_NOT_FOUND',
+          'The instruction video content was not found.',
+          404,
+        );
+      return new Response(object.body, { headers: { ...baseHeaders, etag: object.httpEtag } });
+    }
+    const head = await bucket.head(media.storageKey);
+    if (head === null)
+      throw new DomainError(
+        'MEDIA_CONTENT_NOT_FOUND',
+        'The instruction video content was not found.',
+        404,
+      );
+    const parsed = parseByteRange(rangeHeader, head.size);
+    if (parsed === null)
+      return new Response(null, {
+        status: 416,
+        headers: { ...baseHeaders, 'content-range': `bytes */${head.size}` },
+      });
+    const object = await bucket.get(media.storageKey, { range: parsed.range });
+    if (object === null)
+      throw new DomainError(
+        'MEDIA_CONTENT_NOT_FOUND',
+        'The instruction video content was not found.',
+        404,
+      );
+    return new Response(object.body, {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        'content-range': `bytes ${parsed.start}-${parsed.end}/${head.size}`,
+        'content-length': String(parsed.end - parsed.start + 1),
+      },
+    });
+  });
   app.post('/api/internal/scheduler/tick', async (context) => {
     const environment = parseEnvironment(context.env);
     if (
@@ -1028,6 +1126,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     'inspections',
     'proposed-asset-changes',
     'modules',
+    'ev-test-instructions',
   ]) {
     app.use(`/api/v1/${path}`, authenticate(verifier));
     app.use(`/api/v1/${path}/*`, authenticate(verifier));
@@ -2634,6 +2733,35 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       );
     },
   );
+  app.get('/api/v1/ev-test-instructions', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    await requireModuleForKey(prismaFor(environment), organisationId, 'ev-charging');
+    return context.json(
+      await new InstructionService(prismaFor(environment)).contentFor(
+        evTestStepSchema.parse((context.req.query('step') ?? '').trim()),
+        context.req.query('manufacturer'),
+      ),
+    );
+  });
+  app.get('/api/v1/guest/visits/:token/ev-test-instructions', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const visit = await new VisitService(prismaFor(environment)).guestPack(
+      context.req.param('token'),
+    );
+    await requireModuleForKey(prismaFor(environment), visit.organisationId, 'ev-charging');
+    return context.json(
+      await new InstructionService(prismaFor(environment)).contentFor(
+        evTestStepSchema.parse((context.req.query('step') ?? '').trim()),
+        context.req.query('manufacturer'),
+      ),
+    );
+  });
   app.post('/api/v1/inspections/:inspectionId/review', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
@@ -3442,6 +3570,80 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     );
     return context.json({ user });
   });
+  app.post('/api/v1/platform/ai/dataplate/debug', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    if (environment.AI_WORKER === undefined)
+      throw new DomainError(
+        'AI_NOT_CONFIGURED',
+        'Data plate analysis is not configured. Please contact support.',
+        503,
+      );
+    const mimeType = context.req.header('content-type')?.split(';', 1)[0]?.toLowerCase() ?? '';
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(mimeType))
+      throw new DomainError('IMAGE_TYPE_INVALID', 'Use a JPEG, PNG, or WebP image.', 415);
+    const declaredSize = Number(context.req.header('content-length') ?? 0);
+    if (declaredSize > 2_000_000)
+      throw new DomainError('IMAGE_TOO_LARGE', 'The image must be 2 MB or smaller.', 413);
+    if (context.req.raw.body === null)
+      throw new DomainError('IMAGE_EMPTY', 'Select an image to analyse.', 422);
+    const correlationId = context.get('correlationId');
+    let response: Response;
+    try {
+      response = await environment.AI_WORKER.fetch(
+        'https://ohmaudit-ai.internal/v1/debug/extract/charger-dataplate',
+        {
+          method: 'POST',
+          headers: { 'content-type': mimeType, 'x-correlation-id': correlationId },
+          body: context.req.raw.body,
+        },
+      );
+    } catch (error: unknown) {
+      console.error(
+        JSON.stringify({
+          event: 'api.ai_dataplate.debug_worker_unreachable',
+          correlationId,
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      throw new DomainError(
+        'AI_ANALYSIS_FAILED',
+        'The AI service is temporarily unavailable. Please try the photo again.',
+        502,
+      );
+    }
+    if (!response.ok) {
+      const error = z
+        .object({ message: z.string().optional() })
+        .catch({})
+        .parse(await response.json().catch(() => ({})));
+      const status = [415, 422, 502, 503].includes(response.status)
+        ? (response.status as 413 | 415 | 422 | 502 | 503)
+        : 502;
+      throw new DomainError(
+        'AI_ANALYSIS_FAILED',
+        error.message ?? 'The image could not be analysed.',
+        status,
+      );
+    }
+    const result = dataPlateDebugSchema.safeParse(await response.json().catch(() => undefined));
+    if (!result.success) {
+      console.error(
+        JSON.stringify({
+          event: 'api.ai_dataplate.invalid_debug_response',
+          correlationId,
+          issueCount: result.error.issues.length,
+        }),
+      );
+      throw new DomainError(
+        'AI_ANALYSIS_FAILED',
+        'The AI returned an invalid result. Please try the photo again.',
+        502,
+      );
+    }
+    return context.json(result.data);
+  });
   app.get('/api/v1/platform/status', async (context) => {
     const environment = parseEnvironment(context.env);
     const current = await identityService(environment, options).currentUser(context.get('actor'));
@@ -3685,6 +3887,121 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const media = await platform.deleteStockImage(z.uuid().parse(context.req.param('mediaId')));
     if (environment.MEDIA_BUCKET !== undefined)
       await environment.MEDIA_BUCKET.delete(media.storageKey);
+    return context.json({ deleted: true });
+  });
+  app.get('/api/v1/platform/ev-test-instructions', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    const step = (context.req.query('step') ?? '').trim();
+    return context.json({
+      sets: await new InstructionService(prismaFor(environment)).platformList(
+        step === '' ? undefined : evTestStepSchema.parse(step),
+      ),
+    });
+  });
+  app.get('/api/v1/platform/ev-test-instructions/coverage', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    const limit = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(40)
+      .parse(context.req.query('limit'));
+    const query = (context.req.query('q') ?? '').trim().slice(0, 100);
+    return context.json(
+      await new InstructionService(prismaFor(environment)).coverage(limit, query),
+    );
+  });
+  app.post('/api/v1/platform/ev-test-instructions', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const actor = await identityService(environment, options).requirePlatformAdmin(
+      context.get('actor'),
+    );
+    const input = evTestInstructionInput.parse(await context.req.json());
+    return context.json(
+      await new InstructionService(prismaFor(environment)).create(
+        actor.id,
+        input,
+        context.get('correlationId'),
+      ),
+      201,
+    );
+  });
+  app.patch('/api/v1/platform/ev-test-instructions/:instructionId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const actor = await identityService(environment, options).requirePlatformAdmin(
+      context.get('actor'),
+    );
+    const input = evTestInstructionInput.parse(await context.req.json());
+    return context.json(
+      await new InstructionService(prismaFor(environment)).update(
+        actor.id,
+        z.uuid().parse(context.req.param('instructionId')),
+        input,
+        context.get('correlationId'),
+      ),
+    );
+  });
+  app.post('/api/v1/platform/ev-test-instructions/:instructionId/video', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const actor = await identityService(environment, options).requirePlatformAdmin(
+      context.get('actor'),
+    );
+    const input = z
+      .object({
+        organisationId: z.uuid(),
+        mimeType: evInstructionVideoContentType,
+        size: evInstructionVideoContentSize,
+      })
+      .parse(await context.req.json());
+    const instructionId = z.uuid().parse(context.req.param('instructionId'));
+    const result = await new InstructionService(prismaFor(environment)).registerVideo(
+      actor.id,
+      input.organisationId,
+      instructionId,
+      input.mimeType,
+      input.size,
+    );
+    if (result.previous !== null && environment.MEDIA_BUCKET !== undefined)
+      await environment.MEDIA_BUCKET.delete(result.previous.storageKey);
+    return context.json({ media: result.media }, 201);
+  });
+  app.put('/api/v1/platform/ev-test-instructions/:instructionId/video/content', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    if (environment.MEDIA_BUCKET === undefined)
+      throw new DomainError('MEDIA_STORAGE_UNAVAILABLE', 'Media storage is not configured.', 503);
+    if (context.req.raw.body === null)
+      throw new DomainError('MEDIA_CONTENT_REQUIRED', 'Choose a video or GIF to upload.', 422);
+    const instructionId = z.uuid().parse(context.req.param('instructionId'));
+    const service = new InstructionService(prismaFor(environment));
+    const media = await service.videoForUpload(instructionId);
+    const mimeType = evInstructionVideoContentType.parse(context.req.header('content-type'));
+    await environment.MEDIA_BUCKET.put(media.storageKey, context.req.raw.body, {
+      httpMetadata: { contentType: mimeType },
+    });
+    return context.json({ media: await service.confirmVideo(instructionId) });
+  });
+  app.delete('/api/v1/platform/ev-test-instructions/:instructionId/video', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    const service = new InstructionService(prismaFor(environment));
+    const result = await service.deleteVideo(z.uuid().parse(context.req.param('instructionId')));
+    if (result.media !== null && environment.MEDIA_BUCKET !== undefined)
+      await environment.MEDIA_BUCKET.delete(result.media.storageKey);
+    return context.json({ deleted: true });
+  });
+  app.delete('/api/v1/platform/ev-test-instructions/:instructionId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    const service = new InstructionService(prismaFor(environment));
+    const result = await service.deleteInstruction(
+      z.uuid().parse(context.req.param('instructionId')),
+    );
+    if (result.media !== null && environment.MEDIA_BUCKET !== undefined)
+      await environment.MEDIA_BUCKET.delete(result.media.storageKey);
     return context.json({ deleted: true });
   });
   app.get('/api/v1/assets/:assetId/display-image', async (context) => {

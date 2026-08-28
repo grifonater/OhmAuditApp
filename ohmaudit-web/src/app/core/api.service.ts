@@ -264,6 +264,47 @@ export interface EvStockImage {
   createdAt: string;
   models: EvStockModel[];
 }
+export type EvTestStep = 'unit' | 'supplies' | 'connectors' | 'condition' | 'submit';
+export interface EvTestInstructionSet {
+  id: string;
+  step: EvTestStep;
+  title: string;
+  manufacturers: string[];
+  steps: string[];
+  notes?: string | null;
+  generic: boolean;
+  video: { mediaId: string; mimeType: string; status: string; createdAt: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface EvTestInstructionDraft {
+  step: EvTestStep;
+  title: string;
+  manufacturers: string[];
+  steps: string[];
+  notes?: string;
+}
+export interface EvTestCoverageManufacturer {
+  manufacturer: string;
+  count: number;
+  coveredSteps: EvTestStep[];
+  missingSteps: EvTestStep[];
+}
+export interface EvTestCoverage {
+  manufacturers: EvTestCoverageManufacturer[];
+  total: number;
+  genericSteps: EvTestStep[];
+}
+export interface EvTestInstructionContent {
+  id: string;
+  step: EvTestStep;
+  title: string;
+  manufacturers: string[];
+  steps: string[];
+  notes?: string | null;
+  matchedManufacturer: boolean;
+  video: { id: string; mimeType: string; createdAt: string } | null;
+}
 export interface ReportSummary {
   id: string;
   entityType: string;
@@ -402,12 +443,22 @@ export interface EvChargePoint {
   }>;
 }
 export type ChargerDataPlateField =
-  'manufacturer' | 'model' | 'serialNumber' | 'maximumPowerKw' | 'connectorTypes';
+  'manufacturer' | 'model' | 'serialNumber' | 'maximumPowerKw';
 export interface ChargerDataPlateCandidate {
   field: ChargerDataPlateField;
   value: string;
   confidence?: number;
   requiresHumanConfirmation: true;
+}
+export interface ChargerDataPlateDebug {
+  debug: true;
+  model: string;
+  rawAnswer: string;
+  candidates: ChargerDataPlateCandidate[];
+  missingFields: ChargerDataPlateField[];
+  durationMs: number;
+  imageBytes: number;
+  parseError?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -948,6 +999,80 @@ export class ApiService {
   evStockImageUrl(mediaId: string, version: string): string {
     return `${this.config.config.apiBaseUrl}/stock-images/${mediaId}/content?v=${encodeURIComponent(version)}`;
   }
+  evTestInstructionSets(step?: EvTestStep | '') {
+    const query = step ? `?step=${encodeURIComponent(step)}` : '';
+    return this.request<{ sets: EvTestInstructionSet[] }>(`/platform/ev-test-instructions${query}`);
+  }
+  evTestInstructionCoverage(query: string, limit = 40) {
+    return this.request<EvTestCoverage>(
+      `/platform/ev-test-instructions/coverage?limit=${limit}&q=${encodeURIComponent(query)}`,
+    );
+  }
+  createEvTestInstruction(input: EvTestInstructionDraft) {
+    return this.request<EvTestInstructionSet>('/platform/ev-test-instructions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+  updateEvTestInstruction(instructionId: string, input: EvTestInstructionDraft) {
+    return this.request<EvTestInstructionSet>(
+      `/platform/ev-test-instructions/${encodeURIComponent(instructionId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    );
+  }
+  async uploadEvTestInstructionVideo(
+    organisationId: string,
+    instructionId: string,
+    file: File,
+  ): Promise<{ media: unknown }> {
+    await this.request(
+      `/platform/ev-test-instructions/${encodeURIComponent(instructionId)}/video`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ organisationId, mimeType: file.type, size: file.size }),
+      },
+    );
+    return this.request<{ media: unknown }>(
+      `/platform/ev-test-instructions/${encodeURIComponent(instructionId)}/video/content`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': file.type, 'x-file-size': String(file.size) },
+        body: file,
+      },
+    );
+  }
+  deleteEvTestInstructionVideo(instructionId: string) {
+    return this.request(
+      `/platform/ev-test-instructions/${encodeURIComponent(instructionId)}/video`,
+      {
+        method: 'DELETE',
+      },
+    );
+  }
+  deleteEvTestInstruction(instructionId: string) {
+    return this.request(`/platform/ev-test-instructions/${encodeURIComponent(instructionId)}`, {
+      method: 'DELETE',
+    });
+  }
+  evTestInstructionVideoUrl(mediaId: string): string {
+    return `${this.config.config.apiBaseUrl}/test-instruction-videos/${encodeURIComponent(mediaId)}/content`;
+  }
+  getEvTestInstruction(organisationId: string, step: EvTestStep, manufacturer: string) {
+    const manufacturerQuery = manufacturer.trim()
+      ? `&manufacturer=${encodeURIComponent(manufacturer.trim())}`
+      : '';
+    return this.request<EvTestInstructionContent | null>(
+      `/ev-test-instructions?organisationId=${encodeURIComponent(organisationId)}&step=${step}${manufacturerQuery}`,
+    );
+  }
+  getGuestEvTestInstruction(token: string, step: EvTestStep, manufacturer: string) {
+    const manufacturerQuery = manufacturer.trim()
+      ? `&manufacturer=${encodeURIComponent(manufacturer.trim())}`
+      : '';
+    return this.publicRequest<EvTestInstructionContent | null>(
+      `/guest/visits/${encodeURIComponent(token)}/ev-test-instructions?step=${step}${manufacturerQuery}`,
+    );
+  }
   async downloadDocumentPdf(organisationId: string, documentId: string): Promise<Blob> {
     const accessToken = this.auth.session()?.access_token;
     if (accessToken === undefined) throw new Error('Sign in to continue.');
@@ -1251,6 +1376,13 @@ export class ApiService {
       `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/data-plate-analysis`,
       { method: 'POST', headers: { 'content-type': image.type }, body: image },
     );
+  }
+  debugDataPlateExtraction(image: Blob) {
+    return this.request<ChargerDataPlateDebug>('/platform/ai/dataplate/debug', {
+      method: 'POST',
+      headers: { 'content-type': image.type },
+      body: image,
+    });
   }
   listInspections(organisationId: string, status = '') {
     return this.request<{ inspections: InspectionSummary[] }>(

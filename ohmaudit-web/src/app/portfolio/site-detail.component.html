@@ -8,8 +8,8 @@
   </nav>
   @if (site(); as currentSite) {
     <header class="site-hero card">
-      @if (currentSite.media?.[0]; as heroImage) {
-        @if (siteImageUrls()[heroImage.id]; as heroUrl) {
+      @if (heroImage(); as heroImg) {
+        @if (siteImageUrls()[heroImg.id]; as heroUrl) {
           <img class="site-mark site-hero-image" [src]="heroUrl" [alt]="currentSite.name" />
         } @else {
           <span class="site-mark">⌖</span>
@@ -38,13 +38,19 @@
         >
       </div>
       <div class="site-hero-actions">
-        <a
-          class="button primary"
-          [routerLink]="['/app/org', organisationId, 'visits']"
-          [queryParams]="{ siteId: siteId, create: 'true' }"
-          >Create visit</a
-        >
-        <button class="button secondary" type="button" (click)="startSiteEdit()">Edit site</button>
+        @if (canCreateVisit()) {
+          <a
+            class="button primary"
+            [routerLink]="['/app/org', organisationId, 'visits']"
+            [queryParams]="{ siteId: siteId, create: 'true' }"
+            >Create visit</a
+          >
+        }
+        @if (canManageSite()) {
+          <button class="button secondary" type="button" (click)="startSiteEdit()">
+            Edit site
+          </button>
+        }
       </div>
     </header>
     <nav class="workspace-tabs" aria-label="Site sections">
@@ -98,32 +104,49 @@
             <h2>Site photos</h2>
             <p>Help office staff and engineers recognise the correct location.</p>
           </div>
-          <label class="button secondary upload-button">
-            + Add photos
-            <input
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp"
-              (change)="uploadSiteImages($event)"
-              [disabled]="busy()"
-            />
-          </label>
+          @if (canManageSite()) {
+            <label class="button secondary upload-button">
+              + Add photos
+              <input
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp"
+                (change)="uploadSiteImages($event)"
+                [disabled]="busy()"
+              />
+            </label>
+          }
         </div>
         <div class="site-gallery">
           @for (image of currentSite.media || []; track image.id) {
-            <figure>
+            <figure [class.main-photo]="image.isPrimary">
               @if (siteImageUrls()[image.id]; as imageUrl) {
                 <img [src]="imageUrl" [alt]="image.caption || currentSite.name" />
               } @else {
                 <div class="site-image-unavailable">Image unavailable</div>
               }
-              <button
-                class="button danger compact"
-                type="button"
-                (click)="deleteSiteImage(image.id)"
-              >
-                Delete
-              </button>
+              @if (canManageSite()) {
+                <div class="site-photo-actions">
+                  @if (image.isPrimary) {
+                    <span class="main-photo-badge">Main</span>
+                  } @else {
+                    <button
+                      class="button secondary compact"
+                      type="button"
+                      (click)="setAsMainPhoto(image.id)"
+                    >
+                      Set as Main
+                    </button>
+                  }
+                  <button
+                    class="button danger compact"
+                    type="button"
+                    (click)="deleteSiteImage(image.id)"
+                  >
+                    Delete
+                  </button>
+                </div>
+              }
             </figure>
           } @empty {
             <div class="site-gallery-empty">
@@ -139,7 +162,9 @@
               <p class="eyebrow">Location</p>
               <h2>Site details</h2>
             </div>
-            <button class="text-button" type="button" (click)="startSiteEdit()">Edit</button>
+            @if (canManageSite()) {
+              <button class="text-button" type="button" (click)="startSiteEdit()">Edit</button>
+            }
           </div>
           <dl>
             <div>
@@ -220,14 +245,17 @@
               (click)="view.set('list')"
               aria-label="List view"
             >
-              ☷</button
-            ><button
-              class="button primary compact"
-              type="button"
-              (click)="addingAsset.set(true); cancelAssetEdit()"
-            >
-              + Add asset
+              ☷
             </button>
+            @if (canManageAssets()) {
+              <button
+                class="button primary compact"
+                type="button"
+                (click)="addingAsset.set(true); cancelAssetEdit()"
+              >
+                + Add asset
+              </button>
+            }
           </div>
           <div class="asset-filters">
             <label class="filter-search"
@@ -327,18 +355,20 @@
                 </div>
               </dl>
               <div class="asset-card-actions">
-                <select
-                  #status
-                  [value]="asset.status"
-                  (change)="changeStatus(asset.id, status.value)"
-                  aria-label="Asset status"
-                >
-                  <option>ACTIVE</option>
-                  <option>PROPOSED</option>
-                  <option>INACTIVE</option>
-                  <option>REMOVED</option>
-                  <option>DECOMMISSIONED</option>
-                </select>
+                @if (canManageAssets()) {
+                  <select
+                    #status
+                    [value]="asset.status"
+                    (change)="changeStatus(asset.id, status.value)"
+                    aria-label="Asset status"
+                  >
+                    <option>ACTIVE</option>
+                    <option>PROPOSED</option>
+                    <option>INACTIVE</option>
+                    <option>REMOVED</option>
+                    <option>DECOMMISSIONED</option>
+                  </select>
+                }
                 @if (evEnabled() && asset.assetType.toLowerCase().includes('ev')) {
                   <a
                     class="button ghost compact"
@@ -346,13 +376,18 @@
                     >EV details</a
                   >
                 }
-                <button
-                  class="button secondary compact"
-                  type="button"
-                  (click)="startAssetEdit(asset); addingAsset.set(false)"
-                >
-                  Edit
-                </button>
+                @if (canManageAssets()) {
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    (click)="startAssetEdit(asset); addingAsset.set(false)"
+                  >
+                    Edit
+                  </button>
+                  <button class="button danger compact" type="button" (click)="removeAsset(asset)">
+                    Remove
+                  </button>
+                }
               </div>
             </article>
           } @empty {

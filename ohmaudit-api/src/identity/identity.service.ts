@@ -33,6 +33,8 @@ export class IdentityService {
         403,
       );
     const user = await this.store.upsertUser(actor);
+    if (user.status !== 'ACTIVE')
+      throw new DomainError('USER_DISABLED', 'This account has been disabled.', 403);
     return this.store.createOrganisation({ name, ownerUserId: user.id, correlationId });
   }
 
@@ -62,10 +64,18 @@ export class IdentityService {
     if (actor.support !== undefined && actor.support.organisationId !== organisationId)
       throw new DomainError('ORGANISATION_NOT_FOUND', 'The organisation was not found.', 404);
     const user = await this.store.upsertUser(actor);
+    if (user.status !== 'ACTIVE')
+      throw new DomainError('USER_DISABLED', 'This account has been disabled.', 403);
     const membership = await this.store.findMembership(user.id, organisationId);
     if (membership === undefined || membership.status !== 'ACTIVE') {
       throw new DomainError('ORGANISATION_NOT_FOUND', 'The organisation was not found.', 404);
     }
+    if (membership.organisation.status !== 'ACTIVE')
+      throw new DomainError(
+        'ORGANISATION_UNAVAILABLE',
+        'This Organisation is suspended or archived.',
+        403,
+      );
     if (capability !== undefined && !hasCapability(membership, capability)) {
       throw new DomainError('CAPABILITY_REQUIRED', `This action requires ${capability}.`, 403);
     }

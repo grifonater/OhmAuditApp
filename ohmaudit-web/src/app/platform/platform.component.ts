@@ -8,10 +8,12 @@ import {
   type PlatformOrganisationSummary,
   type PlatformUser,
 } from '../core/api.service';
+import { compressPhoto } from '../core/image-compression';
+import { EvTestInstructionsComponent } from './ev-test-instructions.component';
 
 @Component({
   selector: 'oa-platform',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, EvTestInstructionsComponent],
   templateUrl: './platform.component.html',
   styleUrl: './platform.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -21,7 +23,9 @@ export class PlatformComponent {
 
   protected readonly role = signal<'USER' | 'PLATFORM_ADMIN'>('USER');
   protected readonly bootstrapAvailable = signal(false);
-  protected readonly activeTab = signal<'organisations' | 'catalogue' | 'users'>('organisations');
+  protected readonly activeTab = signal<'organisations' | 'catalogue' | 'users' | 'instructions'>(
+    'organisations',
+  );
   protected readonly users = signal<PlatformUser[]>([]);
   protected readonly organisations = signal<PlatformOrganisationSummary[]>([]);
   protected readonly selectedOrganisation = signal<PlatformOrganisationDetail | null>(null);
@@ -64,7 +68,7 @@ export class PlatformComponent {
     void this.loadStatus();
   }
 
-  protected setTab(tab: 'organisations' | 'catalogue' | 'users'): void {
+  protected setTab(tab: 'organisations' | 'catalogue' | 'users' | 'instructions'): void {
     this.activeTab.set(tab);
     if (tab === 'users' && this.users().length === 0) void this.loadUsers();
     if (tab === 'organisations' && this.organisations().length === 0) void this.loadOrganisations();
@@ -243,14 +247,15 @@ export class PlatformComponent {
       return;
     const value = this.uploadForm.getRawValue();
     const models = this.uploadModels();
+    const compressed = await compressPhoto(file);
     await this.run(async () => {
       const result = await this.api.registerEvStockImage(
         this.organisationId(),
         value.manufacturer,
         models,
-        file,
+        compressed,
       );
-      await this.api.uploadEvStockImage(result.media.id, file);
+      await this.api.uploadEvStockImage(result.media.id, compressed);
       this.uploadForm.reset({ manufacturer: '' });
       this.uploadModels.set([]);
       this.uploadModelInput.setValue('');
@@ -340,8 +345,9 @@ export class PlatformComponent {
       )
     )
       return;
+    const compressed = await compressPhoto(file);
     await this.run(async () => {
-      await this.api.uploadEvStockImage(image.mediaId, file);
+      await this.api.uploadEvStockImage(image.mediaId, compressed);
       this.success.set(
         'Image replaced for all ' +
           image.models.length +
@@ -411,7 +417,7 @@ export class PlatformComponent {
     if (file === null) return '';
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
       return 'Use a JPEG, PNG, or WebP image.';
-    if (file.size > 20_000_000) return 'The image must be smaller than 20 MB.';
+    if (file.size > 2_000_000) return 'The image must be smaller than 2 MB.';
     return '';
   }
 

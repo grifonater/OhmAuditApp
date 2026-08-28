@@ -206,7 +206,7 @@ export class OfflineVisitService {
     inspectionId: string,
     assetId: string,
     guestToken: string | undefined,
-    file: File,
+    file: Blob,
   ): Promise<string> {
     const id = crypto.randomUUID();
     await this.database.photos.put({

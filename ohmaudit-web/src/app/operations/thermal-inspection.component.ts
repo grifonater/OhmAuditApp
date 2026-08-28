@@ -16,6 +16,7 @@ import {
   type VisitSummary,
   type VisitTask,
 } from '../core/api.service';
+import { compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
 
 type ThermalCondition = 'NO_ISSUES' | 'FAULT';
@@ -177,10 +178,12 @@ export class ThermalInspectionComponent {
     if (!inspection || !files.length) return;
     const invalid = files.find(
       ({ type, size }) =>
-        !['image/jpeg', 'image/png', 'image/webp'].includes(type) || size < 1 || size > 20_000_000,
+        !['image/jpeg', 'image/png', 'image/webp'].includes(type) || size < 1 || size > 2_000_000,
     );
     if (invalid) {
-      this.error.set(`${invalid.name} is not a supported image or is larger than 20 MB.`);
+      this.error.set(
+        `${invalid.name} is not a supported image or is larger than 2 MB. Compress the image and try again.`,
+      );
       input.value = '';
       return;
     }
@@ -197,9 +200,9 @@ export class ThermalInspectionComponent {
       for (let offset = 0; offset < files.length; offset += 3) {
         await Promise.all(
           files.slice(offset, offset + 3).map(async (file) => {
-            const blob = await this.normaliseForReport(file);
-            if (blob.size > 20_000_000)
-              throw new Error(`${file.name} is larger than 20 MB after processing.`);
+            const blob = await compressPhoto(file);
+            if (blob.size > 2_000_000)
+              throw new Error(`${file.name} is larger than 2 MB after compression.`);
             const uploaded = this.guestToken
               ? await this.api.uploadGuestThermalImage(
                   this.guestToken,
@@ -640,32 +643,6 @@ export class ThermalInspectionComponent {
       : kind === 'standard'
         ? 'standard-image'
         : 'unclassified-image';
-  }
-  private async normaliseForReport(file: File): Promise<Blob> {
-    if (file.type === 'image/jpeg') return file;
-    const bitmap = await createImageBitmap(file);
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('This browser could not process the selected image.');
-      context.fillStyle = '#fff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(bitmap, 0, 0);
-      return await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (blob) =>
-            blob
-              ? resolve(blob)
-              : reject(new Error('The selected image could not be prepared for the report.')),
-          'image/jpeg',
-          0.92,
-        ),
-      );
-    } finally {
-      bitmap.close();
-    }
   }
   private restore(data: Record<string, unknown>): void {
     const targets = (Array.isArray(data['targets']) ? data['targets'] : []).filter(this.isTarget);

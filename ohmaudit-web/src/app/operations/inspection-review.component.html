@@ -27,14 +27,16 @@
           ><small>Failed</small></span
         >
       </div>
-      <button
-        class="button secondary download-pack"
-        type="button"
-        [disabled]="busy() || approvedCount() === 0"
-        (click)="downloadVisitPack()"
-      >
-        ↓ Download all approved certificates
-      </button>
+      @if (canIssueCertificates()) {
+        <button
+          class="button secondary download-pack"
+          type="button"
+          [disabled]="busy() || approvedCount() === 0"
+          (click)="downloadVisitPack()"
+        >
+          ↓ Download all approved certificates
+        </button>
+      }
     </div>
   </header>
 
@@ -140,7 +142,7 @@
                 <button
                   class="button"
                   type="button"
-                  [disabled]="busy()"
+                  [disabled]="busy() || !canIssueThermalReports()"
                   (click)="previewThermalReport()"
                 >
                   Preview A4 report
@@ -149,7 +151,7 @@
               <button
                 class="button primary"
                 type="button"
-                [disabled]="busy()"
+                [disabled]="busy() || (!canIssueCertificates() && !canIssueThermalReports())"
                 (click)="downloadCertificate()"
               >
                 ↓
@@ -482,18 +484,20 @@
                 </label>
               </section>
             } @else if (item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW') {
-              <section class="correction-callout">
-                <div>
-                  <strong>Spotted a small recording mistake?</strong
-                  ><span
-                    >Correct results, readings, observations or defect classifications before
-                    approval.</span
-                  >
-                </div>
-                <button class="button secondary" type="button" (click)="startOverride()">
-                  Correct submitted results
-                </button>
-              </section>
+              @if (canApprove()) {
+                <section class="correction-callout">
+                  <div>
+                    <strong>Spotted a small recording mistake?</strong
+                    ><span
+                      >Correct results, readings, observations or defect classifications before
+                      approval.</span
+                    >
+                  </div>
+                  <button class="button secondary" type="button" (click)="startOverride()">
+                    Correct submitted results
+                  </button>
+                </section>
+              }
             }
 
             <section class="review-card">
@@ -1063,36 +1067,44 @@
                 }
                 @if (change.status === 'PENDING' && hasEffectiveChanges(item, change)) {
                   <footer>
-                    <button
-                      class="button danger"
-                      type="button"
-                      [disabled]="busy()"
-                      (click)="reviewAssetChange(change, false)"
-                    >
-                      Reject all updates
-                    </button>
-                    <button
-                      class="button primary"
-                      type="button"
-                      [disabled]="busy()"
-                      (click)="reviewAssetChange(change, true)"
-                    >
-                      Apply selected updates
-                    </button>
+                    @if (canManageAssets()) {
+                      <button
+                        class="button danger"
+                        type="button"
+                        [disabled]="busy()"
+                        (click)="reviewAssetChange(change, false)"
+                      >
+                        Reject all updates
+                      </button>
+                      <button
+                        class="button primary"
+                        type="button"
+                        [disabled]="busy()"
+                        (click)="reviewAssetChange(change, true)"
+                      >
+                        Apply selected updates
+                      </button>
+                    } @else {
+                      <span class="no-change-explanation"
+                        >You do not have permission to apply asset updates.</span
+                      >
+                    }
                   </footer>
                 } @else if (change.status === 'PENDING') {
                   <footer>
                     <span class="no-change-explanation"
                       >There is nothing to apply to the asset record.</span
                     >
-                    <button
-                      class="button secondary"
-                      type="button"
-                      [disabled]="busy()"
-                      (click)="reviewAssetChange(change, false)"
-                    >
-                      Dismiss empty proposal
-                    </button>
+                    @if (canManageAssets()) {
+                      <button
+                        class="button secondary"
+                        type="button"
+                        [disabled]="busy()"
+                        (click)="reviewAssetChange(change, false)"
+                      >
+                        Dismiss empty proposal
+                      </button>
+                    }
                   </footer>
                 }
               </article>
@@ -1144,34 +1156,36 @@
         </div>
 
         @if (item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW') {
-          <footer class="review-actions">
-            <div>
-              <strong
-                >Review decision for
-                {{ item.asset?.assetReference || item.asset?.displayName }}</strong
+          @if (canApprove()) {
+            <footer class="review-actions">
+              <div>
+                <strong
+                  >Review decision for
+                  {{ item.asset?.assetReference || item.asset?.displayName }}</strong
+                >
+                <span
+                  >Confirm the results, evidence and highlighted record updates before
+                  approving.</span
+                >
+              </div>
+              <button
+                class="button danger"
+                type="button"
+                [disabled]="busy() || overrideDraft()"
+                (click)="reviewInspection(false)"
               >
-              <span
-                >Confirm the results, evidence and highlighted record updates before
-                approving.</span
+                Return to engineer
+              </button>
+              <button
+                class="button primary"
+                type="button"
+                [disabled]="busy() || overrideDraft()"
+                (click)="reviewInspection(true)"
               >
-            </div>
-            <button
-              class="button danger"
-              type="button"
-              [disabled]="busy() || overrideDraft()"
-              (click)="reviewInspection(false)"
-            >
-              Return to engineer
-            </button>
-            <button
-              class="button primary"
-              type="button"
-              [disabled]="busy() || overrideDraft()"
-              (click)="reviewInspection(true)"
-            >
-              Approve inspection
-            </button>
-          </footer>
+                Approve inspection
+              </button>
+            </footer>
+          }
         }
       } @else {
         <div class="detail-loading"><strong>Select a charger to review.</strong></div>

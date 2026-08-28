@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
+import { storePendingInvitation } from '../core/pending-invitation';
 
 @Component({
   selector: 'oa-signup',
@@ -31,13 +32,18 @@ export class SignupComponent {
       validators: [Validators.required, Validators.minLength(10)],
     }),
   });
+
+  constructor() {
+    const invitation = this.route.snapshot.queryParamMap.get('invitation');
+    if (invitation !== null) storePendingInvitation(invitation);
+    if (this.auth.signedIn()) void this.router.navigateByUrl('/app');
+  }
+
   protected async submit(): Promise<void> {
     if (this.form.invalid) return;
     this.busy.set(true);
     this.error.set('');
     try {
-      const invitation = this.route.snapshot.queryParamMap.get('invitation');
-      if (invitation !== null) localStorage.setItem('ohmaudit.pendingInvitation', invitation);
       const active = await this.auth.signUp(
         this.form.controls.email.value,
         this.form.controls.password.value,

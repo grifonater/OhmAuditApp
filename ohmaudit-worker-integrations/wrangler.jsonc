@@ -11,6 +11,13 @@
     "local": { "name": "ohmaudit-worker-integrations-local" },
     "development": { "name": "ohmaudit-worker-integrations-development" },
     "staging": { "name": "ohmaudit-worker-integrations-staging" },
-    "production": { "name": "ohmaudit-worker-integrations-production" },
+    "production": {
+      "name": "ohmaudit-worker-integrations-production",
+      "vars": {
+        "APP_ENV": "production",
+        "APP_VERSION": "0.1.0",
+        "WEBHOOK_MAX_BYTES": "262144",
+      },
+    },
   },
 }

@@ -8,69 +8,73 @@
     <span class="badge success"><span class="status-dot"></span>Supabase Auth</span>
   </header>
   <div class="security-grid">
-    <section class="card security-card">
-      <div class="card-header">
-        <div>
-          <p class="eyebrow">Your account</p>
-          <h2>Multi-factor authentication</h2>
+    @if (canManageUsers()) {
+      <section class="card security-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Your account</p>
+            <h2>Multi-factor authentication</h2>
+          </div>
+          <span class="setup-icon">⌁</span>
         </div>
-        <span class="setup-icon">⌁</span>
-      </div>
-      <div class="card-body">
-        <p>Add an authenticator app as a second factor for sensitive operations.</p>
-        @if (enrolment(); as factor) {
-          <img
-            class="qr-code"
-            [src]="factor.qrCode"
-            alt="Authenticator QR code"
-            width="220"
-            height="220"
-          />
+        <div class="card-body">
+          <p>Add an authenticator app as a second factor for sensitive operations.</p>
+          @if (enrolment(); as factor) {
+            <img
+              class="qr-code"
+              [src]="factor.qrCode"
+              alt="Authenticator QR code"
+              width="220"
+              height="220"
+            />
+            <p>
+              Manual key: <code>{{ factor.secret }}</code>
+            </p>
+            <label class="field"
+              >Six-digit code<input
+                [formControl]="code"
+                inputmode="numeric"
+                autocomplete="one-time-code" /></label
+            ><button
+              class="button primary security-action"
+              type="button"
+              (click)="verifyMfa()"
+              [disabled]="code.invalid"
+            >
+              Verify MFA
+            </button>
+          } @else {
+            <button class="button primary security-action" type="button" (click)="startMfa()">
+              Set up MFA
+            </button>
+          }
+        </div>
+      </section>
+    }
+    @if (canManageOrganisation()) {
+      <section class="card security-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Organisation policy</p>
+            <h2>Privileged role protection</h2>
+          </div>
+          <span class="setup-icon">⚙</span>
+        </div>
+        <div class="card-body">
           <p>
-            Manual key: <code>{{ factor.secret }}</code>
+            Require Organisation Owners and Administrators to use a verified second factor before
+            privileged operations.
           </p>
-          <label class="field"
-            >Six-digit code<input
-              [formControl]="code"
-              inputmode="numeric"
-              autocomplete="one-time-code" /></label
-          ><button
-            class="button primary security-action"
-            type="button"
-            (click)="verifyMfa()"
-            [disabled]="code.invalid"
-          >
-            Verify MFA
+          <div class="policy-note">
+            <strong>Recommended</strong
+            ><span>This reduces the risk of administrative account takeover.</span>
+          </div>
+          <button class="button secondary security-action" type="button" (click)="requireMfa()">
+            Require MFA for privileged roles
           </button>
-        } @else {
-          <button class="button primary security-action" type="button" (click)="startMfa()">
-            Set up MFA
-          </button>
-        }
-      </div>
-    </section>
-    <section class="card security-card">
-      <div class="card-header">
-        <div>
-          <p class="eyebrow">Organisation policy</p>
-          <h2>Privileged role protection</h2>
         </div>
-        <span class="setup-icon">⚙</span>
-      </div>
-      <div class="card-body">
-        <p>
-          Require Organisation Owners and Administrators to use a verified second factor before
-          privileged operations.
-        </p>
-        <div class="policy-note">
-          <strong>Recommended</strong
-          ><span>This reduces the risk of administrative account takeover.</span>
-        </div>
-        <button class="button secondary security-action" type="button" (click)="requireMfa()">
-          Require MFA for privileged roles
-        </button>
-      </div>
-    </section>
+      </section>
+    }
     <section class="card security-card">
       <div class="card-header">
         <div>

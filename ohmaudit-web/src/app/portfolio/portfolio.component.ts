@@ -40,6 +40,11 @@ export class PortfolioComponent {
   protected readonly busy = signal(false);
   protected readonly searching = signal(false);
   protected readonly logoUrls = signal<Record<string, string>>({});
+  protected readonly sitePhotoUrls = signal<Record<string, string>>({});
+  protected readonly capabilities = signal<string[]>([]);
+  protected readonly canManageClients = computed(() =>
+    this.capabilities().includes('customers.manage'),
+  );
   protected readonly expandedCustomerId = signal('');
   protected readonly clientPreviews = signal<Record<string, CustomerDetail>>({});
   protected readonly previewLoadingId = signal('');
@@ -67,7 +72,11 @@ export class PortfolioComponent {
   });
 
   constructor() {
-    this.destroyRef.onDestroy(() => this.revokeLogos());
+    this.destroyRef.onDestroy(() => {
+      this.revokeLogos();
+      Object.values(this.sitePhotoUrls()).forEach((url) => URL.revokeObjectURL(url));
+      this.sitePhotoUrls.set({});
+    });
     this.searchControl.valueChanges
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => void this.search());
@@ -83,7 +92,15 @@ export class PortfolioComponent {
 
   private async loadSummary(): Promise<void> {
     try {
-      this.summary.set((await this.api.portfolioSummary(this.organisationId)).summary);
+      const [summaryResult, accountResult] = await Promise.all([
+        this.api.portfolioSummary(this.organisationId),
+        this.api.currentUser(),
+      ]);
+      this.summary.set(summaryResult.summary);
+      const membership = accountResult.memberships.find(
+        (item) => item.organisation.id === this.organisationId,
+      );
+      this.capabilities.set(membership?.role.capabilities ?? []);
     } catch {
       // The directory remains usable if summary metrics are temporarily unavailable.
     }
@@ -142,6 +159,24 @@ export class PortfolioComponent {
     this.logoUrls.set({});
   }
 
+  private async loadSitePhotos(sites: SiteSummary[]): Promise<void> {
+    const downloads = await Promise.all(
+      sites
+        .filter((site) => site.mainPhotoMediaId)
+        .map((site) =>
+          this.api
+            .downloadMedia(this.organisationId, site.mainPhotoMediaId!)
+            .then((blob) => [site.id, URL.createObjectURL(blob)] as const)
+            .catch(() => undefined),
+        ),
+    );
+    const entries = downloads.filter(
+      (entry): entry is readonly [string, string] => entry !== undefined,
+    );
+    if (entries.length > 0)
+      this.sitePhotoUrls.update((map) => ({ ...map, ...Object.fromEntries(entries) }));
+  }
+
   protected clearSearch(): void {
     this.searchControl.setValue('');
   }
@@ -158,6 +193,7 @@ export class PortfolioComponent {
     try {
       const { customer } = await this.api.getCustomer(this.organisationId, customerId);
       this.clientPreviews.update((previews) => ({ ...previews, [customerId]: customer }));
+      await this.loadSitePhotos(customer.sites ?? []);
     } catch (error: unknown) {
       this.previewErrors.update((errors) => ({
         ...errors,
@@ -218,6 +254,27 @@ export class PortfolioComponent {
       ]);
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to create the client.');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected async archiveCustomer(customer: CustomerSummary): Promise<void> {
+    if (
+      !confirm(
+        `Archive "${customer.name}"?\n\nIt will be removed from the client directory but existing sites, reports and certificates are retained.`,
+      )
+    )
+      return;
+    this.busy.set(true);
+    this.error.set('');
+    try {
+      await this.api.archiveCustomer(this.organisationId, customer.id);
+      this.customers.update((items) => items.filter((c) => c.id !== customer.id));
+      this.totalCustomers.update((n) => n - 1);
+      if (this.expandedCustomerId() === customer.id) this.expandedCustomerId.set('');
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to archive the client.');
     } finally {
       this.busy.set(false);
     }
