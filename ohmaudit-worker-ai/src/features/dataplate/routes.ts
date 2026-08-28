@@ -1,4 +1,4 @@
-import { AiBindings } from '../../environment';
+import type { AiBindings } from '../../environment';
 import { extractDataPlate } from './service';
 
 /**

@@ -442,8 +442,7 @@ export interface EvChargePoint {
     supplyMappings: Array<{ supplyId: string; supply?: { label: string } }>;
   }>;
 }
-export type ChargerDataPlateField =
-  'manufacturer' | 'model' | 'serialNumber' | 'maximumPowerKw';
+export type ChargerDataPlateField = 'manufacturer' | 'model' | 'serialNumber' | 'maximumPowerKw';
 export interface ChargerDataPlateCandidate {
   field: ChargerDataPlateField;
   value: string;
