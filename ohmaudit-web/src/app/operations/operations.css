@@ -719,10 +719,13 @@
   inset: 0;
   z-index: 300;
   display: grid;
-  place-content: center;
+  place-items: center;
   padding: 0.9rem;
   background: #061a33a6;
   backdrop-filter: blur(3px);
+}
+:host-context(.app-frame) .step-help-overlay {
+  margin-left: 15rem;
 }
 .step-help-panel {
   display: flex;
