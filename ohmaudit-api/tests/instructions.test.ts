@@ -168,6 +168,120 @@ describe('InstructionService contentFor', () => {
     const result = await new InstructionService(prisma).contentFor('submit', 'abb');
     expect(result?.video).toMatchObject({ id: 'media-1', mimeType: 'video/mp4' });
   });
+
+  it('falls back to the generic video when the specific set has none', async () => {
+    const { prisma } = createPrismaMock({
+      findManyInstructions: () =>
+        Promise.resolve([
+          {
+            id: 'generic',
+            step: 'condition',
+            title: 'Generic condition',
+            manufacturers: [],
+            steps: ['G1'],
+            notes: null,
+            videoMediaId: 'generic-media',
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+          },
+          {
+            id: 'abb',
+            step: 'condition',
+            title: 'ABB condition',
+            manufacturers: ['abb'],
+            steps: ['A1'],
+            notes: null,
+            videoMediaId: null,
+            updatedAt: new Date('2026-02-01T00:00:00Z'),
+          },
+        ]),
+      mediaFindFirst: () =>
+        Promise.resolve({
+          id: 'generic-media',
+          mimeType: 'video/mp4',
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        }),
+    });
+    const result = await new InstructionService(prisma).contentFor('condition', 'abb');
+    expect(result).toMatchObject({ id: 'abb', matchedManufacturer: true });
+    expect(result?.video).toMatchObject({ id: 'generic-media', mimeType: 'video/mp4' });
+  });
+
+  it('keeps the specific video when it exists even if the generic set also has one', async () => {
+    const { prisma } = createPrismaMock({
+      findManyInstructions: () =>
+        Promise.resolve([
+          {
+            id: 'generic',
+            step: 'connectors',
+            title: 'Generic connectors',
+            manufacturers: [],
+            steps: ['G1'],
+            notes: null,
+            videoMediaId: 'generic-media',
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+          },
+          {
+            id: 'abb',
+            step: 'connectors',
+            title: 'ABB connectors',
+            manufacturers: ['abb'],
+            steps: ['A1'],
+            notes: null,
+            videoMediaId: 'abb-media',
+            updatedAt: new Date('2026-02-01T00:00:00Z'),
+          },
+        ]),
+      mediaFindFirst: vi.fn().mockImplementation((args: { where: { id: string } }) =>
+        Promise.resolve(
+          args.where.id === 'abb-media'
+            ? {
+                id: 'abb-media',
+                mimeType: 'video/mp4',
+                createdAt: new Date('2026-02-01T00:00:00Z'),
+              }
+            : {
+                id: 'generic-media',
+                mimeType: 'video/webm',
+                createdAt: new Date('2026-01-01T00:00:00Z'),
+              },
+        ),
+      ),
+    });
+    const result = await new InstructionService(prisma).contentFor('connectors', 'abb');
+    expect(result?.video).toMatchObject({ id: 'abb-media' });
+  });
+
+  it('returns no video when neither the specific nor the generic set has an available video', async () => {
+    const { prisma } = createPrismaMock({
+      findManyInstructions: () =>
+        Promise.resolve([
+          {
+            id: 'generic',
+            step: 'condition',
+            title: 'Generic condition',
+            manufacturers: [],
+            steps: ['G1'],
+            notes: null,
+            videoMediaId: 'generic-media',
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+          },
+          {
+            id: 'abb',
+            step: 'condition',
+            title: 'ABB condition',
+            manufacturers: ['abb'],
+            steps: ['A1'],
+            notes: null,
+            videoMediaId: null,
+            updatedAt: new Date('2026-02-01T00:00:00Z'),
+          },
+        ]),
+      mediaFindFirst: () => Promise.resolve(null),
+    });
+    const result = await new InstructionService(prisma).contentFor('condition', 'abb');
+    expect(result).toMatchObject({ id: 'abb', matchedManufacturer: true });
+    expect(result?.video).toBeNull();
+  });
 });
 
 describe('InstructionService create', () => {

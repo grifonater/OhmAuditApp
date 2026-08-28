@@ -888,7 +888,14 @@
             @if (content.video.mimeType === 'image/gif') {
               <img [src]="helpVideoSrc()" [alt]="content.title" />
             } @else {
-              <video controls playsinline preload="metadata" [src]="helpVideoSrc()"></video>
+              <video
+                controls
+                autoplay
+                muted
+                playsinline
+                preload="metadata"
+                [src]="helpVideoSrc()"
+              ></video>
             }
           </div>
         } @else {

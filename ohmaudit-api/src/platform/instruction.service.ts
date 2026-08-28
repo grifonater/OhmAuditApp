@@ -307,17 +307,14 @@ export class InstructionService {
       target === ''
         ? undefined
         : sets.find((set) => set.manufacturers.some((item) => normalise(item) === target));
-    const generic =
-      specific === undefined ? sets.find((set) => set.manufacturers.length === 0) : undefined;
+    const generic = sets.find((set) => set.manufacturers.length === 0);
     const chosen = specific ?? generic;
     if (chosen === undefined) return null;
-    const video =
-      chosen.videoMediaId === null
-        ? null
-        : await this.prisma.media.findFirst({
-            where: { id: chosen.videoMediaId, status: 'AVAILABLE' },
-            select: { id: true, mimeType: true, createdAt: true },
-          });
+    const video = await this.loadVideo(chosen);
+    const fallbackVideo =
+      video === null && specific !== undefined && generic !== undefined
+        ? await this.loadVideo(generic)
+        : null;
     return {
       id: chosen.id,
       step: chosen.step,
@@ -326,7 +323,7 @@ export class InstructionService {
       steps: chosen.steps,
       notes: chosen.notes,
       matchedManufacturer: specific !== undefined,
-      video,
+      video: fallbackVideo ?? video,
     };
   }
 
@@ -346,6 +343,14 @@ export class InstructionService {
         404,
       );
     return media;
+  }
+
+  private async loadVideo(set: { videoMediaId: string | null }) {
+    if (set.videoMediaId === null) return null;
+    return this.prisma.media.findFirst({
+      where: { id: set.videoMediaId, status: 'AVAILABLE' },
+      select: { id: true, mimeType: true, createdAt: true },
+    });
   }
 
   private async videoMedia(instructionId: string, availableOnly: boolean) {
