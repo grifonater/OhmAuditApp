@@ -3192,6 +3192,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       201,
     );
   });
+  app.get('/api/v1/visits/:visitId/documents', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'sites.read',
+    );
+    const prisma = prismaFor(environment);
+    await requireVisitModules(prisma, organisationId, visitId);
+    return context.json({
+      documents: await new InspectionService(prisma).listDocuments(organisationId, visitId),
+    });
+  });
   app.get('/api/v1/visits/:visitId/report.pdf', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';

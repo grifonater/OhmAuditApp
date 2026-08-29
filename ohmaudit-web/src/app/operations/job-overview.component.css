@@ -89,20 +89,25 @@
   box-shadow: var(--oa-shadow-sm);
 }
 .workspace-tabs a,
-.workspace-tabs > span {
+.workspace-tabs button {
   min-height: 2.8rem;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   padding: 0 0.9rem;
+  border: 0;
   border-bottom: 2px solid transparent;
   color: var(--oa-ink-secondary);
+  background: none;
+  font-family: inherit;
   font-size: 0.72rem;
   font-weight: 750;
   text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
 }
-.workspace-tabs a.active {
+.workspace-tabs a.active,
+.workspace-tabs button.active {
   border-bottom-color: var(--oa-teal-600);
   color: var(--oa-teal-600);
 }
@@ -113,9 +118,6 @@
   background: var(--oa-line-soft);
   font-size: 0.6rem;
   text-align: center;
-}
-.workspace-tabs .disabled {
-  color: var(--oa-ink-muted);
 }
 .edit-job {
   margin-bottom: 0.8rem;
@@ -266,6 +268,194 @@ dd {
 .compact-empty h3,
 .compact-empty p {
   margin: 0 0 0.25rem;
+}
+.tab-panel {
+  align-self: stretch;
+}
+.tab-panel .card-header small {
+  color: var(--oa-ink-muted);
+}
+.inspection-task {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--oa-line-soft);
+}
+.inspection-task:last-child {
+  border-bottom: 0;
+}
+.task-main {
+  display: grid;
+  gap: 0.25rem;
+}
+.task-main strong {
+  font-weight: 750;
+}
+.task-main small,
+.task-meta small {
+  color: var(--oa-ink-muted);
+  font-size: 0.66rem;
+}
+.defect-summary {
+  display: flex;
+  gap: 0.5rem;
+  color: var(--oa-ink-secondary);
+}
+.defect-summary strong {
+  color: var(--oa-danger, #b42318);
+}
+.defect-summary .defect-high {
+  color: var(--oa-danger, #b42318);
+}
+.task-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.7rem;
+}
+.asset-card {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+}
+.asset-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+.asset-card h3 {
+  margin: 0;
+  font-size: 0.82rem;
+}
+.asset-meta {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+.asset-meta div {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.5rem;
+}
+.timeline-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline-list li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.2rem 1fr;
+  gap: 0.6rem;
+  padding-bottom: 1rem;
+}
+.timeline-list li:last-child {
+  padding-bottom: 0;
+}
+.timeline-marker {
+  position: relative;
+  z-index: 1;
+  width: 0.7rem;
+  aspect-ratio: 1;
+  align-self: start;
+  margin-top: 0.2rem;
+  border: 2px solid var(--oa-teal-600);
+  border-radius: 50%;
+  background: white;
+}
+.timeline-list li:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 0.9rem;
+  bottom: 0;
+  left: 0.32rem;
+  width: 1px;
+  background: var(--oa-line);
+}
+.timeline-body {
+  display: grid;
+  gap: 0.2rem;
+}
+.timeline-body strong {
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+.timeline-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  color: var(--oa-ink-muted);
+  font-size: 0.66rem;
+}
+.timeline-actor {
+  color: var(--oa-ink-muted);
+  font-size: 0.66rem;
+}
+.documents-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+.document-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.document-main {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.document-main small {
+  color: var(--oa-ink-muted);
+  font-size: 0.66rem;
+}
+.document-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+.combined-report-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--oa-teal-500) 8%, white), white);
+}
+.combined-report-card p,
+.combined-report-card small {
+  margin: 0;
+  color: var(--oa-ink-muted);
+  font-size: 0.66rem;
+}
+@media (max-width: 48rem) {
+  .combined-report-card {
+    grid-template-columns: 1fr;
+  }
+  .document-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .inspection-task {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .task-meta {
+    justify-content: flex-start;
+  }
 }
 .notice {
   position: fixed;

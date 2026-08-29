@@ -840,9 +840,36 @@ export class PortfolioService {
     return { customers, sites, assets, documents };
   }
 
-  timeline(organisationId: string, entityType: string, entityId: string) {
+  async timeline(organisationId: string, entityType: string, entityId: string) {
+    let where: object = { organisationId, entityType, entityId };
+    if (entityType === 'Visit') {
+      const visit = await this.prisma.visit.findFirst({
+        where: { id: entityId, organisationId },
+        select: {
+          inspections: { select: { id: true } },
+          tasks: { select: { assetId: true } },
+        },
+      });
+      if (visit === null) return [];
+      where = {
+        organisationId,
+        OR: [
+          { entityType: 'Visit', entityId },
+          ...visit.inspections.map((inspection) => ({
+            entityType: 'Inspection',
+            entityId: inspection.id,
+          })),
+          ...visit.tasks.flatMap((task) =>
+            task.assetId === null
+              ? []
+              : [{ entityType: 'Asset', entityId: task.assetId }],
+          ),
+        ],
+      };
+    }
     return this.prisma.auditEvent.findMany({
-      where: { organisationId, entityType, entityId },
+      where,
+      include: { actor: { select: { displayName: true, email: true } } },
       orderBy: { occurredAt: 'desc' },
       take: 100,
     });

@@ -57,16 +57,17 @@
     </header>
 
     <nav class="workspace-tabs" aria-label="Job sections">
-      <a class="active" href="#overview">Overview</a>
-      <span class="disabled">RAMS <b>0</b></span>
-      <a href="#inspections"
-        >Inspections <b>{{ inspectionCount() }}</b></a
-      >
-      <a href="#assets"
-        >Assets <b>{{ linkedAssets().length }}</b></a
-      >
-      <span class="disabled">Progress <b>0</b></span>
-      <span class="disabled">Documents <b>0</b></span>
+      @for (tab of tabs; track tab.key) {
+        <button
+          type="button"
+          class="tab-button"
+          [class.active]="activeTab() === tab.key"
+          (click)="switchTab(tab.key)"
+          >{{ tab.label }}@if (tabCount(tab.key); as count) {
+            <b>{{ count }}</b>
+          }</button
+        >
+      }
     </nav>
 
     @if (editing()) {
@@ -122,206 +123,461 @@
       </section>
     }
 
-    <section class="job-overview" id="overview">
-      <div class="overview-main">
-        <article class="card detail-card job-details-card">
-          <div class="card-header"><h2>Job details</h2></div>
-          <dl class="detail-list card-body">
-            <div>
-              <dt>Job reference</dt>
-              <dd>{{ currentJob.reference || 'Not set' }}</dd>
-            </div>
-            <div>
-              <dt>External reference</dt>
-              <dd>{{ currentJob.externalReference || 'Not set' }}</dd>
-            </div>
-            <div>
-              <dt>Category</dt>
-              <dd>{{ currentJob.jobCategory?.name || 'Not set' }}</dd>
-            </div>
-            <div>
-              <dt>Job type</dt>
-              <dd>{{ currentJob.jobType || 'Not set' }}</dd>
-            </div>
-            <div>
-              <dt>Site</dt>
-              <dd>{{ currentJob.site.name }}</dd>
-            </div>
-            <div>
-              <dt>Client</dt>
-              <dd>{{ currentJob.customer.name }}</dd>
-            </div>
-            <div>
-              <dt>Planned date</dt>
-              <dd>{{ formatDate(currentJob.scheduledStart) }}</dd>
-            </div>
-            <div>
-              <dt>Created by</dt>
-              <dd>{{ personName(currentJob.createdByUser) }}</dd>
-            </div>
-            <div>
-              <dt>Created</dt>
-              <dd>{{ formatDate(currentJob.createdAt, true) }}</dd>
-            </div>
-          </dl>
-        </article>
-
-        <div class="narrative-stack">
-          <article class="card detail-card">
-            <div class="card-header"><h2>Job description / scope of works</h2></div>
-            <p class="narrative">
-              {{ currentJob.description || 'No scope of works has been recorded.' }}
-            </p>
-          </article>
-          <article class="card detail-card">
-            <div class="card-header"><h2>Exclusions / not our responsibility</h2></div>
-            <p class="narrative">
-              {{ currentJob.exclusions || 'No exclusions have been recorded.' }}
-            </p>
-          </article>
-          <article class="card detail-card">
-            <div class="card-header"><h2>Engineer remarks / briefing</h2></div>
-            <p class="narrative">
-              {{ currentJob.engineerNotes || 'No engineer briefing has been recorded.' }}
-            </p>
-          </article>
-        </div>
-
-        <div class="side-stack">
-          <article class="card detail-card">
-            <div class="card-header"><h2>Engineer assigned</h2></div>
-            <div class="assignment card-body">
-              <span class="avatar">{{
-                personName(currentJob.assignedUser).slice(0, 2).toUpperCase()
-              }}</span>
-              <div>
-                <strong>{{
-                  currentJob.guestEngineerName || personName(currentJob.assignedUser)
-                }}</strong>
-                <small>{{
-                  currentJob.guestEmail || currentJob.assignedUser?.email || 'No email recorded'
-                }}</small>
-              </div>
-            </div>
-          </article>
-
-          <article class="card detail-card" id="assets">
-            <div class="card-header">
-              <h2>Linked assets ({{ linkedAssets().length }})</h2>
-            </div>
-            <div class="compact-list card-body">
-              @for (asset of linkedAssets().slice(0, 4); track asset.id) {
-                <span
-                  ><strong>{{ asset.assetReference }}</strong
-                  ><small>{{ asset.displayName }}</small></span
-                >
-              } @empty {
-                <p>No assets are linked to this job.</p>
-              }
-              @if (linkedAssets().length > 4) {
-                <small>+{{ linkedAssets().length - 4 }} more assets</small>
-              }
-            </div>
-          </article>
-
-          <article class="card detail-card">
-            <div class="card-header"><h2>Site information</h2></div>
-            <dl class="site-notes card-body">
-              <div>
-                <dt>Access</dt>
-                <dd>{{ currentJob.site.accessInstructions || 'Not recorded' }}</dd>
-              </div>
-              <div>
-                <dt>PPE</dt>
-                <dd>{{ currentJob.site.ppeRequirements || 'Not recorded' }}</dd>
-              </div>
-              <div>
-                <dt>Induction</dt>
-                <dd>{{ currentJob.site.inductionInformation || 'Not recorded' }}</dd>
-              </div>
-            </dl>
-          </article>
-        </div>
-
-        <article class="card related-card">
-          <div class="card-header">
-            <h2>Related RAMS</h2>
-            <button class="button secondary compact" type="button" disabled>Add RAMS</button>
-          </div>
-          <div class="empty-state compact-empty">
-            <h3>No RAMS added</h3>
-            <p>RAMS documents will appear here when the RAMS module is enabled.</p>
-          </div>
-        </article>
-
-        <div class="lower-side-stack">
-          <article class="card detail-card">
-            <div class="card-header"><h2>Key dates</h2></div>
+    @if (activeTab() === 'overview') {
+      <section class="job-overview" id="overview">
+        <div class="overview-main">
+          <article class="card detail-card job-details-card">
+            <div class="card-header"><h2>Job details</h2></div>
             <dl class="detail-list card-body">
               <div>
-                <dt>Planned start</dt>
-                <dd>{{ formatDate(currentJob.scheduledStart, true) }}</dd>
+                <dt>Job reference</dt>
+                <dd>{{ currentJob.reference || 'Not set' }}</dd>
               </div>
               <div>
-                <dt>Planned end</dt>
-                <dd>{{ formatDate(currentJob.scheduledEnd, true) }}</dd>
+                <dt>External reference</dt>
+                <dd>{{ currentJob.externalReference || 'Not set' }}</dd>
               </div>
               <div>
-                <dt>Submitted</dt>
-                <dd>{{ formatDate(currentJob.submittedAt, true) }}</dd>
+                <dt>Category</dt>
+                <dd>{{ currentJob.jobCategory?.name || 'Not set' }}</dd>
               </div>
               <div>
-                <dt>Completed</dt>
-                <dd>{{ formatDate(currentJob.completedAt, true) }}</dd>
+                <dt>Job type</dt>
+                <dd>{{ currentJob.jobType || 'Not set' }}</dd>
+              </div>
+              <div>
+                <dt>Site</dt>
+                <dd>{{ currentJob.site.name }}</dd>
+              </div>
+              <div>
+                <dt>Client</dt>
+                <dd>{{ currentJob.customer.name }}</dd>
+              </div>
+              <div>
+                <dt>Planned date</dt>
+                <dd>{{ formatDate(currentJob.scheduledStart) }}</dd>
+              </div>
+              <div>
+                <dt>Created by</dt>
+                <dd>{{ personName(currentJob.createdByUser) }}</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{{ formatDate(currentJob.createdAt, true) }}</dd>
               </div>
             </dl>
           </article>
-          <article class="card detail-card quick-actions">
-            <div class="card-header"><h2>Quick actions</h2></div>
-            <div class="card-body">
-              <a
-                class="button secondary"
-                [routerLink]="['/app/org', organisationId, 'visits', visitId]"
-                >Open engineer workspace</a
-              >
-              @if (canAssign()) {
-                <button class="button secondary" type="button" (click)="shareJob()">
-                  Share Job link
-                </button>
-              }
-            </div>
-          </article>
-        </div>
 
-        <article class="card inspection-card" id="inspections">
-          <div class="card-header">
-            <div>
-              <h2>Inspections</h2>
-              <small
-                >{{ completedTaskCount() }}/{{ currentJob.tasks.length }} tasks completed</small
-              >
-            </div>
-            <a
-              class="button secondary compact"
-              [routerLink]="['/app/org', organisationId, 'visits', visitId]"
-              >Open workspace</a
-            >
+          <div class="narrative-stack">
+            <article class="card detail-card">
+              <div class="card-header"><h2>Job description / scope of works</h2></div>
+              <p class="narrative">
+                {{ currentJob.description || 'No scope of works has been recorded.' }}
+              </p>
+            </article>
+            <article class="card detail-card">
+              <div class="card-header"><h2>Exclusions / not our responsibility</h2></div>
+              <p class="narrative">
+                {{ currentJob.exclusions || 'No exclusions have been recorded.' }}
+              </p>
+            </article>
+            <article class="card detail-card">
+              <div class="card-header"><h2>Engineer remarks / briefing</h2></div>
+              <p class="narrative">
+                {{ currentJob.engineerNotes || 'No engineer briefing has been recorded.' }}
+              </p>
+            </article>
           </div>
-          <div class="task-list card-body">
-            @for (task of currentJob.tasks; track task.id) {
-              <div>
-                <span
-                  ><strong>{{ task.title }}</strong
-                  ><small>{{ task.asset?.displayName || 'Site-wide task' }}</small></span
-                ><span class="badge">{{ statusLabel(task.status) }}</span>
+
+          <div class="side-stack">
+            <article class="card detail-card">
+              <div class="card-header"><h2>Engineer assigned</h2></div>
+              <div class="assignment card-body">
+                <span class="avatar">{{
+                  personName(currentJob.assignedUser).slice(0, 2).toUpperCase()
+                }}</span>
+                <div>
+                  <strong>{{
+                    currentJob.guestEngineerName || personName(currentJob.assignedUser)
+                  }}</strong>
+                  <small>{{
+                    currentJob.guestEmail || currentJob.assignedUser?.email || 'No email recorded'
+                  }}</small>
+                </div>
               </div>
-            } @empty {
-              <p>This job has no inspection tasks.</p>
+            </article>
+
+            <article class="card detail-card">
+              <div class="card-header">
+                <h2>Linked assets ({{ linkedAssets().length }})</h2>
+              </div>
+              <div class="compact-list card-body">
+                @for (asset of linkedAssets().slice(0, 4); track asset.id) {
+                  <span
+                    ><strong>{{ asset.assetReference }}</strong
+                    ><small>{{ asset.displayName }}</small></span
+                  >
+                } @empty {
+                  <p>No assets are linked to this job.</p>
+                }
+                @if (linkedAssets().length > 4) {
+                  <small>+{{ linkedAssets().length - 4 }} more assets</small>
+                }
+              </div>
+            </article>
+
+            <article class="card detail-card">
+              <div class="card-header"><h2>Site information</h2></div>
+              <dl class="site-notes card-body">
+                <div>
+                  <dt>Access</dt>
+                  <dd>{{ currentJob.site.accessInstructions || 'Not recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>PPE</dt>
+                  <dd>{{ currentJob.site.ppeRequirements || 'Not recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Induction</dt>
+                  <dd>{{ currentJob.site.inductionInformation || 'Not recorded' }}</dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+
+          <div class="lower-side-stack">
+            <article class="card detail-card">
+              <div class="card-header"><h2>Key dates</h2></div>
+              <dl class="detail-list card-body">
+                <div>
+                  <dt>Planned start</dt>
+                  <dd>{{ formatDate(currentJob.scheduledStart, true) }}</dd>
+                </div>
+                <div>
+                  <dt>Planned end</dt>
+                  <dd>{{ formatDate(currentJob.scheduledEnd, true) }}</dd>
+                </div>
+                <div>
+                  <dt>Submitted</dt>
+                  <dd>{{ formatDate(currentJob.submittedAt, true) }}</dd>
+                </div>
+                <div>
+                  <dt>Completed</dt>
+                  <dd>{{ formatDate(currentJob.completedAt, true) }}</dd>
+                </div>
+              </dl>
+            </article>
+            <article class="card detail-card quick-actions">
+              <div class="card-header"><h2>Quick actions</h2></div>
+              <div class="card-body">
+                <a
+                  class="button secondary"
+                  [routerLink]="['/app/org', organisationId, 'visits', visitId]"
+                  >Open engineer workspace</a
+                >
+                @if (canAssign()) {
+                  <button class="button secondary" type="button" (click)="shareJob()">
+                    Share Job link
+                  </button>
+                }
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+    }
+
+    @if (activeTab() === 'rams') {
+      <section class="card tab-panel" id="rams">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Health &amp; safety</p>
+            <h2>RAMS</h2>
+          </div>
+          <button
+            class="button primary compact"
+            type="button"
+            disabled
+            title="RAMS is the next module"
+          >
+            Add RAMS
+          </button>
+        </div>
+        <div class="card-body">
+          <div class="empty-state">
+            <h3>No RAMS added</h3>
+            <p>
+              Risk Assessment and Method Statements for this job will appear here. The RAMS
+              module is the next module and is not available yet.
+            </p>
+          </div>
+        </div>
+      </section>
+    }
+
+    @if (activeTab() === 'inspections') {
+      <section class="card tab-panel" id="inspections">
+        <div class="card-header">
+          <div>
+            <h2>Inspections ({{ inspections().length }})</h2>
+            <small>{{ completedTaskCount() }}/{{ currentJob.tasks.length }} tasks completed</small>
+          </div>
+          <a
+            class="button secondary compact"
+            [routerLink]="['/app/org', organisationId, 'visits', visitId]"
+            >Open workspace</a
+          >
+        </div>
+        @if (inspections().length === 0) {
+          <div class="card-body">
+            <div class="empty-state">
+              <h3>No inspections yet</h3>
+              <p>Inspection tasks created for this job will appear here automatically.</p>
+            </div>
+          </div>
+        } @else {
+          <div class="task-list card-body">
+            @for (entry of inspections(); track entry.task.id) {
+              <div class="inspection-task">
+                <div class="task-main">
+                  <strong>{{ entry.task.title }}</strong>
+                  <small
+                    >{{ moduleLabel(entry.inspection.moduleKey) }} · {{
+                      entry.task.asset?.displayName || 'Site-wide task'
+                    }}</small
+                  >
+                  @if (entry.inspection.defects && entry.inspection.defects.length > 0) {
+                    <small class="defect-summary">
+                      @if (openDefectCount(entry.inspection.defects); as open) {
+                        <strong>{{ open }} open</strong>
+                      }
+                      @if (severityCount(entry.inspection.defects, 'HIGH'); as high) {
+                        <span class="defect-high">{{ high }} high</span>
+                      }
+                      @if (severityCount(entry.inspection.defects, 'MEDIUM'); as medium) {
+                        <span>{{ medium }} medium</span>
+                      }
+                      @if (severityCount(entry.inspection.defects, 'LOW'); as low) {
+                        <span>{{ low }} low</span>
+                      }
+                    </small>
+                  }
+                </div>
+                <div class="task-meta">
+                  <span class="badge">{{ statusLabel(entry.inspection.status) }}</span>
+                  <small>Revision {{ entry.inspection.currentRevisionNumber }}</small>
+                  @if (entry.inspection.status === 'APPROVED' && entry.inspection.approvedAt) {
+                    <small>Approved {{ formatDate(entry.inspection.approvedAt) }}</small>
+                  }
+                  @if (entry.inspection.status === 'SUBMITTED' && entry.inspection.submittedAt) {
+                    <small>Submitted {{ formatDate(entry.inspection.submittedAt) }}</small>
+                  }
+                  <a
+                    class="button ghost compact"
+                    [routerLink]="['/app/org', organisationId, 'visits', visitId]"
+                    >Open inspection</a
+                  >
+                </div>
+              </div>
             }
           </div>
-        </article>
-      </div>
-    </section>
+        }
+      </section>
+    }
+
+    @if (activeTab() === 'assets') {
+      <section class="card tab-panel" id="assets">
+        <div class="card-header">
+          <div>
+            <h2>Linked assets ({{ assetDetails().length }})</h2>
+            <small>Assets inspected as part of this job</small>
+          </div>
+        </div>
+        @if (assetDetails().length === 0) {
+          <div class="card-body">
+            <div class="empty-state">
+              <h3>No assets linked</h3>
+              <p>Assets added to job tasks will appear here with their inspection status.</p>
+            </div>
+          </div>
+        } @else {
+          <div class="asset-grid card-body">
+            @for (entry of assetDetails(); track entry.asset.id) {
+              <article class="record-card asset-card">
+                <div class="asset-card-head">
+                  <strong>{{ entry.asset.assetReference }}</strong>
+                  <span class="badge">{{ statusLabel(entry.asset.status) }}</span>
+                </div>
+                <h3>{{ entry.asset.displayName }}</h3>
+                <dl class="asset-meta">
+                  <div>
+                    <dt>Type</dt>
+                    <dd>{{ statusLabel(entry.asset.assetType) }}</dd>
+                  </div>
+                  @if (entry.asset.manufacturer || entry.asset.model) {
+                    <div>
+                      <dt>Make / model</dt>
+                      <dd>{{ entry.asset.manufacturer || '—' }} {{ entry.asset.model || '' }}</dd>
+                    </div>
+                  }
+                  @if (entry.asset.evChargePoint?.maximumPowerKw; as power) {
+                    <div>
+                      <dt>Max charge</dt>
+                      <dd>{{ power }} kW</dd>
+                    </div>
+                  }
+                  @if (entry.asset.evChargePoint?.phaseCount; as phases) {
+                    <div>
+                      <dt>Phase</dt>
+                      <dd>{{ phases }}</dd>
+                    </div>
+                  }
+                  <div>
+                    <dt>Job tasks</dt>
+                    <dd>{{ entry.taskCount }}</dd>
+                  </div>
+                </dl>
+                <a
+                  class="button ghost compact"
+                  [routerLink]="['/app/org', organisationId, 'visits', visitId]"
+                  >Open in workspace</a
+                >
+              </article>
+            }
+          </div>
+        }
+      </section>
+    }
+
+    @if (activeTab() === 'progress') {
+      <section class="card tab-panel" id="progress">
+        <div class="card-header">
+          <div>
+            <h2>Job activity</h2>
+            <small>Audit trail of key events on this job</small>
+          </div>
+          @if (!progressLoading()) {
+            <button class="button ghost compact" type="button" (click)="loadTimeline()">
+              Refresh
+            </button>
+          }
+        </div>
+        <div class="card-body">
+          @if (progressLoading()) {
+            <div class="empty-state"><h3>Loading activity…</h3></div>
+          } @else if (progressEvents().length === 0) {
+            <div class="empty-state">
+              <h3>No activity recorded</h3>
+              <p>Key events such as creation, updates and approvals will appear here.</p>
+            </div>
+          } @else {
+            <ol class="timeline-list">
+              @for (entry of progressEvents(); track entry.event.id) {
+                <li>
+                  <span class="timeline-marker" aria-hidden="true"></span>
+                  <div class="timeline-body">
+                    <strong>{{ entry.label }}</strong>
+                    <small class="timeline-context">
+                      <span>{{ entry.entity }}</span>@if (entry.detail) {
+                        <span>{{ entry.detail }}</span>
+                      }
+                      <span>{{ entry.at }}</span>
+                    </small>
+                    @if (entry.actor) {
+                      <small class="timeline-actor">by {{ entry.actor }}</small>
+                    }
+                  </div>
+                </li>
+              }
+            </ol>
+          }
+        </div>
+      </section>
+    }
+
+    @if (activeTab() === 'documents') {
+      <section class="card tab-panel" id="documents">
+        <div class="card-header">
+          <div>
+            <h2>Documents ({{ documents().length }})</h2>
+            <small>Issued certificates and the combined job report</small>
+          </div>
+          @if (canIssue()) {
+            <button
+              class="button primary compact"
+              type="button"
+              [disabled]="busy() || documentsLoading()"
+              (click)="issueCertificates()"
+              >Issue missing certificates</button
+            >
+          }
+        </div>
+        <div class="card-body documents-grid">
+          <article class="record-card combined-report-card">
+            <div>
+              <span class="badge info">Combined job report</span>
+              <h3>Job report</h3>
+              <p>One PDF combining the latest certificates for all approved inspections.</p>
+              <small>{{ documents().length }} current certificate(s) included</small>
+            </div>
+            <button
+              class="button secondary"
+              type="button"
+              [disabled]="!canGenerate() || documents().length === 0 || busy()"
+              (click)="downloadCombinedReport()"
+              >Download job report (PDF)</button
+            >
+          </article>
+
+          @if (documentsLoading()) {
+            <div class="empty-state">
+              <h3>Loading documents…</h3>
+            </div>
+          } @else if (documents().length === 0) {
+            <div class="empty-state">
+              <h3>No certificates yet</h3>
+              <p>Approve inspections, then issue certificates to generate documents here.</p>
+            </div>
+          } @else {
+            <article class="record-list">
+              @for (document of documents(); track document.id) {
+                <div class="record-card document-row">
+                  <div class="document-main">
+                    <strong>{{ document.title }}</strong>
+                    <small
+                      >{{ document.category }} · {{
+                        document.inspection.asset?.displayName || document.inspection.siteName
+                      }} · Revision {{ document.inspection.revisionNumber }}</small
+                    >
+                    @if (document.issuedAt) {
+                      <small>Issued {{ formatDate(document.issuedAt) }}</small>
+                    }
+                  </div>
+                  <div class="document-actions">
+                    @if (canGenerate()) {
+                      <button
+                        class="button ghost compact"
+                        type="button"
+                        [disabled]="busy()"
+                        (click)="previewDocument(document)"
+                        >Preview</button
+                      >
+                      <button
+                        class="button secondary compact"
+                        type="button"
+                        [disabled]="busy()"
+                        (click)="downloadDocument(document)"
+                        >Download</button
+                      >
+                    }
+                  </div>
+                </div>
+              }
+            </article>
+          }
+        </div>
+      </section>
+    }
   } @else if (!busy() && !error()) {
     <div class="empty-state card"><h2>Job unavailable</h2></div>
   }

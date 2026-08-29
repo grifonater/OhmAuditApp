@@ -402,9 +402,51 @@ export interface VisitTask {
   asset?: AssetSummary & { evChargePoint?: EvChargePoint };
   inspection?: {
     id: string;
+    moduleKey: string;
+    inspectionType: string;
     status: string;
-    revisions?: Array<{ id: string; data: Record<string, unknown> }>;
-    defects?: unknown[];
+    currentRevisionNumber: number;
+    submittedAt?: string;
+    approvedAt?: string;
+    revisions?: Array<{ id: string; revisionNumber: number; data: Record<string, unknown> }>;
+    defects?: Array<{
+      id: string;
+      title?: string;
+      description?: string;
+      severity: string;
+      status: string;
+    }>;
+  };
+}
+export interface TimelineEvent {
+  id: string;
+  organisationId: string;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  data: Record<string, unknown>;
+  occurredAt: string;
+  actor?: { displayName?: string | null; email?: string } | null;
+}
+export interface VisitDocument {
+  id: string;
+  entityType: string;
+  entityId: string;
+  title: string;
+  category: string;
+  mediaId?: string | null;
+  inspectionRevisionId?: string | null;
+  templateKey?: string | null;
+  issuedAt?: string;
+  createdAt: string;
+  inspection: {
+    id: string;
+    moduleKey: string;
+    inspectionType: string;
+    status: string;
+    revisionNumber: number;
+    asset?: { id: string; displayName: string; assetReference: string } | null;
+    siteName: string;
   };
 }
 export interface InspectionSummary {
@@ -1158,6 +1200,16 @@ export class ApiService {
       throw new Error(body.message ?? 'The job report could not be generated.');
     }
     return response.blob();
+  }
+  timeline(organisationId: string, entityType: string, entityId: string) {
+    return this.request<{ events: TimelineEvent[] }>(
+      `/timeline/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  listVisitDocuments(organisationId: string, visitId: string) {
+    return this.request<{ documents: VisitDocument[] }>(
+      `/visits/${visitId}/documents?organisationId=${encodeURIComponent(organisationId)}`,
+    );
   }
   search(organisationId: string, query: string) {
     return this.request<{

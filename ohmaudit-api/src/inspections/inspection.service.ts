@@ -972,4 +972,52 @@ export class InspectionService {
       left.title.localeCompare(right.title),
     );
   }
+
+  async listDocuments(organisationId: string, visitId: string) {
+    const visit = await this.prisma.visit.findFirst({
+      where: { id: visitId, organisationId },
+      select: { id: true },
+    });
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    const inspections = await this.prisma.inspection.findMany({
+      where: { organisationId, visitId, status: 'APPROVED' },
+      include: {
+        asset: { select: { id: true, displayName: true, assetReference: true } },
+        site: { select: { name: true } },
+        revisions: {
+          orderBy: { revisionNumber: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            revisionNumber: true,
+            documents: {
+              where: { status: { not: 'ARCHIVED' } },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+    const documents = inspections.flatMap((inspection) => {
+      const revision = inspection.revisions[0];
+      const document = revision?.documents[0];
+      if (revision === undefined || document === undefined) return [];
+      return [
+        {
+          ...document,
+          inspection: {
+            id: inspection.id,
+            moduleKey: inspection.moduleKey,
+            inspectionType: inspection.inspectionType,
+            status: inspection.status,
+            revisionNumber: revision.revisionNumber,
+            asset: inspection.asset,
+            siteName: inspection.site.name,
+          },
+        },
+      ];
+    });
+    return documents.sort((left, right) => left.title.localeCompare(right.title));
+  }
 }
