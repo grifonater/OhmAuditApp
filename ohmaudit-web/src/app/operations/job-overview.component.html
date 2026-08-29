@@ -63,10 +63,12 @@
           class="tab-button"
           [class.active]="activeTab() === tab.key"
           (click)="switchTab(tab.key)"
-          >{{ tab.label }}@if (tabCount(tab.key); as count) {
-            <b>{{ count }}</b>
-          }</button
         >
+          {{ tab.label }}
+          @if (tabCount(tab.key); as count) {
+            <b>{{ count }}</b>
+          }
+        </button>
       }
     </nav>
 
@@ -307,8 +309,8 @@
           <div class="empty-state">
             <h3>No RAMS added</h3>
             <p>
-              Risk Assessment and Method Statements for this job will appear here. The RAMS
-              module is the next module and is not available yet.
+              Risk Assessment and Method Statements for this job will appear here. The RAMS module
+              is the next module and is not available yet.
             </p>
           </div>
         </div>
@@ -342,9 +344,8 @@
                 <div class="task-main">
                   <strong>{{ entry.task.title }}</strong>
                   <small
-                    >{{ moduleLabel(entry.inspection.moduleKey) }} · {{
-                      entry.task.asset?.displayName || 'Site-wide task'
-                    }}</small
+                    >{{ moduleLabel(entry.inspection.moduleKey) }} ·
+                    {{ entry.task.asset?.displayName || 'Site-wide task' }}</small
                   >
                   @if (entry.inspection.defects && entry.inspection.defects.length > 0) {
                     <small class="defect-summary">
@@ -478,7 +479,8 @@
                   <div class="timeline-body">
                     <strong>{{ entry.label }}</strong>
                     <small class="timeline-context">
-                      <span>{{ entry.entity }}</span>@if (entry.detail) {
+                      <span>{{ entry.entity }}</span>
+                      @if (entry.detail) {
                         <span>{{ entry.detail }}</span>
                       }
                       <span>{{ entry.at }}</span>
@@ -508,8 +510,9 @@
               type="button"
               [disabled]="busy() || documentsLoading()"
               (click)="issueCertificates()"
-              >Issue missing certificates</button
             >
+              Issue missing certificates
+            </button>
           }
         </div>
         <div class="card-body documents-grid">
@@ -525,8 +528,9 @@
               type="button"
               [disabled]="!canGenerate() || documents().length === 0 || busy()"
               (click)="downloadCombinedReport()"
-              >Download job report (PDF)</button
             >
+              Download job report (PDF)
+            </button>
           </article>
 
           @if (documentsLoading()) {
@@ -545,9 +549,9 @@
                   <div class="document-main">
                     <strong>{{ document.title }}</strong>
                     <small
-                      >{{ document.category }} · {{
-                        document.inspection.asset?.displayName || document.inspection.siteName
-                      }} · Revision {{ document.inspection.revisionNumber }}</small
+                      >{{ document.category }} ·
+                      {{ document.inspection.asset?.displayName || document.inspection.siteName }} ·
+                      Revision {{ document.inspection.revisionNumber }}</small
                     >
                     @if (document.issuedAt) {
                       <small>Issued {{ formatDate(document.issuedAt) }}</small>
@@ -560,15 +564,17 @@
                         type="button"
                         [disabled]="busy()"
                         (click)="previewDocument(document)"
-                        >Preview</button
                       >
+                        Preview
+                      </button>
                       <button
                         class="button secondary compact"
                         type="button"
                         [disabled]="busy()"
                         (click)="downloadDocument(document)"
-                        >Download</button
                       >
+                        Download
+                      </button>
                     }
                   </div>
                 </div>

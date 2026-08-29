@@ -95,7 +95,9 @@ export class JobOverviewComponent {
     () => this.job()?.tasks.filter((task) => task.status === 'COMPLETED').length ?? 0,
   );
   protected readonly inspections = computed(() =>
-    (this.job()?.tasks ?? []).filter(isInspectionTask).map((task) => ({ task, inspection: task.inspection })),
+    (this.job()?.tasks ?? [])
+      .filter(isInspectionTask)
+      .map((task) => ({ task, inspection: task.inspection })),
   );
   protected readonly progressEvents = computed(() =>
     this.timelineEvents().map((event) => ({
@@ -266,9 +268,7 @@ export class JobOverviewComponent {
         : 'Inspection';
   }
 
-  protected openDefectCount(
-    defects: Array<{ status: string }> | undefined,
-  ): number {
+  protected openDefectCount(defects: Array<{ status: string }> | undefined): number {
     return (defects ?? []).filter(
       (defect) => defect.status !== 'RESOLVED' && defect.status !== 'CLOSED',
     ).length;
@@ -292,7 +292,8 @@ export class JobOverviewComponent {
       typeof event.data['issuedCount'] === 'number' ? event.data['issuedCount'] : null;
     if (issuedCount !== null)
       return `${issuedCount} certificate${issuedCount === 1 ? '' : 's'} issued`;
-    if (event.eventType.startsWith('Inspection')) return revision === null ? '' : `Revision ${revision}`;
+    if (event.eventType.startsWith('Inspection'))
+      return revision === null ? '' : `Revision ${revision}`;
     return '';
   }
 

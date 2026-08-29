@@ -432,8 +432,7 @@ dd {
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 0.8rem;
-  background:
-    linear-gradient(120deg, color-mix(in srgb, var(--oa-teal-500) 8%, white), white);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--oa-teal-500) 8%, white), white);
 }
 .combined-report-card p,
 .combined-report-card small {
