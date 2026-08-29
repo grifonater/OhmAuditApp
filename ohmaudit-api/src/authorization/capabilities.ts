@@ -75,15 +75,15 @@ export const capabilityCatalogue: CapabilityDefinition[] = [
   },
   {
     key: 'visits.create',
-    group: 'Visits',
-    name: 'Create visits',
-    description: 'Plan visits and select assets for inspection.',
+    group: 'Jobs',
+    name: 'Create jobs',
+    description: 'Plan jobs and optionally select assets for inspection.',
   },
   {
     key: 'visits.assign',
-    group: 'Visits',
-    name: 'Assign visits',
-    description: 'Assign visits to engineers and guest engineers.',
+    group: 'Jobs',
+    name: 'Assign jobs',
+    description: 'Assign jobs to engineers and guest engineers.',
   },
   {
     key: 'inspections.perform',
@@ -108,7 +108,7 @@ export const capabilityCatalogue: CapabilityDefinition[] = [
     key: 'certificates.generate',
     group: 'Reports',
     name: 'Generate certificates',
-    description: 'Generate draft certificates and visit reports.',
+    description: 'Generate draft certificates and job reports.',
   },
   {
     key: 'certificates.issue',

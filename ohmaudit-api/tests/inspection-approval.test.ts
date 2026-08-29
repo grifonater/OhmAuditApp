@@ -21,6 +21,7 @@ describe('inspection approval completion', () => {
           assetId: null,
           visitId: 'visit-a',
           visitTaskId: 'task-a',
+          effectiveDate: null,
           status: 'SUBMITTED',
           currentRevisionNumber: 1,
           revisions: [{ revisionNumber: 1, documents: [], signatures: [], evData: null }],

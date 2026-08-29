@@ -5,6 +5,7 @@ import {
   ApiService,
   type AssetSummary,
   type Entitlement,
+  type JobCategory,
   type OrganisationMember,
   type SiteSummary,
   type VisitSummary,
@@ -29,6 +30,7 @@ export class VisitsComponent {
   protected readonly assets = signal<AssetSummary[]>([]);
   protected readonly members = signal<OrganisationMember[]>([]);
   protected readonly entitlements = signal<Entitlement[]>([]);
+  protected readonly jobCategories = signal<JobCategory[]>([]);
   protected readonly capabilities = signal<string[]>([]);
   protected readonly showCreate = signal(false);
   protected readonly busy = signal(false);
@@ -39,6 +41,7 @@ export class VisitsComponent {
   protected readonly assetQuery = signal('');
   protected readonly assetType = signal('ALL');
   protected readonly allowDiscovery = signal(true);
+  protected readonly addInspection = signal(true);
   protected readonly siteSearching = signal(false);
   protected readonly selectedAssetIds = signal<Set<string>>(new Set());
   protected readonly visitQuery = signal('');
@@ -90,10 +93,10 @@ export class VisitsComponent {
   });
   protected readonly visitRange = computed(() => {
     const pagination = this.visitPagination();
-    if (pagination.total === 0) return '0 visits';
+    if (pagination.total === 0) return '0 jobs';
     const first = (pagination.page - 1) * pagination.pageSize + 1;
     const last = Math.min(pagination.total, pagination.page * pagination.pageSize);
-    return `${first}–${last} of ${pagination.total} visits`;
+    return `${first}–${last} of ${pagination.total} jobs`;
   });
   protected readonly visitFiltersActive = computed(
     () =>
@@ -111,13 +114,23 @@ export class VisitsComponent {
   );
   protected readonly canCreate = computed(() => this.capabilities().includes('visits.create'));
   protected readonly canAssign = computed(() => this.capabilities().includes('visits.assign'));
+  protected readonly canManageCategories = computed(() =>
+    this.capabilities().includes('organisation.manage'),
+  );
+  protected readonly newCategoryName = new FormControl('', { nonNullable: true });
 
   protected readonly form = new FormGroup({
     siteId: new FormControl('', { nonNullable: true, validators: Validators.required }),
-    title: new FormControl('Planned inspection visit', {
+    reference: new FormControl('', { nonNullable: true }),
+    externalReference: new FormControl('', { nonNullable: true }),
+    title: new FormControl('Planned job', {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(2)],
     }),
+    description: new FormControl('', { nonNullable: true }),
+    exclusions: new FormControl('', { nonNullable: true }),
+    jobCategoryId: new FormControl('', { nonNullable: true }),
+    jobType: new FormControl('', { nonNullable: true }),
     scheduledStart: new FormControl(this.localDateTime(), {
       nonNullable: true,
       validators: Validators.required,
@@ -195,7 +208,10 @@ export class VisitsComponent {
     const isThermal = this.form.controls.moduleKey.value === 'thermal-imaging';
     if (
       this.form.invalid ||
-      (!isThermal && this.selectedAssetIds().size === 0 && !this.allowDiscovery())
+      (this.addInspection() &&
+        !isThermal &&
+        this.selectedAssetIds().size === 0 &&
+        !this.allowDiscovery())
     )
       return;
     const value = this.form.getRawValue();
@@ -203,22 +219,38 @@ export class VisitsComponent {
     await this.run(async () => {
       const result = await this.api.createVisit(this.organisationId, {
         siteId: value.siteId,
+        ...(value.reference ? { reference: value.reference } : {}),
+        ...(value.externalReference ? { externalReference: value.externalReference } : {}),
         title: value.title,
+        ...(value.description ? { description: value.description } : {}),
+        ...(value.exclusions ? { exclusions: value.exclusions } : {}),
+        ...(value.jobCategoryId ? { jobCategoryId: value.jobCategoryId } : {}),
+        ...(value.jobType ? { jobType: value.jobType } : {}),
         scheduledStart: new Date(value.scheduledStart).toISOString(),
         ...(value.assignedUserId ? { assignedUserId: value.assignedUserId } : {}),
-        ...(value.guestEngineerName ? { guestEngineerName: value.guestEngineerName } : {}),
-        ...(value.guestEmail ? { guestEmail: value.guestEmail } : {}),
+        ...(!value.assignedUserId && value.guestEngineerName
+          ? { guestEngineerName: value.guestEngineerName }
+          : {}),
+        ...(!value.assignedUserId && value.guestEmail ? { guestEmail: value.guestEmail } : {}),
         engineerNotes: value.engineerNotes,
-        tasks: isThermal
-          ? [{ moduleKey: 'thermal-imaging', title: 'Thermal imaging survey' }]
-          : selected.map((asset) => ({
-              assetId: asset.id,
-              moduleKey: value.moduleKey,
-              title: `${asset.displayName} inspection`,
-            })),
+        tasks: !this.addInspection()
+          ? []
+          : isThermal
+            ? [{ moduleKey: 'thermal-imaging', title: 'Thermal imaging survey' }]
+            : selected.map((asset) => ({
+                assetId: asset.id,
+                moduleKey: value.moduleKey,
+                title: `${asset.displayName} inspection`,
+              })),
       });
       this.showCreate.set(false);
-      await this.router.navigate(['/app/org', this.organisationId, 'visits', result.visit.id]);
+      await this.router.navigate([
+        '/app/org',
+        this.organisationId,
+        'visits',
+        result.visit.id,
+        'overview',
+      ]);
     });
   }
 
@@ -229,6 +261,19 @@ export class VisitsComponent {
       const url = `${location.origin}${result.guestUrl}`;
       this.guestLink.set(url);
       await navigator.clipboard.writeText(url);
+    });
+  }
+
+  protected async createCategory(): Promise<void> {
+    const name = this.newCategoryName.value.trim();
+    if (!this.canManageCategories() || name.length < 2) return;
+    await this.run(async () => {
+      const { category } = await this.api.createJobCategory(this.organisationId, name);
+      this.jobCategories.update((items) =>
+        [...items, category].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      this.form.controls.jobCategoryId.setValue(category.id);
+      this.newCategoryName.setValue('');
     });
   }
 
@@ -305,19 +350,21 @@ export class VisitsComponent {
           (item) => item.organisation.id === this.organisationId,
         );
         this.capabilities.set(membership?.role.capabilities ?? []);
-        const [visits, sites, members, entitlements] = await Promise.all([
+        const [visits, sites, members, entitlements, categories] = await Promise.all([
           this.fetchVisits(1),
           this.api.listSites(this.organisationId),
           this.canAssign()
             ? this.api.listMembers(this.organisationId)
             : Promise.resolve({ members: [] }),
           this.api.entitlements(this.organisationId),
+          this.api.listJobCategories(this.organisationId),
         ]);
         this.visits.set(visits.visits);
         this.visitPagination.set(visits.pagination);
         this.sites.set(sites.sites);
         this.members.set(members.members);
         this.entitlements.set(entitlements.entitlements);
+        this.jobCategories.set(categories.categories);
         if (!this.evEnabled() && this.form.controls.moduleKey.value === 'ev-charging')
           this.form.controls.moduleKey.setValue(this.thermalEnabled() ? 'thermal-imaging' : 'core');
       } catch (error) {
@@ -332,7 +379,7 @@ export class VisitsComponent {
       if (site !== undefined) {
         await this.selectSite(site);
         this.form.controls.title.setValue(
-          `${site.name} ${this.evEnabled() ? 'EV inspection' : this.thermalEnabled() ? 'thermal imaging' : 'inspection'} visit`,
+          `${site.name} ${this.evEnabled() ? 'EV inspection' : this.thermalEnabled() ? 'thermal imaging' : 'job'}`,
         );
         this.showCreate.set(true);
       }
@@ -364,7 +411,7 @@ export class VisitsComponent {
       this.visits.set(result.visits);
       this.visitPagination.set(result.pagination);
     } catch (error: unknown) {
-      this.error.set(error instanceof Error ? error.message : 'Unable to load visits.');
+      this.error.set(error instanceof Error ? error.message : 'Unable to load jobs.');
     } finally {
       this.listBusy.set(false);
     }
@@ -400,7 +447,7 @@ export class VisitsComponent {
     try {
       await operation();
     } catch (error: unknown) {
-      this.error.set(error instanceof Error ? error.message : 'Unable to update visits.');
+      this.error.set(error instanceof Error ? error.message : 'Unable to update jobs.');
     } finally {
       this.busy.set(false);
     }

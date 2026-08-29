@@ -4,12 +4,12 @@
       <a class="back-link" [routerLink]="['/app/org', organisationId, 'inspections']"
         >← Inspections</a
       >
-      <p class="eyebrow">Visit review workspace</p>
+      <p class="eyebrow">Job review workspace</p>
       <h1>{{ visitTitle() }}</h1>
       <p>{{ customerSite() }}</p>
     </div>
     <div class="review-header-tools">
-      <div class="review-metrics" aria-label="Visit review progress">
+      <div class="review-metrics" aria-label="Job review progress">
         <span
           ><strong>{{ inspections().length }}</strong
           ><small>Total units</small></span

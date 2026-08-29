@@ -56,7 +56,38 @@
 
 .engineer-inspection-form.ev-mobile-app {
   min-height: 100dvh;
-  padding: 0 0 5.25rem;
+  padding: 0 0 9.5rem;
+}
+
+.ev-step-pager {
+  position: fixed;
+  inset: auto 0 auto;
+  bottom: calc(3.3rem + 0.6rem);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: min(100%, 38rem);
+  margin: 0 auto;
+  padding: 0.65rem 0.75rem calc(0.65rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--inspection-border);
+  background: #ffffffed;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 -0.6rem 1.4rem rgb(4 27 58 / 10%);
+}
+
+.ev-step-pager .ev-step-counter {
+  flex: 1;
+  text-align: center;
+  color: var(--inspection-navy);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.ev-step-pager .button {
+  min-width: 5.6rem;
+  min-height: 3.1rem;
 }
 
 .ev-mobile-app .inspection-titlebar {
@@ -112,11 +143,22 @@
 
 .ev-mobile-app .autosave-state {
   justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   margin: 0;
   color: #e5edf8;
   font-size: 0.67rem;
   font-weight: 700;
   text-align: right;
+}
+
+.ev-mobile-app .autosave-state.saving {
+  color: var(--inspection-amber);
+}
+
+.ev-mobile-app .autosave-tick {
+  color: #5ee0a3;
 }
 
 .ev-mobile-app .asset-identity-hero {
@@ -243,6 +285,23 @@
   border-color: var(--inspection-amber);
   background: var(--inspection-amber);
   color: #111;
+}
+
+.ev-mobile-app .inspection-progress button.active b {
+  border-color: var(--inspection-navy);
+  background: var(--inspection-navy);
+  color: #fff;
+}
+
+.ev-mobile-app .inspection-progress button.done b {
+  border-color: var(--inspection-green);
+  background: var(--inspection-green-soft);
+  color: var(--inspection-green);
+}
+
+.ev-mobile-app .inspection-progress button.active.done b {
+  background: var(--inspection-green);
+  color: #fff;
 }
 
 .ev-mobile-app .inspection-progress span {
@@ -857,6 +916,10 @@
 
   .ev-mobile-app .inspection-titlebar {
     border-radius: 1rem 1rem 0 0;
+  }
+
+  .ev-step-pager {
+    bottom: calc(1rem + 3.3rem + 0.6rem);
   }
 }
 

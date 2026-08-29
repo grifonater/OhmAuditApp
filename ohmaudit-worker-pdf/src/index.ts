@@ -951,7 +951,7 @@ export function renderVisitReportPdf(payload: VisitReportPayload): Uint8Array {
     `Issued by: ${payload.organisationName}`,
     `Customer: ${payload.customerName}`,
     `Site: ${payload.siteName}`,
-    `Visit date: ${payload.visitDate}`,
+    `Job date: ${payload.visitDate}`,
     `Certificates included: ${payload.certificates.length}`,
     '',
     ...payload.certificates.map(

@@ -783,7 +783,7 @@ export class PortfolioService {
         entityType: 'Visit',
         entityId: visit.id,
         title: visit.title,
-        category: 'Combined visit report',
+        category: 'Combined job report',
         mediaId: null,
         inspectionRevisionId: null,
         issuedAt: latest.issuedAt,

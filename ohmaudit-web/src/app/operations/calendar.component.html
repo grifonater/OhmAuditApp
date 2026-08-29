@@ -35,6 +35,13 @@
           </select></label
         ><label class="field">Schedule name<input formControlName="title" /></label
         ><label class="field"
+          >Asset (optional)<select formControlName="assetId">
+            <option value="">Whole site</option>
+            @for (asset of siteAssets(); track asset.id) {
+              <option [value]="asset.id">{{ asset.displayName }}</option>
+            }
+          </select></label
+        ><label class="field"
           >Inspection module<select formControlName="moduleKey">
             <option value="core">General inspection</option>
             @for (item of activeModules(); track item.module.key) {
@@ -73,7 +80,7 @@
       <h2>{{ monthLabel() }}</h2>
       <button class="button secondary compact" type="button" (click)="moveMonth(1)">Next →</button>
     </div>
-    <div class="calendar-month">
+    <div class="calendar-month desktop-calendar">
       <span class="calendar-label">Mon</span><span class="calendar-label">Tue</span
       ><span class="calendar-label">Wed</span><span class="calendar-label">Thu</span
       ><span class="calendar-label">Fri</span><span class="calendar-label">Sat</span
@@ -84,7 +91,10 @@
           @for (item of day.occurrences; track item.id) {
             <button
               class="calendar-event"
+              [class.completed]="item.status === 'COMPLETED'"
+              [class.overdue]="item.status === 'OVERDUE'"
               type="button"
+              (click)="selectedOccurrence.set(item)"
               [title]="
                 item.scheduleRule.customer?.name +
                 ' — ' +
@@ -99,7 +109,50 @@
         </div>
       }
     </div>
+    <div class="mobile-agenda">
+      @for (item of agenda(); track item.id) {
+        <button class="agenda-item" type="button" (click)="selectedOccurrence.set(item)">
+          <time [attr.datetime]="item.dueDate">{{ formatDate(item.dueDate) }}</time>
+          <span>
+            <strong>{{ item.scheduleRule.title }}</strong>
+            <small
+              >{{ item.scheduleRule.site.name }}
+              @if (item.scheduleRule.asset) {
+                · {{ item.scheduleRule.asset.displayName }}
+              }
+            </small>
+          </span>
+          <span class="badge" [class.danger]="item.status === 'OVERDUE'">{{
+            statusLabel(item.status)
+          }}</span>
+        </button>
+      } @empty {
+        <p class="muted">No inspection dates in this period.</p>
+      }
+    </div>
   </section>
+  @if (selectedOccurrence(); as selected) {
+    <section class="card panel occurrence-detail" aria-live="polite">
+      <div>
+        <p class="eyebrow">{{ statusLabel(selected.status) }}</p>
+        <h2>{{ selected.scheduleRule.title }}</h2>
+        <p>
+          {{ selected.scheduleRule.customer?.name }} · {{ selected.scheduleRule.site.name }}
+          @if (selected.scheduleRule.asset) {
+            · {{ selected.scheduleRule.asset.displayName }}
+          }
+        </p>
+        <strong>Due {{ formatDate(selected.dueDate) }}</strong>
+      </div>
+      <button
+        class="button ghost compact"
+        type="button"
+        (click)="selectedOccurrence.set(undefined)"
+      >
+        Close
+      </button>
+    </section>
+  }
   @if (error()) {
     <p class="error floating-error" role="alert">{{ error() }}</p>
   }

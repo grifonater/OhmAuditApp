@@ -86,6 +86,11 @@
   gap: 0.55rem;
   transition: opacity 0.16s ease;
 }
+.category-creator > span {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+}
 
 .visit-register.loading {
   opacity: 0.55;

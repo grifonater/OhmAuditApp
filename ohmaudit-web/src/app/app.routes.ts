@@ -32,6 +32,20 @@ export const routes: Routes = [
     loadComponent: () => import('./auth/mfa.component').then((module) => module.MfaComponent),
   },
   {
+    path: 'guest/job/:token/thermal/:taskId',
+    loadComponent: () =>
+      import('./operations/thermal-inspection.component').then(
+        (module) => module.ThermalInspectionComponent,
+      ),
+  },
+  {
+    path: 'guest/job/:token',
+    loadComponent: () =>
+      import('./operations/engineer-visit.component').then(
+        (module) => module.EngineerVisitComponent,
+      ),
+  },
+  {
     path: 'guest/visit/:token/thermal/:taskId',
     loadComponent: () =>
       import('./operations/thermal-inspection.component').then(
@@ -157,6 +171,15 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./operations/thermal-inspection.component').then(
             (module) => module.ThermalInspectionComponent,
+          ),
+      },
+      {
+        path: 'org/:organisationId/visits/:visitId/overview',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['sites.read'] },
+        loadComponent: () =>
+          import('./operations/job-overview.component').then(
+            (module) => module.JobOverviewComponent,
           ),
       },
       {

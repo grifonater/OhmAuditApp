@@ -36,6 +36,41 @@
   justify-content: flex-end;
   gap: 0.5rem;
 }
+.schedule-nudges {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+.schedule-nudge {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem;
+  border-color: #b9d7cf;
+  background: linear-gradient(120deg, #f3fbf8, #fff);
+}
+.schedule-nudge-icon {
+  width: 2.6rem;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 0.7rem;
+  background: var(--oa-teal-100);
+  color: var(--oa-teal-600);
+  font-size: 1.1rem;
+}
+.schedule-nudge h2,
+.schedule-nudge p {
+  margin: 0;
+}
+.schedule-nudge h2 {
+  font-size: 0.88rem;
+}
+.schedule-nudge p:last-child {
+  color: var(--oa-ink-muted);
+  font-size: 0.7rem;
+}
 .site-gallery-panel {
   margin-bottom: 1rem;
   padding: 1rem;
@@ -510,6 +545,13 @@ dd {
   .report-list article > .expiry,
   .reminder-list article > .badge {
     grid-column: 2;
+  }
+  .schedule-nudge {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .schedule-nudge .button {
+    grid-column: 2;
+    width: 100%;
   }
 }
 @media (max-width: 38rem) {

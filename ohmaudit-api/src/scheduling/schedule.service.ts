@@ -1,4 +1,4 @@
-import type { PrismaClient } from '../generated/prisma/client';
+import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import { DomainError } from '../shared/domain-error';
 
 export interface CreateScheduleInput {
@@ -34,6 +34,17 @@ export function materialiseDates(
     dates.push(new Date(cursor));
   }
   return dates;
+}
+
+export function recurringDateAfter(anchorDate: Date, frequencyMonths: number): Date {
+  const firstOfMonth = new Date(
+    Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth() + frequencyMonths, 1),
+  );
+  const lastDay = new Date(
+    Date.UTC(firstOfMonth.getUTCFullYear(), firstOfMonth.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  firstOfMonth.setUTCDate(Math.min(anchorDate.getUTCDate(), lastDay));
+  return firstOfMonth;
 }
 
 export class ScheduleService {
@@ -109,9 +120,159 @@ export class ScheduleService {
     });
   }
 
+  async suggestions(organisationId: string, siteId: string) {
+    const [site, inspections, rules] = await Promise.all([
+      this.prisma.site.findFirst({ where: { id: siteId, organisationId }, select: { id: true } }),
+      this.prisma.inspection.findMany({
+        where: { organisationId, siteId, status: 'APPROVED', effectiveDate: { not: null } },
+        select: {
+          id: true,
+          assetId: true,
+          moduleKey: true,
+          inspectionType: true,
+          effectiveDate: true,
+          asset: { select: { id: true, displayName: true } },
+        },
+        orderBy: { effectiveDate: 'desc' },
+      }),
+      this.prisma.scheduleRule.findMany({
+        where: { organisationId, siteId, active: true },
+        select: { moduleKey: true, assetId: true },
+      }),
+    ]);
+    if (site === null) throw new DomainError('SITE_NOT_FOUND', 'The site was not found.', 404);
+
+    const latest = new Map<string, (typeof inspections)[number]>();
+    for (const inspection of inspections) {
+      const key = `${inspection.moduleKey}:${inspection.assetId ?? 'site'}`;
+      if (!latest.has(key)) latest.set(key, inspection);
+    }
+    return [...latest.values()].flatMap((inspection) => {
+      const covered = rules.some(
+        (rule) =>
+          rule.moduleKey === inspection.moduleKey &&
+          (rule.assetId === null || rule.assetId === inspection.assetId),
+      );
+      if (covered || inspection.effectiveDate === null) return [];
+      return [
+        {
+          inspectionId: inspection.id,
+          asset: inspection.asset,
+          moduleKey: inspection.moduleKey,
+          title: inspection.inspectionType,
+          lastInspectionDate: inspection.effectiveDate,
+          suggestedStartDate: recurringDateAfter(inspection.effectiveDate, 12),
+          suggestedFrequencyMonths: 12,
+        },
+      ];
+    });
+  }
+
+  async completeAndRebaseForInspection(
+    transaction: Prisma.TransactionClient,
+    inspection: {
+      id: string;
+      organisationId: string;
+      siteId: string;
+      assetId: string | null;
+      moduleKey: string;
+      visitId: string | null;
+      effectiveDate: Date | null;
+    },
+    completedAt: Date,
+  ): Promise<number> {
+    if (inspection.effectiveDate === null) return 0;
+    const rules = await transaction.scheduleRule.findMany({
+      where: {
+        organisationId: inspection.organisationId,
+        siteId: inspection.siteId,
+        moduleKey: inspection.moduleKey,
+        active: true,
+        OR: [
+          { assetId: null },
+          ...(inspection.assetId === null ? [] : [{ assetId: inspection.assetId }]),
+        ],
+      },
+      include: {
+        occurrences: {
+          where: { status: { in: ['FUTURE', 'UPCOMING', 'DUE', 'OVERDUE'] } },
+          orderBy: { dueDate: 'asc' },
+        },
+      },
+    });
+    for (const rule of rules) {
+      const alreadyCompleted = await transaction.scheduleOccurrence.findFirst({
+        where: { scheduleRuleId: rule.id, inspectionId: inspection.id, status: 'COMPLETED' },
+        select: { id: true },
+      });
+      if (alreadyCompleted !== null) continue;
+
+      const performedAt = inspection.effectiveDate;
+      const matched = rule.occurrences.reduce<(typeof rule.occurrences)[number] | undefined>(
+        (closest, occurrence) =>
+          closest === undefined ||
+          Math.abs(occurrence.dueDate.getTime() - performedAt.getTime()) <
+            Math.abs(closest.dueDate.getTime() - performedAt.getTime())
+            ? occurrence
+            : closest,
+        undefined,
+      );
+      if (matched !== undefined)
+        await transaction.scheduleOccurrence.update({
+          where: { id: matched.id },
+          data: {
+            status: 'COMPLETED',
+            completedAt,
+            inspectionId: inspection.id,
+            visitId: inspection.visitId,
+          },
+        });
+
+      const staleIds = rule.occurrences
+        .filter((occurrence) => occurrence.id !== matched?.id)
+        .map(({ id }) => id);
+      if (staleIds.length > 0) {
+        await transaction.notificationEvent.updateMany({
+          where: {
+            scheduleOccurrenceId: { in: staleIds },
+            status: { in: ['PENDING', 'PROCESSING'] },
+          },
+          data: { status: 'CANCELLED' },
+        });
+        await transaction.notificationEvent.updateMany({
+          where: { scheduleOccurrenceId: { in: staleIds } },
+          data: { scheduleOccurrenceId: null },
+        });
+        await transaction.scheduleOccurrence.deleteMany({ where: { id: { in: staleIds } } });
+      }
+
+      const nextDueDate = recurringDateAfter(performedAt, rule.frequencyMonths);
+      await transaction.scheduleRule.update({
+        where: { id: rule.id },
+        data: { startDate: nextDueDate },
+      });
+      await transaction.scheduleOccurrence.createMany({
+        data: materialiseDates(nextDueDate, rule.frequencyMonths).map((dueDate) => ({
+          organisationId: inspection.organisationId,
+          scheduleRuleId: rule.id,
+          dueDate,
+          windowStartsAt: new Date(dueDate.getTime() - rule.notificationLeadDays * 86400000),
+          windowEndsAt: new Date(dueDate.getTime() + 30 * 86400000),
+        })),
+        skipDuplicates: true,
+      });
+    }
+    return rules.length;
+  }
+
   calendar(organisationId: string, from: Date, to: Date) {
     return this.prisma.scheduleOccurrence.findMany({
-      where: { organisationId, dueDate: { gte: from, lte: to } },
+      where: {
+        organisationId,
+        dueDate: { gte: from, lte: to },
+        status: { not: 'SUPERSEDED' },
+        scheduleRule: { active: true },
+      },
       include: {
         scheduleRule: {
           include: {
@@ -160,7 +321,10 @@ export class ScheduleService {
 
   async tick(now = new Date()) {
     const occurrences = await this.prisma.scheduleOccurrence.findMany({
-      where: { status: { in: ['FUTURE', 'UPCOMING', 'DUE', 'OVERDUE'] } },
+      where: {
+        status: { in: ['FUTURE', 'UPCOMING', 'DUE', 'OVERDUE'] },
+        scheduleRule: { active: true },
+      },
       include: { scheduleRule: { include: { site: true, customer: true } } },
       take: 5000,
     });

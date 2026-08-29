@@ -158,6 +158,8 @@ model User {
   invitationsAccepted     OrganisationInvitation[] @relation("InvitationAcceptedUser")
   supportSessionsCreated  PlatformSupportSession[] @relation("SupportSessionAdministrator")
   supportSessionsTargeted PlatformSupportSession[] @relation("SupportSessionTarget")
+  visitsAssigned          Visit[]                  @relation("VisitAssignedUser")
+  visitsCreated           Visit[]                  @relation("VisitCreatedBy")
 
   @@map("users")
 }
@@ -203,6 +205,7 @@ model Organisation {
   evSupplies                   EvSupply[]
   evConnectors                 EvConnector[]
   equipment                    OrganisationEquipment[]
+  jobCategories                JobCategory[]
   supportSessions              PlatformSupportSession[]
 
   @@map("organisations")
@@ -618,12 +621,18 @@ model Visit {
   organisationId    String             @map("organisation_id") @db.Uuid
   customerId        String             @map("customer_id") @db.Uuid
   siteId            String             @map("site_id") @db.Uuid
+  jobCategoryId     String?            @map("job_category_id") @db.Uuid
   reference         String?
+  externalReference String?            @map("external_reference")
   title             String
+  description       String?
+  exclusions        String?
+  jobType           String?            @map("job_type")
   scheduledStart    DateTime           @map("scheduled_start")
   scheduledEnd      DateTime?          @map("scheduled_end")
   status            VisitStatus        @default(DRAFT)
   assignedUserId    String?            @map("assigned_user_id") @db.Uuid
+  createdByUserId   String?            @map("created_by_user_id") @db.Uuid
   guestEngineerName String?            @map("guest_engineer_name")
   guestEmail        String?            @map("guest_email")
   guestMobile       String?            @map("guest_mobile")
@@ -635,6 +644,9 @@ model Visit {
   organisation      Organisation       @relation(fields: [organisationId], references: [id])
   customer          Customer           @relation(fields: [customerId], references: [id])
   site              Site               @relation(fields: [siteId], references: [id])
+  jobCategory       JobCategory?       @relation(fields: [jobCategoryId], references: [id], onDelete: SetNull)
+  assignedUser      User?              @relation("VisitAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  createdByUser     User?              @relation("VisitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   tasks             VisitTask[]
   guestTokens       GuestAccessToken[]
   inspections       Inspection[]
@@ -642,7 +654,25 @@ model Visit {
 
   @@index([organisationId, scheduledStart, status])
   @@index([organisationId, assignedUserId])
+  @@index([organisationId, completedAt])
+  @@index([organisationId, jobCategoryId])
   @@map("visits")
+}
+
+model JobCategory {
+  id             String        @id @default(uuid()) @db.Uuid
+  organisationId String?       @map("organisation_id") @db.Uuid
+  systemKey      String?       @unique @map("system_key")
+  name           String
+  normalisedName String        @map("normalised_name")
+  status         RecordStatus  @default(ACTIVE)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  organisation   Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  visits         Visit[]
+
+  @@index([organisationId, status, name])
+  @@map("job_categories")
 }
 
 model VisitTask {
@@ -1075,15 +1105,15 @@ model BillingWebhookEvent {
 }
 
 model EvTestInstruction {
-  id            String       @id @default(uuid()) @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
   step          String
-  manufacturers String[]     @default([])
+  manufacturers String[] @default([])
   title         String
-  steps         String[]     @default([])
+  steps         String[] @default([])
   notes         String?
-  videoMediaId  String?      @map("video_media_id") @db.Uuid
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
+  videoMediaId  String?  @map("video_media_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@index([step])
   @@map("ev_test_instructions")

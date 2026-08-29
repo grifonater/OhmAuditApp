@@ -43,7 +43,7 @@
             class="button primary"
             [routerLink]="['/app/org', organisationId, 'visits']"
             [queryParams]="{ siteId: siteId, create: 'true' }"
-            >Create visit</a
+            >Create job</a
           >
         }
         @if (canManageSite()) {
@@ -53,6 +53,31 @@
         }
       </div>
     </header>
+    @if (canManageSite() && scheduleSuggestions().length > 0) {
+      <section class="schedule-nudges" aria-label="Schedule suggestions">
+        @for (suggestion of scheduleSuggestions(); track suggestion.inspectionId) {
+          <article class="card schedule-nudge">
+            <span class="schedule-nudge-icon">◷</span>
+            <div>
+              <p class="eyebrow">Keep inspections recurring</p>
+              <h2>Add {{ suggestion.title }} to the schedule?</h2>
+              <p>
+                Last inspected {{ formatDate(suggestion.lastInspectionDate) }}. An annual recurrence
+                will next be due {{ formatDate(suggestion.suggestedStartDate) }}.
+              </p>
+            </div>
+            <button
+              class="button primary"
+              type="button"
+              [disabled]="busy()"
+              (click)="createSuggestedSchedule(suggestion)"
+            >
+              Add annual schedule
+            </button>
+          </article>
+        }
+      </section>
+    }
     <nav class="workspace-tabs" aria-label="Site sections">
       <button type="button" [class.active]="tab() === 'overview'" (click)="setTab('overview')">
         Overview</button
@@ -455,7 +480,7 @@
         <div class="section-heading">
           <div>
             <h2>Site reminders</h2>
-            <p>Automatically surfaced from report expiry dates and asset lifecycle states.</p>
+            <p>Inspection schedules, report expiry dates and asset lifecycle items.</p>
           </div>
         </div>
         <div class="reminder-list">
@@ -480,7 +505,7 @@
             <div class="empty-state">
               <span class="empty-icon">✓</span>
               <h3>Nothing needs attention</h3>
-              <p>There are no expiring reports or assets awaiting review at this site.</p>
+              <p>There are no scheduled inspections, expiring reports or assets awaiting review.</p>
             </div>
           }
         </div>

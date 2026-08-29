@@ -506,7 +506,7 @@ export class ThermalInspectionComponent {
         );
       await this.router.navigate(
         this.guestToken
-          ? ['/guest/visit', this.guestToken]
+          ? ['/guest/job', this.guestToken]
           : ['/app/org', this.organisationId, 'visits', this.visitId],
       );
     } catch (error: unknown) {
@@ -518,7 +518,7 @@ export class ThermalInspectionComponent {
   protected async back(): Promise<void> {
     await this.router.navigate(
       this.guestToken
-        ? ['/guest/visit', this.guestToken]
+        ? ['/guest/job', this.guestToken]
         : ['/app/org', this.organisationId, 'visits', this.visitId],
     );
   }
@@ -550,7 +550,7 @@ export class ThermalInspectionComponent {
       if (!this.offline.online()) {
         if (cached === undefined)
           throw new Error(
-            'This visit is not saved for offline use. Reconnect and download the visit pack.',
+            'This job is not saved for offline use. Reconnect and download the job pack.',
           );
         visit = cached;
       } else {
@@ -568,7 +568,7 @@ export class ThermalInspectionComponent {
         throw new Error('This thermal imaging task is unavailable.');
       let inspectionId = task.inspection?.id;
       if (!inspectionId && !this.offline.online())
-        throw new Error('This thermal task was not prepared in the downloaded visit pack.');
+        throw new Error('This thermal task was not prepared in the downloaded job pack.');
       if (!inspectionId)
         inspectionId = this.guestToken
           ? (await this.api.startGuestInspection(this.guestToken, task.id)).inspection.id
@@ -577,9 +577,7 @@ export class ThermalInspectionComponent {
       this.task.set(task);
       const cachedContext = await this.offline.thermalContext(inspectionId);
       if (!this.offline.online() && cachedContext === undefined)
-        throw new Error(
-          'This thermal task is not available offline. Download the visit pack again.',
-        );
+        throw new Error('This thermal task is not available offline. Download the job pack again.');
       if (!this.offline.online() && cachedContext !== undefined) {
         this.inspection.set(cachedContext.inspection);
         this.equipment.set(cachedContext.equipment);

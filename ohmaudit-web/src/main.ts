@@ -15,7 +15,7 @@ void bootstrapApplication(AppComponent, appConfig).catch((error: unknown) => {
   const guidance = document.createElement('p');
   guidance.textContent = navigator.onLine
     ? 'Refresh the page to try again. If the problem continues, contact your administrator.'
-    : 'Reconnect once, open Ohm Audit, and download the visit before working offline.';
+    : 'Reconnect once, open Ohm Audit, and download the job before working offline.';
   message.append(heading, guidance);
   root.replaceChildren(message);
 });

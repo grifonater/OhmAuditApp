@@ -15,6 +15,8 @@ import {
   type AssetSummary,
   type Entitlement,
   type ReportSummary,
+  type ScheduleOccurrence,
+  type ScheduleSuggestion,
   type SiteDetail,
 } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
@@ -44,6 +46,8 @@ export class SiteDetailComponent {
   protected readonly canCreateVisit = computed(() => this.capabilities().includes('visits.create'));
   protected readonly site = signal<SiteDetail | undefined>(undefined);
   protected readonly entitlements = signal<Entitlement[]>([]);
+  protected readonly scheduleOccurrences = signal<ScheduleOccurrence[]>([]);
+  protected readonly scheduleSuggestions = signal<ScheduleSuggestion[]>([]);
   protected readonly evEnabled = computed(
     () => this.entitlements().find((item) => item.module.key === 'ev-charging')?.entitled ?? false,
   );
@@ -105,7 +109,19 @@ export class SiteDetailComponent {
         title: `${asset.displayName} needs review`,
         detail: `${asset.assetReference} · ${asset.status.toLowerCase()}`,
       }));
-    return [...reportReminders, ...assetReminders];
+    const scheduleReminders = this.scheduleOccurrences()
+      .filter(
+        (occurrence) =>
+          occurrence.scheduleRule.site.id === this.siteId &&
+          ['UPCOMING', 'DUE', 'OVERDUE'].includes(occurrence.status),
+      )
+      .map((occurrence) => ({
+        id: occurrence.id,
+        level: occurrence.status === 'OVERDUE' ? 'danger' : 'warning',
+        title: occurrence.scheduleRule.title,
+        detail: `${occurrence.scheduleRule.asset?.displayName ?? 'Whole site'} · Due ${this.formatDate(occurrence.dueDate)}`,
+      }));
+    return [...scheduleReminders, ...reportReminders, ...assetReminders];
   });
   protected readonly siteForm = new FormGroup({
     name: new FormControl('', {
@@ -291,6 +307,23 @@ export class SiteDetailComponent {
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     });
   }
+  protected async createSuggestedSchedule(suggestion: ScheduleSuggestion): Promise<void> {
+    await this.run(async () => {
+      await this.api.createSchedule(this.organisationId, {
+        siteId: this.siteId,
+        ...(suggestion.asset === undefined ? {} : { assetId: suggestion.asset.id }),
+        title: suggestion.title,
+        moduleKey: suggestion.moduleKey,
+        frequencyMonths: suggestion.suggestedFrequencyMonths,
+        startDate: suggestion.suggestedStartDate.slice(0, 10),
+        notificationLeadDays: 30,
+      });
+      this.scheduleSuggestions.update((items) =>
+        items.filter((item) => item.inspectionId !== suggestion.inspectionId),
+      );
+      await this.loadScheduleContext();
+    });
+  }
   protected formatDate(value: string | undefined): string {
     return value
       ? new Intl.DateTimeFormat('en-GB', {
@@ -316,6 +349,7 @@ export class SiteDetailComponent {
       if (!this.evEnabled() && this.assetForm.controls.assetType.value === 'EV Charger')
         this.assetForm.controls.assetType.setValue('General Asset');
       this.site.set(site);
+      await this.loadScheduleContext();
       this.revokeSiteImages();
       const downloads = await Promise.all(
         (site.media ?? []).map((media) =>
@@ -330,6 +364,18 @@ export class SiteDetailComponent {
       );
       this.siteImageUrls.set(Object.fromEntries(imageEntries));
     });
+  }
+  private async loadScheduleContext(): Promise<void> {
+    const from = new Date();
+    from.setDate(from.getDate() - 1);
+    const to = new Date(from);
+    to.setFullYear(to.getFullYear() + 2);
+    const [calendarResult, suggestionResult] = await Promise.all([
+      this.api.calendar(this.organisationId, from.toISOString(), to.toISOString()),
+      this.api.scheduleSuggestions(this.organisationId, this.siteId),
+    ]);
+    this.scheduleOccurrences.set(calendarResult.occurrences);
+    this.scheduleSuggestions.set(suggestionResult.suggestions);
   }
   private revokeSiteImages(): void {
     Object.values(this.siteImageUrls()).forEach((url) => URL.revokeObjectURL(url));

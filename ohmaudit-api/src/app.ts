@@ -21,6 +21,7 @@ import { EvService } from './modules/ev/ev.service';
 import { PlatformService } from './platform/platform.service';
 import { InstructionService } from './platform/instruction.service';
 import { EquipmentService } from './equipment/equipment.service';
+import { JobCategoryService } from './jobs/job-category.service';
 import { DomainError } from './shared/domain-error';
 import type { ApiBindings } from './shared/environment';
 import { parseEnvironment } from './shared/environment';
@@ -332,7 +333,13 @@ const visitTaskInput = z.object({
 });
 const visitInput = z.object({
   siteId: z.uuid(),
+  reference: optionalTrimmed(100),
+  externalReference: optionalTrimmed(120),
   title: z.string().trim().min(2).max(160),
+  description: optionalTrimmed(20000),
+  exclusions: optionalTrimmed(10000),
+  jobCategoryId: z.uuid().optional(),
+  jobType: optionalTrimmed(100),
   scheduledStart: z.coerce.date(),
   scheduledEnd: z.coerce.date().optional(),
   assignedUserId: z.uuid().optional(),
@@ -342,6 +349,25 @@ const visitInput = z.object({
   engineerNotes: z.string().max(5000).optional(),
   tasks: z.array(visitTaskInput).max(1000),
 });
+const nullableJobText = (maximum: number) =>
+  z.union([z.string().trim().max(maximum), z.null()]).optional();
+const visitUpdateInput = z
+  .object({
+    reference: nullableJobText(100),
+    externalReference: nullableJobText(120),
+    title: z.string().trim().min(2).max(160).optional(),
+    description: nullableJobText(20000),
+    exclusions: nullableJobText(10000),
+    jobCategoryId: z.union([z.uuid(), z.null()]).optional(),
+    jobType: nullableJobText(100),
+    scheduledStart: z.coerce.date().optional(),
+    scheduledEnd: z.union([z.coerce.date(), z.null()]).optional(),
+    engineerNotes: nullableJobText(5000),
+  })
+  .refine((input) => Object.values(input).some((value) => value !== undefined), {
+    message: 'At least one job field must be provided.',
+  });
+const jobCategoryInput = z.object({ name: z.string().trim().min(2).max(80) });
 const syncInput = z.object({
   clientMutationId: z.string().uuid(),
   entityType: z.string().min(1).max(80),
@@ -440,7 +466,7 @@ async function requireVisitTaskModule(
     select: { moduleKey: true },
   });
   if (task === null)
-    throw new DomainError('VISIT_TASK_NOT_FOUND', 'The visit task was not found.', 404);
+    throw new DomainError('VISIT_TASK_NOT_FOUND', 'The job task was not found.', 404);
   await requireModuleForKey(prisma, organisationId, task.moduleKey);
   return task.moduleKey;
 }
@@ -603,7 +629,7 @@ async function requireVisitModules(
     where: { id: visitId, organisationId },
     select: { tasks: { select: { moduleKey: true } } },
   });
-  if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The visit was not found.', 404);
+  if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
   const moduleKeys = [...new Set(visit.tasks.map((task) => task.moduleKey))];
   await Promise.all(
     moduleKeys.map((moduleKey) => requireModuleForKey(prisma, organisationId, moduleKey)),
@@ -1306,6 +1332,79 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ),
     });
   });
+  app.get('/api/v1/organisations/:organisationId/job-categories', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'sites.read',
+    );
+    return context.json({
+      categories: await new JobCategoryService(prismaFor(environment)).list(organisationId),
+    });
+  });
+  app.post('/api/v1/organisations/:organisationId/job-categories', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'organisation.manage',
+    );
+    const input = jobCategoryInput.parse(await context.req.json());
+    return context.json(
+      {
+        category: await new JobCategoryService(prismaFor(environment)).create(
+          organisationId,
+          user.id,
+          context.get('correlationId'),
+          input.name,
+        ),
+      },
+      201,
+    );
+  });
+  app.patch('/api/v1/organisations/:organisationId/job-categories/:categoryId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const categoryId = z.uuid().parse(context.req.param('categoryId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'organisation.manage',
+    );
+    const input = jobCategoryInput.parse(await context.req.json());
+    return context.json({
+      category: await new JobCategoryService(prismaFor(environment)).update(
+        organisationId,
+        categoryId,
+        user.id,
+        context.get('correlationId'),
+        input.name,
+      ),
+    });
+  });
+  app.delete(
+    '/api/v1/organisations/:organisationId/job-categories/:categoryId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.param('organisationId'));
+      const categoryId = z.uuid().parse(context.req.param('categoryId'));
+      const { user } = await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'organisation.manage',
+      );
+      await new JobCategoryService(prismaFor(environment)).archive(
+        organisationId,
+        categoryId,
+        user.id,
+        context.get('correlationId'),
+      );
+      return context.body(null, 204);
+    },
+  );
   app.get('/api/v1/organisations/:organisationId/equipment', async (context) => {
     const environment = parseEnvironment(context.env);
     await identityService(environment, options).requireMembership(
@@ -2112,6 +2211,22 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       201,
     );
   });
+  app.get('/api/v1/schedules/suggestions', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    const siteId = z.uuid().parse(context.req.query('siteId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'sites.read',
+    );
+    return context.json({
+      suggestions: await new ScheduleService(prismaFor(environment)).suggestions(
+        organisationId,
+        siteId,
+      ),
+    });
+  });
   app.get('/api/v1/calendar', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
@@ -2215,6 +2330,17 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       input.organisationId,
       'visits.create',
     );
+    if (
+      input.assignedUserId !== undefined ||
+      input.guestEngineerName !== undefined ||
+      input.guestEmail !== undefined ||
+      input.guestMobile !== undefined
+    )
+      await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        input.organisationId,
+        'visits.assign',
+      );
     const prisma = prismaFor(environment);
     for (const moduleKey of new Set(input.tasks.map((task) => task.moduleKey)))
       await requireModuleForKey(prisma, input.organisationId, moduleKey);
@@ -2243,6 +2369,26 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       visit: await new VisitService(prismaFor(environment)).detail(
         organisationId,
         context.req.param('visitId'),
+      ),
+    });
+  });
+  app.patch('/api/v1/visits/:visitId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'visits.create',
+    );
+    const input = visitUpdateInput.parse(await context.req.json());
+    return context.json({
+      visit: await new VisitService(prismaFor(environment)).update(
+        organisationId,
+        visitId,
+        user.id,
+        context.get('correlationId'),
+        input,
       ),
     });
   });
@@ -2283,7 +2429,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       context.req.param('visitId'),
       input.validDays,
     );
-    return context.json({ ...result, guestUrl: `/guest/visit/${result.token}` }, 201);
+    return context.json({ ...result, guestUrl: `/guest/job/${result.token}` }, 201);
   });
   app.post('/api/v1/inspections/:inspectionId/asset-media', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -2370,7 +2516,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       if (inspection.visitId !== context.req.param('visitId'))
         throw new DomainError(
           'INSPECTION_NOT_FOUND',
-          'The inspection does not belong to this visit.',
+          'The inspection does not belong to this job.',
           404,
         );
       await requireModuleForKey(prisma, organisationId, inspection.moduleKey);
@@ -2418,7 +2564,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     if (!visit.tasks.some((task) => task.inspection?.id === inspectionId))
       throw new DomainError(
         'INSPECTION_NOT_FOUND',
-        'The inspection is not assigned to this visit.',
+        'The inspection is not assigned to this job.',
         404,
       );
     return context.json({
@@ -2497,7 +2643,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
     const assetId = z.uuid().parse(context.req.param('assetId'));
     if (!visit.tasks.some((task) => task.asset?.id === assetId))
-      throw new DomainError('ASSET_NOT_FOUND', 'The asset was not found in this visit.', 404);
+      throw new DomainError('ASSET_NOT_FOUND', 'The asset was not found in this job.', 404);
     const custom = await prisma.media.findFirst({
       where: {
         organisationId: visit.organisationId,
@@ -2614,7 +2760,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       )
         throw new DomainError(
           'INSPECTION_NOT_FOUND',
-          'The thermal inspection is not assigned to this visit.',
+          'The thermal inspection is not assigned to this job.',
           404,
         );
       const portfolio = new PortfolioService(prisma);
@@ -2673,7 +2819,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       context.req.param('token'),
     );
     if (!visit.tasks.some((task) => task.id === context.req.param('taskId')))
-      throw new DomainError('VISIT_TASK_NOT_FOUND', 'The task is not assigned to this visit.', 404);
+      throw new DomainError('VISIT_TASK_NOT_FOUND', 'The task is not assigned to this job.', 404);
     await requireVisitTaskModule(
       prismaFor(environment),
       visit.organisationId,
@@ -2835,7 +2981,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     if (inspection.visitId !== visit.id)
       throw new DomainError(
         'INSPECTION_NOT_FOUND',
-        'The inspection is not assigned to this visit.',
+        'The inspection is not assigned to this job.',
         404,
       );
     await requireModuleForKey(prismaFor(environment), visit.organisationId, inspection.moduleKey);
@@ -2868,7 +3014,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       if (inspection.visitId !== visit.id || inspection.moduleKey !== 'ev-charging')
         throw new DomainError(
           'INSPECTION_NOT_FOUND',
-          'The EV inspection is not assigned to this visit.',
+          'The EV inspection is not assigned to this job.',
           404,
         );
       await requireModuleForKey(prismaFor(environment), visit.organisationId, inspection.moduleKey);
@@ -3098,7 +3244,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         orderBy: { createdAt: 'asc' },
       }),
     ]);
-    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The visit was not found.', 404);
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
     const currentDocumentByInspection = new Map<string, (typeof visitDocuments)[number]>();
     for (const document of visitDocuments) {
       const revision = document.inspectionRevision;
@@ -3115,7 +3261,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     if (documents.length === 0)
       throw new DomainError(
         'VISIT_REPORT_EMPTY',
-        'Issue at least one certificate before opening the combined visit report.',
+        'Issue at least one certificate before opening the combined job report.',
         409,
       );
     const assetIds = documents.flatMap(({ inspectionRevision }) =>

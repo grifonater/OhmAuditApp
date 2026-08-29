@@ -85,6 +85,9 @@ export class EngineerVisitComponent {
   protected readonly helpLoading = signal(false);
   protected readonly helpError = signal('');
   protected readonly helpManufacturer = signal('');
+  protected readonly activeStep = signal(0);
+  protected readonly savingDraft = signal(false);
+  protected readonly photographing = signal(false);
 
   protected readonly form = new FormGroup({
     outcome: new FormControl('PASS', { nonNullable: true, validators: Validators.required }),
@@ -186,8 +189,8 @@ export class EngineerVisitComponent {
       await this.offline.cacheThermalPack(this.visit() ?? visit, this.guestToken || undefined);
       const verified = await this.offline.pack(this.visitId, this.guestToken || undefined);
       if (verified === undefined)
-        throw new Error('The visit could not be verified for offline use on this device.');
-      this.saved.set('Offline ready — visit verified on this device');
+        throw new Error('The job could not be verified for offline use on this device.');
+      this.saved.set('Offline ready — job verified on this device');
     });
   }
 
@@ -195,7 +198,7 @@ export class EngineerVisitComponent {
     if (task.moduleKey === 'thermal-imaging') {
       await this.router.navigate(
         this.guestToken
-          ? ['/guest/visit', this.guestToken, 'thermal', task.id]
+          ? ['/guest/job', this.guestToken, 'thermal', task.id]
           : ['/app/org', this.organisationId, 'visits', this.visitId, 'thermal', task.id],
       );
       return;
@@ -203,6 +206,7 @@ export class EngineerVisitComponent {
     await this.run(async () => {
       this.setFaultRecording(false, false);
       this.selectedTask.set(task);
+      this.activeStep.set(0);
       let inspection = task.inspection as InspectionSummary | undefined;
       if (!inspection)
         inspection = this.guestToken
@@ -226,8 +230,65 @@ export class EngineerVisitComponent {
     this.form.controls[control].setValue(value);
   }
 
-  protected scrollToSection(sectionId: string): void {
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  protected goToStep(index: number): void {
+    this.activeStep.set(Math.max(0, Math.min(4, Math.floor(index))));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  protected stepComplete(index: number): boolean {
+    switch (index) {
+      case 0: {
+        const asset = this.evAssetForm.getRawValue();
+        return (
+          asset.manufacturer.trim() !== '' ||
+          asset.model.trim() !== '' ||
+          asset.serialNumber.trim() !== '' ||
+          asset.maximumPowerKw !== null ||
+          this.normalPhotoCount() > 0
+        );
+      }
+      case 1:
+        return (
+          this.supplyTests.length > 0 &&
+          this.supplyTests
+            .getRawValue()
+            .every(
+              (supply) =>
+                typeof supply.zsOhms === 'number' && typeof supply.maximumPfcKa === 'number',
+            )
+        );
+      case 2: {
+        const useRamp = this.evAssetForm.controls.dcRcdType.value !== 'NONE';
+        return (
+          this.connectorTests.length > 0 &&
+          this.connectorTests
+            .getRawValue()
+            .every(
+              (connector) =>
+                [
+                  connector.pePreTest,
+                  connector.cpError,
+                  connector.peError,
+                  connector.cpStates,
+                ].every((result) => result === 'PASS' || result === 'FAIL') &&
+                typeof connector.rcd1x0Ms === 'number' &&
+                typeof connector.rcd1x180Ms === 'number' &&
+                typeof connector.rcd5x0Ms === 'number' &&
+                typeof connector.rcd5x180Ms === 'number' &&
+                connector.supplyIds.length === 1 &&
+                (!useRamp ||
+                  (typeof connector.dcRamp0Ma === 'number' &&
+                    typeof connector.dcRamp180Ma === 'number')),
+            )
+        );
+      }
+      case 3:
+        return true;
+      case 4:
+        return this.evReady() && this.form.controls.signerName.valid;
+      default:
+        return false;
+    }
   }
 
   protected helpLabel(step: EvTestStep): string {
@@ -470,7 +531,7 @@ export class EngineerVisitComponent {
         maximumPowerKw: null,
         dcRcdType: 'NONE',
       });
-      this.saved.set('Charger recorded for office approval and added to this visit');
+      this.saved.set('Charger recorded for office approval and added to this job');
     });
   }
 
@@ -531,24 +592,29 @@ export class EngineerVisitComponent {
       this.error.set('Use a JPEG, PNG, or WebP photo.');
       return;
     }
-    const compressed = await compressPhoto(file);
-    if (compressed.size > 2_000_000) {
-      this.error.set('The photo is too large after compression. Try a smaller image.');
-      return;
+    this.photographing.set(true);
+    try {
+      const compressed = await compressPhoto(file);
+      if (compressed.size > 2_000_000) {
+        this.error.set('The photo is too large after compression. Try a smaller image.');
+        return;
+      }
+      await this.offline.storePhoto(
+        visit.organisationId,
+        visit.id,
+        inspection.id,
+        assetId,
+        this.guestToken || undefined,
+        compressed,
+        kind,
+        description,
+      );
+      this.photoCount.set(await this.offline.photoCount(inspection.id, 'fault'));
+      this.normalPhotoCount.set(await this.offline.photoCount(inspection.id, 'normal-state'));
+      if (kind === 'normal-state') this.normalPhotoDescription.reset('');
+    } finally {
+      this.photographing.set(false);
     }
-    await this.offline.storePhoto(
-      visit.organisationId,
-      visit.id,
-      inspection.id,
-      assetId,
-      this.guestToken || undefined,
-      compressed,
-      kind,
-      description,
-    );
-    this.photoCount.set(await this.offline.photoCount(inspection.id, 'fault'));
-    this.normalPhotoCount.set(await this.offline.photoCount(inspection.id, 'normal-state'));
-    if (kind === 'normal-state') this.normalPhotoDescription.reset('');
   }
 
   protected async submit(): Promise<void> {
@@ -841,14 +907,19 @@ export class EngineerVisitComponent {
     const inspection = this.inspection();
     const visit = this.visit();
     if (!inspection || !visit) return;
-    await this.offline.saveDraft(visit.organisationId, visit.id, inspection.id, {
-      core: this.form.getRawValue(),
-      recordingFault: this.recordingFault(),
-      evAsset: this.evAssetForm.getRawValue(),
-      supplies: this.supplyTests.getRawValue(),
-      connectors: this.connectorTests.getRawValue(),
-    });
-    this.saved.set('Saved on device');
+    this.savingDraft.set(true);
+    try {
+      await this.offline.saveDraft(visit.organisationId, visit.id, inspection.id, {
+        core: this.form.getRawValue(),
+        recordingFault: this.recordingFault(),
+        evAsset: this.evAssetForm.getRawValue(),
+        supplies: this.supplyTests.getRawValue(),
+        connectors: this.connectorTests.getRawValue(),
+      });
+      this.saved.set('Saved on device');
+    } finally {
+      this.savingDraft.set(false);
+    }
   }
 
   private restoreDraft(draft: Record<string, unknown>): void {
@@ -933,7 +1004,7 @@ export class EngineerVisitComponent {
           return;
         }
         throw new Error(
-          'This visit is not saved for offline use on this device. Reconnect and press Download visit for offline use.',
+          'This job is not saved for offline use on this device. Reconnect and press Download job for offline use.',
         );
       }
       try {
@@ -976,7 +1047,7 @@ export class EngineerVisitComponent {
     try {
       await operation();
     } catch (error: unknown) {
-      this.error.set(error instanceof Error ? error.message : 'Unable to update the visit.');
+      this.error.set(error instanceof Error ? error.message : 'Unable to update the job.');
     } finally {
       this.busy.set(false);
     }

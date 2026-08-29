@@ -723,7 +723,7 @@ export class InspectionReviewComponent {
     await this.run(async () => {
       const issued = await this.api.issueVisitDocuments(this.organisationId, visitId);
       if (issued.documents.length === 0)
-        throw new Error('Approve at least one inspection before downloading the visit pack.');
+        throw new Error('Approve at least one inspection before downloading the job pack.');
       const blob = await this.api.downloadVisitReportPdf(this.organisationId, visitId);
       this.saveBlob(blob, this.fileName(`${this.visitTitle()} combined report.pdf`));
       this.success.set(

@@ -159,6 +159,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.calendar-event.completed {
+  background: #e7f4ec;
+  color: #247345;
+}
+.calendar-event.overdue {
+  background: #fdebed;
+  color: var(--oa-danger);
+}
+.mobile-agenda {
+  display: none;
+}
+.occurrence-detail {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.occurrence-detail h2,
+.occurrence-detail p {
+  margin: 0 0 0.25rem;
+}
 .status-strip {
   display: flex;
   flex-wrap: wrap;
@@ -298,15 +320,48 @@
     align-items: stretch;
     flex-direction: column;
   }
-  .calendar-month {
-    gap: 0.15rem;
+  .desktop-calendar {
+    display: none;
   }
-  .calendar-day {
-    min-height: 4.5rem;
-    padding: 0.25rem;
+  .mobile-agenda {
+    display: grid;
+    gap: 0.55rem;
   }
-  .calendar-event {
-    font-size: 0.52rem;
+  .agenda-item {
+    width: 100%;
+    min-height: 4.25rem;
+    display: grid;
+    grid-template-columns: 5.25rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem;
+    border: 1px solid var(--oa-line);
+    border-radius: 0.65rem;
+    background: white;
+    color: var(--oa-ink);
+    text-align: left;
+  }
+  .agenda-item time {
+    color: var(--oa-teal-600);
+    font-size: 0.7rem;
+    font-weight: 800;
+  }
+  .agenda-item > span:nth-child(2) {
+    min-width: 0;
+    display: grid;
+  }
+  .agenda-item strong,
+  .agenda-item small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agenda-item strong {
+    font-size: 0.75rem;
+  }
+  .agenda-item small {
+    color: var(--oa-ink-muted);
+    font-size: 0.65rem;
   }
   .record-meta {
     align-items: flex-end;
@@ -397,6 +452,22 @@
   to {
     transform: rotate(360deg);
   }
+}
+.oa-spinner {
+  flex: none;
+  display: inline-block;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.8;
+  animation: oa-spin 0.7s linear infinite;
+}
+.oa-spinner.small {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-width: 2px;
 }
 .picker-result {
   width: 100%;

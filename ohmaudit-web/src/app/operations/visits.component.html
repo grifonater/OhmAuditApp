@@ -7,7 +7,7 @@
     </div>
     @if (canCreate()) {
       <button class="button primary" type="button" (click)="showCreate.set(!showCreate())">
-        + Create visit
+        + Create job
       </button>
     }
   </header>
@@ -78,114 +78,167 @@
         <div class="section-heading">
           <div>
             <p class="step-label">Step 2 of 3</p>
-            <h2>Choose the inspection</h2>
-            <p>Select the work type, then choose any assets required for that inspection.</p>
+            <h2>Add inspection work</h2>
+            <p>Optional. A job can be created now without an inspection.</p>
           </div>
           <span class="selection-count">{{ selectedAssetIds().size }} selected</span>
         </div>
-        <label class="field module-choice"
-          >Inspection module<select [formControl]="form.controls.moduleKey">
-            @if (evEnabled()) {
-              <option value="ev-charging">EV Charging</option>
-            }
-            @if (thermalEnabled()) {
-              <option value="thermal-imaging">Thermal Imaging</option>
-            }
-            <option value="core">General inspection</option>
-          </select></label
-        >
-        @if (form.controls.moduleKey.value === 'thermal-imaging') {
-          <div class="discovery-option thermal-callout">
-            <span aria-hidden="true">◉</span>
-            <span
-              ><strong>One site-wide thermal imaging report</strong
-              ><small
-                >The engineer will upload infrared and standard images, then group them into fuse
-                boards, enclosures, and other target items.</small
-              ></span
-            >
-          </div>
-        } @else {
-          <div class="asset-toolbar">
-            <label class="search-control"
-              ><span>⌕</span
-              ><input
-                type="search"
-                placeholder="Search name, reference, make, model or serial…"
-                [value]="assetQuery()"
-                (input)="assetQuery.set($any($event.target).value)"
-            /></label>
-            <label class="field compact-field"
-              >Asset type<select
-                [value]="assetType()"
-                (change)="assetType.set($any($event.target).value)"
+        <label class="discovery-option">
+          <input
+            type="checkbox"
+            [checked]="addInspection()"
+            (change)="addInspection.set($any($event.target).checked)"
+          />
+          <span
+            ><strong>Add an inspection to this job</strong
+            ><small
+              >Turn this off for repairs, maintenance, surveys, or RAMS-only work.</small
+            ></span
+          >
+        </label>
+        @if (addInspection()) {
+          <label class="field module-choice"
+            >Inspection module<select [formControl]="form.controls.moduleKey">
+              @if (evEnabled()) {
+                <option value="ev-charging">EV Charging</option>
+              }
+              @if (thermalEnabled()) {
+                <option value="thermal-imaging">Thermal Imaging</option>
+              }
+              <option value="core">General inspection</option>
+            </select></label
+          >
+          @if (form.controls.moduleKey.value === 'thermal-imaging') {
+            <div class="discovery-option thermal-callout">
+              <span aria-hidden="true">◉</span>
+              <span
+                ><strong>One site-wide thermal imaging report</strong
+                ><small
+                  >The engineer will upload infrared and standard images, then group them into fuse
+                  boards, enclosures, and other target items.</small
+                ></span
               >
-                <option value="ALL">All asset types</option>
-                @for (type of assetTypes(); track type) {
-                  <option [value]="type">{{ type }}</option>
-                }
-              </select></label
-            >
-            <button class="button secondary compact" type="button" (click)="selectFiltered()">
-              Select all {{ filteredAssets().length }}
-            </button>
-            @if (selectedAssetIds().size) {
-              <button class="button ghost compact" type="button" (click)="clearAssets()">
-                Clear
-              </button>
-            }
-          </div>
-          <div class="asset-picker-list">
-            @for (asset of filteredAssets(); track asset.id) {
-              <label class="asset-pick-row" [class.selected]="selectedAssetIds().has(asset.id)"
+            </div>
+          } @else {
+            <div class="asset-toolbar">
+              <label class="search-control"
+                ><span>⌕</span
                 ><input
-                  type="checkbox"
-                  [checked]="selectedAssetIds().has(asset.id)"
-                  (change)="toggleAsset(asset.id, $any($event.target).checked)"
-                /><span class="asset-pick-icon">{{
-                  asset.assetType.toLowerCase().includes('ev') ? 'EV' : 'A'
-                }}</span
-                ><span class="record-copy"
-                  ><strong>{{ asset.displayName }}</strong
-                  ><small
-                    >{{ asset.assetReference }} · {{ asset.manufacturer || 'Make not set' }}
-                    {{ asset.model || '' }} · {{ asset.serialNumber || 'No serial' }}</small
-                  ></span
-                ><span class="badge">{{ asset.assetType }}</span></label
+                  type="search"
+                  placeholder="Search name, reference, make, model or serial…"
+                  [value]="assetQuery()"
+                  (input)="assetQuery.set($any($event.target).value)"
+              /></label>
+              <label class="field compact-field"
+                >Asset type<select
+                  [value]="assetType()"
+                  (change)="assetType.set($any($event.target).value)"
+                >
+                  <option value="ALL">All asset types</option>
+                  @for (type of assetTypes(); track type) {
+                    <option [value]="type">{{ type }}</option>
+                  }
+                </select></label
               >
-            } @empty {
-              <div class="inline-empty">No assets match these filters.</div>
-            }
-          </div>
-          <label class="discovery-option">
-            <input
-              type="checkbox"
-              [checked]="allowDiscovery()"
-              (change)="allowDiscovery.set($any($event.target).checked)"
-            />
-            <span
-              ><strong>Allow the engineer to add chargers found on site</strong
-              ><small
-                >Use this for incomplete or empty asset registers. A new charger remains provisional
-                until the office approves it.</small
-              ></span
-            >
-          </label>
+              <button class="button secondary compact" type="button" (click)="selectFiltered()">
+                Select all {{ filteredAssets().length }}
+              </button>
+              @if (selectedAssetIds().size) {
+                <button class="button ghost compact" type="button" (click)="clearAssets()">
+                  Clear
+                </button>
+              }
+            </div>
+            <div class="asset-picker-list">
+              @for (asset of filteredAssets(); track asset.id) {
+                <label class="asset-pick-row" [class.selected]="selectedAssetIds().has(asset.id)"
+                  ><input
+                    type="checkbox"
+                    [checked]="selectedAssetIds().has(asset.id)"
+                    (change)="toggleAsset(asset.id, $any($event.target).checked)"
+                  /><span class="asset-pick-icon">{{
+                    asset.assetType.toLowerCase().includes('ev') ? 'EV' : 'A'
+                  }}</span
+                  ><span class="record-copy"
+                    ><strong>{{ asset.displayName }}</strong
+                    ><small
+                      >{{ asset.assetReference }} · {{ asset.manufacturer || 'Make not set' }}
+                      {{ asset.model || '' }} · {{ asset.serialNumber || 'No serial' }}</small
+                    ></span
+                  ><span class="badge">{{ asset.assetType }}</span></label
+                >
+              } @empty {
+                <div class="inline-empty">No assets match these filters.</div>
+              }
+            </div>
+            <label class="discovery-option">
+              <input
+                type="checkbox"
+                [checked]="allowDiscovery()"
+                (change)="allowDiscovery.set($any($event.target).checked)"
+              />
+              <span
+                ><strong>Allow the engineer to add chargers found on site</strong
+                ><small
+                  >Use this for incomplete or empty asset registers. A new charger remains
+                  provisional until the office approves it.</small
+                ></span
+              >
+            </label>
+          }
         }
 
         <div class="planner-divider"></div>
         <div class="section-heading">
           <div>
             <p class="step-label">Step 3 of 3</p>
-            <h2>Visit details</h2>
-            <p>Assign the engineer and confirm when the work should happen.</p>
+            <h2>Job details</h2>
+            <p>Describe the work, assign the engineer, and confirm when it should happen.</p>
           </div>
         </div>
         <form [formGroup]="form" (ngSubmit)="create()" class="form-grid">
-          <label class="field">Visit title<input formControlName="title" /></label>
+          <label class="field">Job title<input formControlName="title" /></label>
+          <label class="field">Job reference<input formControlName="reference" /></label>
           <label class="field"
-            >Scheduled start<input type="datetime-local" formControlName="scheduledStart"
+            >External / accounting reference<input formControlName="externalReference"
           /></label>
+          <label class="field"
+            >Category<select formControlName="jobCategoryId">
+              <option value="">No category</option>
+              @for (category of jobCategories(); track category.id) {
+                <option [value]="category.id">
+                  {{ category.name }}{{ category.organisationId ? ' · custom' : '' }}
+                </option>
+              }
+            </select></label
+          >
+          @if (canManageCategories()) {
+            <div class="field category-creator">
+              <label for="new-job-category">New custom category</label>
+              <span>
+                <input
+                  id="new-job-category"
+                  [formControl]="newCategoryName"
+                  placeholder="Category name"
+                />
+                <button class="button secondary compact" type="button" (click)="createCategory()">
+                  Add
+                </button>
+              </span>
+            </div>
+          }
+          <label class="field"
+            >Job type<input formControlName="jobType" placeholder="e.g. Repair"
+          /></label>
+          <label class="field"
+            >Planned start<input type="datetime-local" formControlName="scheduledStart"
+          /></label>
+          <label class="field full"
+            >Job description / scope of works<textarea formControlName="description"></textarea>
+          </label>
+          <label class="field full"
+            >Exclusions / not our responsibility<textarea formControlName="exclusions"></textarea>
+          </label>
           @if (canAssign()) {
             <label class="field"
               >Permanent engineer<select formControlName="assignedUserId">
@@ -205,12 +258,16 @@
             /></label>
           }
           <label class="field full"
-            >Engineer notes<textarea formControlName="engineerNotes"></textarea>
+            >Engineer remarks / briefing<textarea formControlName="engineerNotes"></textarea>
           </label>
           <div class="form-actions full sticky-planner-action">
             <span
               ><strong>{{
-                form.controls.moduleKey.value === 'thermal-imaging' ? 1 : selectedAssetIds().size
+                !addInspection()
+                  ? 0
+                  : form.controls.moduleKey.value === 'thermal-imaging'
+                    ? 1
+                    : selectedAssetIds().size
               }}</strong>
               inspection task(s) will be created</span
             ><button
@@ -219,12 +276,13 @@
               [disabled]="
                 busy() ||
                 form.invalid ||
-                (form.controls.moduleKey.value !== 'thermal-imaging' &&
+                (addInspection() &&
+                  form.controls.moduleKey.value !== 'thermal-imaging' &&
                   selectedAssetIds().size === 0 &&
                   !allowDiscovery())
               "
             >
-              Create visit →
+              Create job →
             </button>
           </div>
         </form>
@@ -235,8 +293,8 @@
   <section class="visits-index">
     <div class="section-heading visits-heading">
       <div>
-        <h2>Visits register</h2>
-        <p>{{ visitRange() }} · newest scheduled visits shown first</p>
+        <h2>Jobs register</h2>
+        <p>{{ visitRange() }} · newest planned jobs shown first</p>
       </div>
     </div>
 
@@ -246,7 +304,7 @@
           <span aria-hidden="true">⌕</span>
           <input
             type="search"
-            placeholder="Search visit, client, site, postcode or engineer…"
+            placeholder="Search job, client, site, postcode or engineer…"
             [value]="visitQuery()"
             (input)="searchVisits($any($event.target).value)"
           />
@@ -293,7 +351,7 @@
             <option value="scheduled-desc">Scheduled · newest</option>
             <option value="scheduled-asc">Scheduled · oldest</option>
             <option value="completed-desc">Completed · newest</option>
-            <option value="title-asc">Visit title · A–Z</option>
+            <option value="title-asc">Job title · A–Z</option>
             <option value="status-asc">Status · A–Z</option>
           </select></label
         >
@@ -318,7 +376,7 @@
     }
 
     @if (listBusy()) {
-      <div class="visit-list-loading" role="status"><span></span> Updating visits…</div>
+      <div class="visit-list-loading" role="status"><span></span> Updating jobs…</div>
     }
     <div class="visit-register" [class.loading]="listBusy()">
       @for (visit of visits(); track visit.id) {
@@ -327,7 +385,10 @@
             <strong>{{ formatDate(visit.scheduledStart).split(',')[0] }}</strong>
             <span>{{ formatDate(visit.scheduledStart).split(',').slice(1).join(',') }}</span>
           </time>
-          <a class="visit-copy" [routerLink]="['/app/org', organisationId, 'visits', visit.id]">
+          <a
+            class="visit-copy"
+            [routerLink]="['/app/org', organisationId, 'visits', visit.id, 'overview']"
+          >
             <span class="visit-path">{{ visit.customer.name }} › {{ visit.site.name }}</span>
             <strong>{{ visit.title }}</strong>
             <small>
@@ -376,7 +437,7 @@
       } @empty {
         <div class="empty-state card">
           <span class="empty-icon">⌕</span>
-          <h3>No visits match</h3>
+          <h3>No jobs match</h3>
           <p>Adjust the search, status, or date filters to widen the results.</p>
           @if (visitFiltersActive()) {
             <button class="button secondary" type="button" (click)="clearVisitFilters()">
@@ -388,7 +449,7 @@
     </div>
 
     @if (visitPagination().pageCount > 1) {
-      <nav class="visit-pagination" aria-label="Visit result pages">
+      <nav class="visit-pagination" aria-label="Job result pages">
         <button
           class="button secondary compact"
           type="button"

@@ -1,0 +1,335 @@
+<main class="page job-page">
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a [routerLink]="['/app/org', organisationId, 'visits']">Jobs</a>
+    <span>/</span>
+    <strong>Job details</strong>
+  </nav>
+
+  @if (job(); as currentJob) {
+    <header class="card job-hero">
+      <div class="job-mark" aria-hidden="true">&#9633;</div>
+      <div class="job-identity">
+        <div class="job-reference-line">
+          <span>{{ currentJob.reference || 'No job reference' }}</span>
+          <span
+            class="badge"
+            [class.success]="currentJob.status === 'COMPLETED'"
+            [class.warning]="currentJob.status === 'SUBMITTED'"
+            >{{ statusLabel(currentJob.status) }}</span
+          >
+        </div>
+        <h1>{{ currentJob.title }}</h1>
+        <div class="job-meta">
+          <span>{{ currentJob.customer.name }}</span>
+          <span>{{ currentJob.site.name }}</span>
+          <span>{{ formatDate(currentJob.scheduledStart) }}</span>
+          <span>{{
+            currentJob.assignedUser || currentJob.guestEngineerName ? 'Assigned' : 'Unassigned'
+          }}</span>
+        </div>
+      </div>
+      <div class="job-hero-summary">
+        <span
+          ><small>Status</small><b>{{ statusLabel(currentJob.status) }}</b></span
+        >
+        <span
+          ><small>Category</small><b>{{ currentJob.jobCategory?.name || 'Not set' }}</b></span
+        >
+        <span
+          ><small>Job type</small><b>{{ currentJob.jobType || 'Not set' }}</b></span
+        >
+      </div>
+      <div class="job-actions">
+        @if (canEdit()) {
+          <button class="button secondary compact" type="button" (click)="startEditing()">
+            Edit job
+          </button>
+        }
+        <button
+          class="button primary compact"
+          type="button"
+          disabled
+          title="RAMS is the next module"
+        >
+          Add RAMS
+        </button>
+      </div>
+    </header>
+
+    <nav class="workspace-tabs" aria-label="Job sections">
+      <a class="active" href="#overview">Overview</a>
+      <span class="disabled">RAMS <b>0</b></span>
+      <a href="#inspections"
+        >Inspections <b>{{ inspectionCount() }}</b></a
+      >
+      <a href="#assets"
+        >Assets <b>{{ linkedAssets().length }}</b></a
+      >
+      <span class="disabled">Progress <b>0</b></span>
+      <span class="disabled">Documents <b>0</b></span>
+    </nav>
+
+    @if (editing()) {
+      <section class="card edit-job">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Job administration</p>
+            <h2>Edit job</h2>
+          </div>
+          <button class="button ghost compact" type="button" (click)="editing.set(false)">
+            Close
+          </button>
+        </div>
+        <form class="edit-grid card-body" [formGroup]="form" (ngSubmit)="save()">
+          <label class="field">Job title<input formControlName="title" /></label>
+          <label class="field">Job reference<input formControlName="reference" /></label>
+          <label class="field"
+            >External reference<input formControlName="externalReference"
+          /></label>
+          <label class="field">Job type<input formControlName="jobType" /></label>
+          <label class="field"
+            >Category<select formControlName="jobCategoryId">
+              <option value="">No category</option>
+              @for (category of categories(); track category.id) {
+                <option [value]="category.id">{{ category.name }}</option>
+              }
+            </select></label
+          >
+          <label class="field"
+            >Planned start<input type="datetime-local" formControlName="scheduledStart"
+          /></label>
+          <label class="field"
+            >Planned end<input type="datetime-local" formControlName="scheduledEnd"
+          /></label>
+          <label class="field full"
+            >Description / scope<textarea formControlName="description"></textarea>
+          </label>
+          <label class="field full"
+            >Exclusions<textarea formControlName="exclusions"></textarea>
+          </label>
+          <label class="field full"
+            >Engineer remarks / briefing<textarea formControlName="engineerNotes"></textarea>
+          </label>
+          <div class="form-actions full">
+            <button class="button secondary" type="button" (click)="editing.set(false)">
+              Cancel
+            </button>
+            <button class="button primary" type="submit" [disabled]="busy() || form.invalid">
+              Save job
+            </button>
+          </div>
+        </form>
+      </section>
+    }
+
+    <section class="job-overview" id="overview">
+      <div class="overview-main">
+        <article class="card detail-card job-details-card">
+          <div class="card-header"><h2>Job details</h2></div>
+          <dl class="detail-list card-body">
+            <div>
+              <dt>Job reference</dt>
+              <dd>{{ currentJob.reference || 'Not set' }}</dd>
+            </div>
+            <div>
+              <dt>External reference</dt>
+              <dd>{{ currentJob.externalReference || 'Not set' }}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{{ currentJob.jobCategory?.name || 'Not set' }}</dd>
+            </div>
+            <div>
+              <dt>Job type</dt>
+              <dd>{{ currentJob.jobType || 'Not set' }}</dd>
+            </div>
+            <div>
+              <dt>Site</dt>
+              <dd>{{ currentJob.site.name }}</dd>
+            </div>
+            <div>
+              <dt>Client</dt>
+              <dd>{{ currentJob.customer.name }}</dd>
+            </div>
+            <div>
+              <dt>Planned date</dt>
+              <dd>{{ formatDate(currentJob.scheduledStart) }}</dd>
+            </div>
+            <div>
+              <dt>Created by</dt>
+              <dd>{{ personName(currentJob.createdByUser) }}</dd>
+            </div>
+            <div>
+              <dt>Created</dt>
+              <dd>{{ formatDate(currentJob.createdAt, true) }}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <div class="narrative-stack">
+          <article class="card detail-card">
+            <div class="card-header"><h2>Job description / scope of works</h2></div>
+            <p class="narrative">
+              {{ currentJob.description || 'No scope of works has been recorded.' }}
+            </p>
+          </article>
+          <article class="card detail-card">
+            <div class="card-header"><h2>Exclusions / not our responsibility</h2></div>
+            <p class="narrative">
+              {{ currentJob.exclusions || 'No exclusions have been recorded.' }}
+            </p>
+          </article>
+          <article class="card detail-card">
+            <div class="card-header"><h2>Engineer remarks / briefing</h2></div>
+            <p class="narrative">
+              {{ currentJob.engineerNotes || 'No engineer briefing has been recorded.' }}
+            </p>
+          </article>
+        </div>
+
+        <div class="side-stack">
+          <article class="card detail-card">
+            <div class="card-header"><h2>Engineer assigned</h2></div>
+            <div class="assignment card-body">
+              <span class="avatar">{{
+                personName(currentJob.assignedUser).slice(0, 2).toUpperCase()
+              }}</span>
+              <div>
+                <strong>{{
+                  currentJob.guestEngineerName || personName(currentJob.assignedUser)
+                }}</strong>
+                <small>{{
+                  currentJob.guestEmail || currentJob.assignedUser?.email || 'No email recorded'
+                }}</small>
+              </div>
+            </div>
+          </article>
+
+          <article class="card detail-card" id="assets">
+            <div class="card-header">
+              <h2>Linked assets ({{ linkedAssets().length }})</h2>
+            </div>
+            <div class="compact-list card-body">
+              @for (asset of linkedAssets().slice(0, 4); track asset.id) {
+                <span
+                  ><strong>{{ asset.assetReference }}</strong
+                  ><small>{{ asset.displayName }}</small></span
+                >
+              } @empty {
+                <p>No assets are linked to this job.</p>
+              }
+              @if (linkedAssets().length > 4) {
+                <small>+{{ linkedAssets().length - 4 }} more assets</small>
+              }
+            </div>
+          </article>
+
+          <article class="card detail-card">
+            <div class="card-header"><h2>Site information</h2></div>
+            <dl class="site-notes card-body">
+              <div>
+                <dt>Access</dt>
+                <dd>{{ currentJob.site.accessInstructions || 'Not recorded' }}</dd>
+              </div>
+              <div>
+                <dt>PPE</dt>
+                <dd>{{ currentJob.site.ppeRequirements || 'Not recorded' }}</dd>
+              </div>
+              <div>
+                <dt>Induction</dt>
+                <dd>{{ currentJob.site.inductionInformation || 'Not recorded' }}</dd>
+              </div>
+            </dl>
+          </article>
+        </div>
+
+        <article class="card related-card">
+          <div class="card-header">
+            <h2>Related RAMS</h2>
+            <button class="button secondary compact" type="button" disabled>Add RAMS</button>
+          </div>
+          <div class="empty-state compact-empty">
+            <h3>No RAMS added</h3>
+            <p>RAMS documents will appear here when the RAMS module is enabled.</p>
+          </div>
+        </article>
+
+        <div class="lower-side-stack">
+          <article class="card detail-card">
+            <div class="card-header"><h2>Key dates</h2></div>
+            <dl class="detail-list card-body">
+              <div>
+                <dt>Planned start</dt>
+                <dd>{{ formatDate(currentJob.scheduledStart, true) }}</dd>
+              </div>
+              <div>
+                <dt>Planned end</dt>
+                <dd>{{ formatDate(currentJob.scheduledEnd, true) }}</dd>
+              </div>
+              <div>
+                <dt>Submitted</dt>
+                <dd>{{ formatDate(currentJob.submittedAt, true) }}</dd>
+              </div>
+              <div>
+                <dt>Completed</dt>
+                <dd>{{ formatDate(currentJob.completedAt, true) }}</dd>
+              </div>
+            </dl>
+          </article>
+          <article class="card detail-card quick-actions">
+            <div class="card-header"><h2>Quick actions</h2></div>
+            <div class="card-body">
+              <a
+                class="button secondary"
+                [routerLink]="['/app/org', organisationId, 'visits', visitId]"
+                >Open engineer workspace</a
+              >
+              @if (canAssign()) {
+                <button class="button secondary" type="button" (click)="shareJob()">
+                  Share Job link
+                </button>
+              }
+            </div>
+          </article>
+        </div>
+
+        <article class="card inspection-card" id="inspections">
+          <div class="card-header">
+            <div>
+              <h2>Inspections</h2>
+              <small
+                >{{ completedTaskCount() }}/{{ currentJob.tasks.length }} tasks completed</small
+              >
+            </div>
+            <a
+              class="button secondary compact"
+              [routerLink]="['/app/org', organisationId, 'visits', visitId]"
+              >Open workspace</a
+            >
+          </div>
+          <div class="task-list card-body">
+            @for (task of currentJob.tasks; track task.id) {
+              <div>
+                <span
+                  ><strong>{{ task.title }}</strong
+                  ><small>{{ task.asset?.displayName || 'Site-wide task' }}</small></span
+                ><span class="badge">{{ statusLabel(task.status) }}</span>
+              </div>
+            } @empty {
+              <p>This job has no inspection tasks.</p>
+            }
+          </div>
+        </article>
+      </div>
+    </section>
+  } @else if (!busy() && !error()) {
+    <div class="empty-state card"><h2>Job unavailable</h2></div>
+  }
+
+  @if (notice()) {
+    <div class="notice" role="status">{{ notice() }}</div>
+  }
+  @if (error()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

@@ -41,11 +41,16 @@
           <h2>Asset images</h2>
           <p>Images are shown to engineers before testing.</p>
         </div>
-        <label class="button secondary compact"
-          >+ Add image<input
+        <label class="button secondary compact">
+          @if (busy()) {
+            <span class="oa-spinner" aria-hidden="true"></span>
+          }
+          {{ busy() ? 'Uploading…' : '+ Add image'
+          }}<input
             hidden
             type="file"
             accept="image/jpeg,image/png,image/webp"
+            [disabled]="busy()"
             (change)="uploadImage($event)"
         /></label>
       </div>
@@ -56,8 +61,16 @@
             @if (image.fallback) {
               <figcaption>{{ image.caption }}</figcaption>
             } @else {
-              <button class="button danger compact" type="button" (click)="deleteImage(image.id)">
-                Delete
+              <button
+                class="button danger compact"
+                type="button"
+                [disabled]="busy()"
+                (click)="deleteImage(image.id)"
+              >
+                @if (busy()) {
+                  <span class="oa-spinner" aria-hidden="true"></span>
+                }
+                {{ busy() ? 'Deleting…' : 'Delete' }}
               </button>
             }
           </figure>
@@ -111,7 +124,10 @@
         </label>
         <div class="form-actions full">
           <button class="button primary" type="submit" [disabled]="busy()">
-            Save charger details
+            @if (busy()) {
+              <span class="oa-spinner" aria-hidden="true"></span>
+            }
+            {{ busy() ? 'Saving…' : 'Save charger details' }}
           </button>
         </div>
       </form>
@@ -174,7 +190,10 @@
                   [disabled]="busy()"
                   (click)="deleteSupply(supply.id)"
                 >
-                  Delete
+                  @if (busy()) {
+                    <span class="oa-spinner" aria-hidden="true"></span>
+                  }
+                  {{ busy() ? 'Deleting…' : 'Delete' }}
                 </button>
               </footer>
             </article>
@@ -242,7 +261,10 @@
                   [disabled]="busy()"
                   (click)="deleteConnector(connector.id)"
                 >
-                  Delete
+                  @if (busy()) {
+                    <span class="oa-spinner" aria-hidden="true"></span>
+                  }
+                  {{ busy() ? 'Deleting…' : 'Delete' }}
                 </button>
               </footer>
             </article>
@@ -328,7 +350,10 @@
                 type="submit"
                 [disabled]="busy() || supplyForm.invalid"
               >
-                {{ editingSupplyId() ? 'Save changes' : 'Add supply' }}
+                @if (busy()) {
+                  <span class="oa-spinner" aria-hidden="true"></span>
+                }
+                {{ editingSupplyId() ? 'Saving…' : 'Adding…' }}
               </button>
             </footer>
           </form>
@@ -403,7 +428,10 @@
                 type="submit"
                 [disabled]="busy() || connectorForm.invalid"
               >
-                {{ editingConnectorId() ? 'Save changes' : 'Add connector' }}
+                @if (busy()) {
+                  <span class="oa-spinner" aria-hidden="true"></span>
+                }
+                {{ editingConnectorId() ? 'Saving…' : 'Adding…' }}
               </button>
             </footer>
           </form>

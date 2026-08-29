@@ -184,7 +184,7 @@ export class OfflineVisitService {
       downloadedAt: new Date().toISOString(),
     });
     if ((await this.database.visitPacks.get(visitId)) === undefined)
-      throw new Error('The offline visit could not be verified on this device.');
+      throw new Error('The offline job could not be verified on this device.');
   }
   async pack(visitId: string, guestToken?: string): Promise<VisitSummary | undefined> {
     if (guestToken === undefined) return (await this.database.visitPacks.get(visitId))?.visit;
@@ -345,7 +345,7 @@ export class OfflineVisitService {
       : (await this.api.listEquipment(visit.organisationId)).equipment;
     for (const task of visit.tasks.filter(({ moduleKey }) => moduleKey === 'thermal-imaging')) {
       const inspectionId = task.inspection?.id;
-      if (!inspectionId) throw new Error('Start thermal tasks before downloading the visit.');
+      if (!inspectionId) throw new Error('Start thermal tasks before downloading the job.');
       const inspection = guestToken
         ? (await this.api.getGuestInspection(guestToken, inspectionId)).inspection
         : (await this.api.getInspection(visit.organisationId, inspectionId)).inspection;

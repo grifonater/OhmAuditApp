@@ -75,6 +75,8 @@ export class VisitService {
         include: {
           customer: { select: { id: true, name: true } },
           site: { select: { id: true, name: true, postcode: true } },
+          jobCategory: true,
+          assignedUser: { select: { id: true, displayName: true, email: true } },
           tasks: {
             include: {
               asset: { select: { id: true, displayName: true, assetReference: true } },
@@ -100,7 +102,13 @@ export class VisitService {
     correlationId: string,
     input: {
       siteId: string;
+      reference?: string | undefined;
+      externalReference?: string | undefined;
       title: string;
+      description?: string | undefined;
+      exclusions?: string | undefined;
+      jobCategoryId?: string | undefined;
+      jobType?: string | undefined;
       scheduledStart: Date;
       scheduledEnd?: Date | undefined;
       assignedUserId?: string | undefined;
@@ -113,6 +121,25 @@ export class VisitService {
   ) {
     const site = await this.prisma.site.findFirst({ where: { id: input.siteId, organisationId } });
     if (site === null) throw new DomainError('SITE_NOT_FOUND', 'The site was not found.', 404);
+    if (input.scheduledEnd !== undefined && input.scheduledEnd < input.scheduledStart)
+      throw new DomainError(
+        'JOB_SCHEDULE_INVALID',
+        'The planned end must be after the planned start.',
+        422,
+      );
+    if (
+      input.assignedUserId !== undefined &&
+      (input.guestEngineerName !== undefined ||
+        input.guestEmail !== undefined ||
+        input.guestMobile !== undefined)
+    )
+      throw new DomainError(
+        'JOB_ASSIGNMENT_INVALID',
+        'Choose either an organisation engineer or a guest engineer for this job.',
+        422,
+      );
+    await this.validateCategory(organisationId, input.jobCategoryId);
+    await this.validateAssignedUser(organisationId, input.assignedUserId);
     const assetIds = input.tasks.flatMap((task) =>
       task.assetId === undefined ? [] : [task.assetId],
     );
@@ -124,7 +151,7 @@ export class VisitService {
     )
       throw new DomainError(
         'VISIT_ASSET_INVALID',
-        'One or more visit assets do not belong to this site.',
+        'One or more job assets do not belong to this site.',
         422,
       );
     return this.prisma.$transaction(async (transaction) => {
@@ -133,7 +160,16 @@ export class VisitService {
           organisationId,
           customerId: site.customerId,
           siteId: site.id,
+          createdByUserId: actorUserId,
+          ...(input.reference === undefined ? {} : { reference: input.reference }),
+          ...(input.externalReference === undefined
+            ? {}
+            : { externalReference: input.externalReference }),
           title: input.title,
+          ...(input.description === undefined ? {} : { description: input.description }),
+          ...(input.exclusions === undefined ? {} : { exclusions: input.exclusions }),
+          ...(input.jobCategoryId === undefined ? {} : { jobCategoryId: input.jobCategoryId }),
+          ...(input.jobType === undefined ? {} : { jobType: input.jobType }),
           scheduledStart: input.scheduledStart,
           ...(input.scheduledEnd === undefined ? {} : { scheduledEnd: input.scheduledEnd }),
           ...(input.assignedUserId === undefined ? {} : { assignedUserId: input.assignedUserId }),
@@ -181,6 +217,9 @@ export class VisitService {
       include: {
         customer: true,
         site: { include: { contacts: true } },
+        jobCategory: true,
+        assignedUser: { select: { id: true, displayName: true, email: true } },
+        createdByUser: { select: { id: true, displayName: true, email: true } },
         tasks: {
           include: {
             asset: {
@@ -200,7 +239,7 @@ export class VisitService {
         },
       },
     });
-    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The visit was not found.', 404);
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
     const media = await this.prisma.media.findMany({
       where: {
         organisationId,
@@ -224,6 +263,61 @@ export class VisitService {
     };
   }
 
+  async update(
+    organisationId: string,
+    visitId: string,
+    actorUserId: string,
+    correlationId: string,
+    input: {
+      reference?: string | null | undefined;
+      externalReference?: string | null | undefined;
+      title?: string | undefined;
+      description?: string | null | undefined;
+      exclusions?: string | null | undefined;
+      jobCategoryId?: string | null | undefined;
+      jobType?: string | null | undefined;
+      scheduledStart?: Date | undefined;
+      scheduledEnd?: Date | null | undefined;
+      engineerNotes?: string | null | undefined;
+    },
+  ) {
+    const current = await this.requireVisit(organisationId, visitId);
+    await this.validateCategory(organisationId, input.jobCategoryId ?? undefined);
+    const scheduledStart = input.scheduledStart ?? current.scheduledStart;
+    const scheduledEnd =
+      input.scheduledEnd === undefined ? current.scheduledEnd : input.scheduledEnd;
+    if (scheduledEnd !== null && scheduledEnd < scheduledStart)
+      throw new DomainError(
+        'JOB_SCHEDULE_INVALID',
+        'The planned end must be after the planned start.',
+        422,
+      );
+    const data = Object.fromEntries(
+      Object.entries(input).filter(([, value]) => value !== undefined),
+    ) as Prisma.VisitUncheckedUpdateInput;
+    const auditData = Object.fromEntries(
+      Object.entries(data).map(([key, value]) => [
+        key,
+        value instanceof Date ? value.toISOString() : value,
+      ]),
+    ) as Prisma.InputJsonObject;
+    return this.prisma.$transaction(async (transaction) => {
+      const visit = await transaction.visit.update({ where: { id: visitId }, data });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'VisitUpdated',
+          entityType: 'Visit',
+          entityId: visitId,
+          data: auditData,
+        },
+      });
+      return visit;
+    });
+  }
+
   async addEvAsset(
     organisationId: string,
     visitId: string,
@@ -243,7 +337,7 @@ export class VisitService {
       where: { id: visitId, organisationId },
       include: { tasks: { select: { displayOrder: true } } },
     });
-    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The visit was not found.', 404);
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
     try {
       return await this.prisma.$transaction(async (transaction) => {
         let assetModelId: string | undefined;
@@ -419,7 +513,7 @@ export class VisitService {
     if (task?.asset === null || task?.asset === undefined)
       throw new DomainError(
         'INSPECTION_ASSET_NOT_FOUND',
-        'The inspection asset was not found in this visit.',
+        'The inspection asset was not found in this job.',
         404,
       );
     return { organisationId: visit.organisationId, assetId: task.asset.id };
@@ -451,5 +545,42 @@ export class VisitService {
         appliedAt: new Date(),
       },
     });
+  }
+
+  private async requireVisit(organisationId: string, visitId: string) {
+    const visit = await this.prisma.visit.findFirst({ where: { id: visitId, organisationId } });
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    return visit;
+  }
+
+  private async validateCategory(organisationId: string, categoryId: string | undefined) {
+    if (categoryId === undefined) return;
+    const category = await this.prisma.jobCategory.findFirst({
+      where: {
+        id: categoryId,
+        status: 'ACTIVE',
+        OR: [{ organisationId: null }, { organisationId }],
+      },
+    });
+    if (category === null)
+      throw new DomainError(
+        'JOB_CATEGORY_INVALID',
+        'The selected job category is not available.',
+        422,
+      );
+  }
+
+  private async validateAssignedUser(organisationId: string, assignedUserId: string | undefined) {
+    if (assignedUserId === undefined) return;
+    const membership = await this.prisma.organisationMembership.findFirst({
+      where: { organisationId, userId: assignedUserId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (membership === null)
+      throw new DomainError(
+        'JOB_ENGINEER_INVALID',
+        'The selected engineer is not an active member of this organisation.',
+        422,
+      );
   }
 }

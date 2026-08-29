@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
+import { ScheduleService } from '../scheduling/schedule.service';
 import { DomainError } from '../shared/domain-error';
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -569,13 +570,14 @@ export class InspectionService {
         409,
       );
     return this.prisma.$transaction(async (transaction) => {
+      const reviewedAt = new Date();
       const updated = await transaction.inspection.update({
         where: { id: inspectionId },
         data: {
           status: approved ? 'APPROVED' : 'REJECTED',
-          reviewedAt: new Date(),
+          reviewedAt,
           reviewedByUserId: actorUserId,
-          ...(approved ? { approvedAt: new Date() } : {}),
+          ...(approved ? { approvedAt: reviewedAt } : {}),
         },
       });
       if (inspection.visitTaskId !== null)
@@ -596,6 +598,13 @@ export class InspectionService {
             data: { status: 'COMPLETED', completedAt: new Date() },
           });
       }
+      const rebasedScheduleCount = approved
+        ? await new ScheduleService(this.prisma).completeAndRebaseForInspection(
+            transaction,
+            inspection,
+            reviewedAt,
+          )
+        : 0;
       await transaction.auditEvent.create({
         data: {
           organisationId,
@@ -604,7 +613,7 @@ export class InspectionService {
           eventType: approved ? 'InspectionApproved' : 'InspectionRejected',
           entityType: 'Inspection',
           entityId: inspectionId,
-          data: { revisionNumber: inspection.currentRevisionNumber },
+          data: { revisionNumber: inspection.currentRevisionNumber, rebasedScheduleCount },
         },
       });
       return updated;
@@ -894,7 +903,7 @@ export class InspectionService {
       where: { id: visitId, organisationId },
       select: { id: true },
     });
-    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The visit was not found.', 404);
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
     const inspections = await this.prisma.inspection.findMany({
       where: { organisationId, visitId, status: 'APPROVED' },
       include: {

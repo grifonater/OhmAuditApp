@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import {
@@ -18,6 +26,7 @@ import {
 export class CalendarComponent {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly capabilities = signal<string[]>([]);
   protected readonly canManageSchedules = computed(() =>
@@ -26,6 +35,7 @@ export class CalendarComponent {
   protected readonly month = signal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   protected readonly occurrences = signal<ScheduleOccurrence[]>([]);
   protected readonly sites = signal<SiteSummary[]>([]);
+  protected readonly siteAssets = signal<Array<{ id: string; displayName: string }>>([]);
   protected readonly entitlements = signal<Entitlement[]>([]);
   protected readonly activeModules = computed(() =>
     this.entitlements().filter((item) => item.entitled),
@@ -33,6 +43,10 @@ export class CalendarComponent {
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly showCreate = signal(false);
+  protected readonly selectedOccurrence = signal<ScheduleOccurrence | undefined>(undefined);
+  protected readonly agenda = computed(() =>
+    [...this.occurrences()].sort((left, right) => left.dueDate.localeCompare(right.dueDate)),
+  );
   protected readonly days = computed(() => {
     const month = this.month();
     const start = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -52,6 +66,7 @@ export class CalendarComponent {
   });
   protected readonly scheduleForm = new FormGroup({
     siteId: new FormControl('', { nonNullable: true, validators: Validators.required }),
+    assetId: new FormControl('', { nonNullable: true }),
     title: new FormControl('Annual inspection', {
       nonNullable: true,
       validators: [Validators.required, Validators.minLength(2)],
@@ -74,6 +89,9 @@ export class CalendarComponent {
     }),
   });
   constructor() {
+    this.scheduleForm.controls.siteId.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((siteId) => void this.loadSiteAssets(siteId));
     void this.initialise();
   }
   protected monthLabel(): string {
@@ -89,10 +107,24 @@ export class CalendarComponent {
   protected async createSchedule(): Promise<void> {
     if (this.scheduleForm.invalid) return;
     await this.run(async () => {
-      await this.api.createSchedule(this.organisationId, this.scheduleForm.getRawValue());
+      const { assetId, ...input } = this.scheduleForm.getRawValue();
+      await this.api.createSchedule(this.organisationId, {
+        ...input,
+        ...(assetId === '' ? {} : { assetId }),
+      });
       this.showCreate.set(false);
       await this.loadCalendar();
     });
+  }
+  protected formatDate(value: string): string {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(value));
+  }
+  protected statusLabel(status: string): string {
+    return status.charAt(0) + status.slice(1).toLowerCase();
   }
   private async initialise(): Promise<void> {
     await this.run(async () => {
@@ -121,6 +153,23 @@ export class CalendarComponent {
     const from = new Date(month.getFullYear(), month.getMonth() - 1, 1).toISOString();
     const to = new Date(month.getFullYear(), month.getMonth() + 2, 0).toISOString();
     this.occurrences.set((await this.api.calendar(this.organisationId, from, to)).occurrences);
+  }
+  private async loadSiteAssets(siteId: string): Promise<void> {
+    this.scheduleForm.controls.assetId.setValue('', { emitEvent: false });
+    if (!siteId) {
+      this.siteAssets.set([]);
+      return;
+    }
+    try {
+      const result = await this.api.getSite(this.organisationId, siteId);
+      this.siteAssets.set(
+        result.site.assets
+          .filter((asset) => asset.status !== 'REMOVED')
+          .map(({ id, displayName }) => ({ id, displayName })),
+      );
+    } catch {
+      this.siteAssets.set([]);
+    }
   }
   private dateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;

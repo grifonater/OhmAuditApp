@@ -325,6 +325,11 @@ export interface ScheduleOccurrence {
   id: string;
   dueDate: string;
   status: string;
+  windowStartsAt?: string;
+  windowEndsAt?: string;
+  completedAt?: string;
+  visitId?: string;
+  inspectionId?: string;
   scheduleRule: {
     id: string;
     title: string;
@@ -335,22 +340,59 @@ export interface ScheduleOccurrence {
     asset?: { id: string; displayName: string };
   };
 }
+export interface ScheduleSuggestion {
+  inspectionId: string;
+  asset?: { id: string; displayName: string };
+  moduleKey: string;
+  title: string;
+  lastInspectionDate: string;
+  suggestedStartDate: string;
+  suggestedFrequencyMonths: number;
+}
 export interface VisitSummary {
   id: string;
   organisationId: string;
+  reference?: string;
+  externalReference?: string;
   title: string;
+  description?: string;
+  exclusions?: string;
+  jobType?: string;
+  jobCategoryId?: string;
+  jobCategory?: JobCategory;
   scheduledStart: string;
   scheduledEnd?: string;
   status: string;
   assignedUserId?: string;
+  assignedUser?: { id: string; displayName?: string; email: string };
+  createdByUser?: { id: string; displayName?: string; email: string };
   guestEngineerName?: string;
   guestEmail?: string;
+  guestMobile?: string;
   engineerNotes?: string;
   submittedAt?: string;
   completedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
   customer: { id: string; name: string };
-  site: { id: string; name: string; postcode?: string };
+  site: {
+    id: string;
+    name: string;
+    postcode?: string;
+    accessInstructions?: string;
+    parkingInformation?: string;
+    openingTimes?: string;
+    ppeRequirements?: string;
+    inductionInformation?: string;
+  };
   tasks: VisitTask[];
+}
+export interface JobCategory {
+  id: string;
+  organisationId?: string;
+  systemKey?: string;
+  name: string;
+  status: string;
 }
 export interface VisitTask {
   id: string;
@@ -1113,7 +1155,7 @@ export class ApiService {
     );
     if (!response.ok) {
       const body: { message?: string } = await response.json();
-      throw new Error(body.message ?? 'The visit report could not be generated.');
+      throw new Error(body.message ?? 'The job report could not be generated.');
     }
     return response.blob();
   }
@@ -1136,6 +1178,11 @@ export class ApiService {
   listSchedules(organisationId: string) {
     return this.request<{ schedules: unknown[] }>(
       `/schedules?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  scheduleSuggestions(organisationId: string, siteId: string) {
+    return this.request<{ suggestions: ScheduleSuggestion[] }>(
+      `/schedules/suggestions?organisationId=${encodeURIComponent(organisationId)}&siteId=${encodeURIComponent(siteId)}`,
     );
   }
   createSchedule(
@@ -1242,7 +1289,13 @@ export class ApiService {
     organisationId: string,
     input: {
       siteId: string;
+      reference?: string;
+      externalReference?: string;
       title: string;
+      description?: string;
+      exclusions?: string;
+      jobCategoryId?: string;
+      jobType?: string;
       scheduledStart: string;
       scheduledEnd?: string;
       assignedUserId?: string;
@@ -1257,6 +1310,50 @@ export class ApiService {
       method: 'POST',
       body: JSON.stringify({ organisationId, ...input }),
     });
+  }
+  updateVisit(
+    organisationId: string,
+    visitId: string,
+    input: {
+      reference?: string | null;
+      externalReference?: string | null;
+      title?: string;
+      description?: string | null;
+      exclusions?: string | null;
+      jobCategoryId?: string | null;
+      jobType?: string | null;
+      scheduledStart?: string;
+      scheduledEnd?: string | null;
+      engineerNotes?: string | null;
+    },
+  ) {
+    return this.request<{ visit: VisitSummary }>(
+      `/visits/${visitId}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    );
+  }
+  listJobCategories(organisationId: string) {
+    return this.request<{ categories: JobCategory[] }>(
+      `/organisations/${encodeURIComponent(organisationId)}/job-categories`,
+    );
+  }
+  createJobCategory(organisationId: string, name: string) {
+    return this.request<{ category: JobCategory }>(
+      `/organisations/${encodeURIComponent(organisationId)}/job-categories`,
+      { method: 'POST', body: JSON.stringify({ name }) },
+    );
+  }
+  updateJobCategory(organisationId: string, categoryId: string, name: string) {
+    return this.request<{ category: JobCategory }>(
+      `/organisations/${encodeURIComponent(organisationId)}/job-categories/${categoryId}`,
+      { method: 'PATCH', body: JSON.stringify({ name }) },
+    );
+  }
+  archiveJobCategory(organisationId: string, categoryId: string) {
+    return this.request<void>(
+      `/organisations/${encodeURIComponent(organisationId)}/job-categories/${categoryId}`,
+      { method: 'DELETE' },
+    );
   }
   createGuestLink(organisationId: string, visitId: string, validDays = 7) {
     return this.request<{ token: string; expiresAt: string; guestUrl: string }>(

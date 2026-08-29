@@ -21,7 +21,7 @@ export class OfflineJobsComponent {
   protected jobLink(pack: StoredVisitPack): string[] {
     return pack.guestToken === undefined
       ? ['/app/org', pack.organisationId, 'visits', pack.visit.id]
-      : ['/guest/visit', pack.guestToken];
+      : ['/guest/job', pack.guestToken];
   }
 
   protected formatDate(value: string): string {
