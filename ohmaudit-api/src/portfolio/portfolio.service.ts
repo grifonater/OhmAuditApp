@@ -860,9 +860,7 @@ export class PortfolioService {
             entityId: inspection.id,
           })),
           ...visit.tasks.flatMap((task) =>
-            task.assetId === null
-              ? []
-              : [{ entityType: 'Asset', entityId: task.assetId }],
+            task.assetId === null ? [] : [{ entityType: 'Asset', entityId: task.assetId }],
           ),
         ],
       };
