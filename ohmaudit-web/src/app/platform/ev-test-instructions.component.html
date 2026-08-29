@@ -165,11 +165,10 @@
                     [class.covered]="item.coveredSteps.includes(step)"
                     [class.missing]="item.missingSteps.includes(step)"
                     type="button"
-                    [disabled]="item.coveredSteps.includes(step)"
-                    (click)="startFor(item.manufacturer, step)"
+                    (click)="openCoverageStep(item.manufacturer, step)"
                     [attr.title]="
                       item.coveredSteps.includes(step)
-                        ? 'Covered'
+                        ? 'Edit instructions for ' + item.manufacturer
                         : 'Create instructions for ' + item.manufacturer
                     "
                   >

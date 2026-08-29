@@ -9,6 +9,7 @@ import {
   type SiteSummary,
   type VisitSummary,
 } from '../core/api.service';
+import { OfflineVisitService } from '../core/offline-visit.service';
 
 @Component({
   selector: 'oa-visits',
@@ -21,6 +22,7 @@ export class VisitsComponent {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  protected readonly offline = inject(OfflineVisitService);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly visits = signal<VisitSummary[]>([]);
   protected readonly sites = signal<SiteSummary[]>([]);
@@ -31,6 +33,7 @@ export class VisitsComponent {
   protected readonly showCreate = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly offlineMode = signal(false);
   protected readonly guestLink = signal('');
   protected readonly siteQuery = signal('');
   protected readonly assetQuery = signal('');
@@ -292,26 +295,36 @@ export class VisitsComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const account = await this.api.currentUser();
-      const membership = account.memberships.find(
-        (item) => item.organisation.id === this.organisationId,
-      );
-      this.capabilities.set(membership?.role.capabilities ?? []);
-      const [visits, sites, members, entitlements] = await Promise.all([
-        this.fetchVisits(1),
-        this.api.listSites(this.organisationId),
-        this.canAssign()
-          ? this.api.listMembers(this.organisationId)
-          : Promise.resolve({ members: [] }),
-        this.api.entitlements(this.organisationId),
-      ]);
-      this.visits.set(visits.visits);
-      this.visitPagination.set(visits.pagination);
-      this.sites.set(sites.sites);
-      this.members.set(members.members);
-      this.entitlements.set(entitlements.entitlements);
-      if (!this.evEnabled() && this.form.controls.moduleKey.value === 'ev-charging')
-        this.form.controls.moduleKey.setValue(this.thermalEnabled() ? 'thermal-imaging' : 'core');
+      if (!this.offline.online()) {
+        await this.loadDownloadedVisits();
+        return;
+      }
+      try {
+        const account = await this.api.currentUser();
+        const membership = account.memberships.find(
+          (item) => item.organisation.id === this.organisationId,
+        );
+        this.capabilities.set(membership?.role.capabilities ?? []);
+        const [visits, sites, members, entitlements] = await Promise.all([
+          this.fetchVisits(1),
+          this.api.listSites(this.organisationId),
+          this.canAssign()
+            ? this.api.listMembers(this.organisationId)
+            : Promise.resolve({ members: [] }),
+          this.api.entitlements(this.organisationId),
+        ]);
+        this.visits.set(visits.visits);
+        this.visitPagination.set(visits.pagination);
+        this.sites.set(sites.sites);
+        this.members.set(members.members);
+        this.entitlements.set(entitlements.entitlements);
+        if (!this.evEnabled() && this.form.controls.moduleKey.value === 'ev-charging')
+          this.form.controls.moduleKey.setValue(this.thermalEnabled() ? 'thermal-imaging' : 'core');
+      } catch (error) {
+        const downloaded = await this.offline.packs(this.organisationId);
+        if (downloaded.length === 0) throw error;
+        await this.loadDownloadedVisits(downloaded);
+      }
     });
     const requestedSiteId = this.route.snapshot.queryParamMap.get('siteId');
     if (requestedSiteId !== null) {
@@ -324,6 +337,23 @@ export class VisitsComponent {
         this.showCreate.set(true);
       }
     }
+  }
+
+  private async loadDownloadedVisits(
+    packs?: Awaited<ReturnType<OfflineVisitService['packs']>>,
+  ): Promise<void> {
+    this.offlineMode.set(true);
+    const visits = (packs ?? (await this.offline.packs(this.organisationId))).map(
+      (pack) => pack.visit,
+    );
+    this.visits.set(visits);
+    this.visitPagination.set({
+      page: 1,
+      pageSize: visits.length || 1,
+      total: visits.length,
+      pageCount: 1,
+    });
+    this.capabilities.set(['sites.read']);
   }
 
   private async loadVisits(page: number): Promise<void> {

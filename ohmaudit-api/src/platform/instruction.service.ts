@@ -65,10 +65,11 @@ export class InstructionService {
     const coveredByManufacturer = new Map<string, Set<string>>();
     for (const set of sets) {
       for (const manufacturer of set.manufacturers) {
-        let steps = coveredByManufacturer.get(manufacturer);
+        const key = normalise(manufacturer);
+        let steps = coveredByManufacturer.get(key);
         if (steps === undefined) {
           steps = new Set<string>();
-          coveredByManufacturer.set(manufacturer, steps);
+          coveredByManufacturer.set(key, steps);
         }
         steps.add(set.step);
       }
@@ -103,7 +104,8 @@ export class InstructionService {
       })
       .sort(
         (left, right) =>
-          right.count - left.count || left.manufacturer.localeCompare(right.manufacturer),
+          left.coveredSteps.length - right.coveredSteps.length ||
+          left.manufacturer.localeCompare(right.manufacturer),
       )
       .slice(0, limit);
     return {

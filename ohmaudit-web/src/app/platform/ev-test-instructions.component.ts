@@ -136,6 +136,17 @@ export class EvTestInstructionsComponent {
     void this.scrollToEditor();
   }
 
+  protected openCoverageStep(manufacturer: string, step: EvTestStep): void {
+    const key = manufacturer.trim().toLocaleLowerCase('en-GB');
+    const existing = this.sets().find(
+      (set) =>
+        set.step === step &&
+        set.manufacturers.some((item) => item.trim().toLocaleLowerCase('en-GB') === key),
+    );
+    if (existing === undefined) this.startFor(manufacturer, step);
+    else this.openEditor(existing);
+  }
+
   protected openEditor(set: EvTestInstructionSet | null): void {
     this.editing.set(set);
     this.editorOpen.set(true);

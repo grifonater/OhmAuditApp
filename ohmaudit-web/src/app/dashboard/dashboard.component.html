@@ -52,6 +52,28 @@
       </article>
     </section>
 
+    <section class="card quick-actions" aria-label="Quick actions">
+      <div class="card-header"><h2>Quick actions</h2></div>
+      <div class="card-body action-grid">
+        <a [routerLink]="['/app/org', id, 'portfolio']"
+          ><span>◫</span><strong>Add client</strong><small>Create a customer record</small></a
+        >
+        <a [routerLink]="['/app/org', id, 'portfolio']"
+          ><span>⌖</span><strong>Add site</strong><small>Build the site register</small></a
+        >
+        <a [routerLink]="['/app/org', id, 'portfolio']"
+          ><span>◇</span><strong>Add asset</strong><small>Register managed equipment</small></a
+        >
+        <a [routerLink]="['/app/org', id, 'onboarding']"
+          ><span>+</span><strong>Invite teammate</strong><small>Issue a secure invite</small></a
+        >
+        <a [routerLink]="['/app/org', id, 'equipment']"
+          ><span>⌁</span><strong>Equipment register</strong
+          ><small>Manage cameras and test instruments</small></a
+        >
+      </div>
+    </section>
+
     <div class="dashboard-grid">
       <section class="card attention-card">
         <div class="card-header">
@@ -158,6 +180,38 @@
         </div>
       </section>
     </div>
+
+    <section class="card team-card">
+      <div class="card-header">
+        <div>
+          <h2>Team</h2>
+          <small>{{ members().length }} visible members</small>
+        </div>
+        <a [routerLink]="['/app/org', id, 'security']">Manage security</a>
+      </div>
+      <div class="card-body">
+        @if (members().length > 0) {
+          <ul class="member-list">
+            @for (member of members(); track member.id) {
+              <li>
+                <span class="member-avatar">{{
+                  (member.user.displayName || member.user.email).charAt(0)
+                }}</span
+                ><span
+                  ><strong>{{ member.user.displayName || member.user.email }}</strong
+                  ><small>{{ member.user.email }}</small></span
+                ><span class="badge">{{ member.role.name }}</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <div class="empty-state compact-empty">
+            <span class="empty-icon">+</span>
+            <p>Team details require the user-management capability.</p>
+          </div>
+        }
+      </div>
+    </section>
   } @else if (!loading()) {
     <section class="card no-organisation">
       <div class="card-body empty-state">

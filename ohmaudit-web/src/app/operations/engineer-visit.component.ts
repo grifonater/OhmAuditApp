@@ -69,6 +69,7 @@ export class EngineerVisitComponent {
   protected readonly error = signal('');
   protected readonly saved = signal('');
   protected readonly photoCount = signal(0);
+  protected readonly normalPhotoCount = signal(0);
   protected readonly submitted = signal(false);
   protected readonly recentlySubmittedTaskId = signal('');
   protected readonly addingCharger = signal(false);
@@ -126,6 +127,10 @@ export class EngineerVisitComponent {
     maximumPowerKw: new FormControl<number | null>(null),
     dcRcdType: new FormControl<'TYPE_B' | 'RDC_DD' | 'NONE'>('NONE', { nonNullable: true }),
   });
+  protected readonly normalPhotoDescription = new FormControl('', {
+    nonNullable: true,
+    validators: [Validators.required, Validators.maxLength(500)],
+  });
 
   constructor() {
     merge(
@@ -178,6 +183,7 @@ export class EngineerVisitComponent {
         await this.offline.storePack(this.organisationId, refreshed);
       }
       await this.cacheAssetImages(this.visit() ?? visit);
+      await this.offline.cacheThermalPack(this.visit() ?? visit, this.guestToken || undefined);
       const verified = await this.offline.pack(this.visitId, this.guestToken || undefined);
       if (verified === undefined)
         throw new Error('The visit could not be verified for offline use on this device.');
@@ -207,7 +213,8 @@ export class EngineerVisitComponent {
       await this.loadAssetImage(task);
       const draft = await this.offline.draft(inspection.id);
       if (draft) this.restoreDraft(draft);
-      this.photoCount.set(await this.offline.photoCount(inspection.id));
+      this.photoCount.set(await this.offline.photoCount(inspection.id, 'fault'));
+      this.normalPhotoCount.set(await this.offline.photoCount(inspection.id, 'normal-state'));
     });
   }
 
@@ -502,12 +509,24 @@ export class EngineerVisitComponent {
     return suppliesReady && connectorsReady;
   }
 
-  protected async capturePhoto(event: Event): Promise<void> {
+  protected async capturePhoto(
+    event: Event,
+    kind: 'fault' | 'normal-state' = 'fault',
+  ): Promise<void> {
     const file = (event.target as HTMLInputElement).files?.[0];
+    (event.target as HTMLInputElement).value = '';
     const inspection = this.inspection();
     const visit = this.visit();
     const assetId = this.selectedTask()?.asset?.id;
     if (!file || !inspection || !visit || !assetId) return;
+    const description =
+      kind === 'normal-state'
+        ? this.normalPhotoDescription.value.trim()
+        : this.form.controls.defectTitle.value.trim() || 'Engineer inspection evidence';
+    if (description === '') {
+      this.error.set('Add a description before selecting the charger image.');
+      return;
+    }
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       this.error.set('Use a JPEG, PNG, or WebP photo.');
       return;
@@ -524,8 +543,12 @@ export class EngineerVisitComponent {
       assetId,
       this.guestToken || undefined,
       compressed,
+      kind,
+      description,
     );
-    this.photoCount.set(await this.offline.photoCount(inspection.id));
+    this.photoCount.set(await this.offline.photoCount(inspection.id, 'fault'));
+    this.normalPhotoCount.set(await this.offline.photoCount(inspection.id, 'normal-state'));
+    if (kind === 'normal-state') this.normalPhotoDescription.reset('');
   }
 
   protected async submit(): Promise<void> {
@@ -598,18 +621,7 @@ export class EngineerVisitComponent {
       ...(evSubmission === undefined ? {} : evSubmission),
     };
     await this.run(async () => {
-      const readySubmission = this.offline.online()
-        ? this.offline.withPhotoIds(
-            submission,
-            await this.offline.uploadInspectionPhotos(inspection.id),
-          )
-        : submission;
-      this.photoCount.set(await this.offline.photoCount(inspection.id));
-      if (this.offline.online()) {
-        if (this.guestToken)
-          await this.api.submitGuestInspection(this.guestToken, inspection.id, readySubmission);
-        else await this.api.submitInspection(this.organisationId, inspection.id, readySubmission);
-      } else if (this.guestToken)
+      if (this.guestToken)
         await this.offline.queueGuest(
           this.guestToken,
           visit.organisationId,
@@ -639,9 +651,8 @@ export class EngineerVisitComponent {
         updatedVisit,
         this.guestToken || undefined,
       );
-      this.saved.set(
-        this.offline.online() ? 'Inspection submitted' : 'Queued safely — will sync when online',
-      );
+      const queued = (await this.offline.pendingTaskIds(updatedVisit)).has(task.id);
+      this.saved.set(queued ? 'Queued safely — will sync when online' : 'Inspection submitted');
     });
   }
 

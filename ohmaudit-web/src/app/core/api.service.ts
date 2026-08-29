@@ -443,6 +443,10 @@ export interface EvChargePoint {
   }>;
 }
 export type ChargerDataPlateField = 'manufacturer' | 'model' | 'serialNumber' | 'maximumPowerKw';
+export type ChargerDataPlateModel =
+  | '@cf/moondream/moondream3.1-9B-A2B'
+  | '@cf/meta/llama-4-scout-17b-16e-instruct'
+  | '@cf/mistralai/mistral-small-3.1-24b-instruct';
 export interface ChargerDataPlateCandidate {
   field: ChargerDataPlateField;
   value: string;
@@ -811,6 +815,7 @@ export class ApiService {
       sortOrder?: number;
       mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
       size: number;
+      clientUploadId?: string;
     },
   ) {
     return this.request<{ media: AssetMedia }>('/media', {
@@ -1315,15 +1320,50 @@ export class ApiService {
       },
     );
   }
+  uploadInspectionAssetPhoto(
+    organisationId: string,
+    inspectionId: string,
+    photo: Blob,
+    kind: 'fault' | 'normal-state',
+    description: string,
+    clientUploadId: string,
+  ) {
+    return this.request<{ media: { id: string } }>(
+      `/inspections/${inspectionId}/asset-media?organisationId=${encodeURIComponent(organisationId)}&kind=${kind}&description=${encodeURIComponent(description)}&uploadId=${encodeURIComponent(clientUploadId)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': photo.type, 'x-file-size': String(photo.size) },
+        body: photo,
+      },
+    );
+  }
+  uploadGuestInspectionAssetPhoto(
+    token: string,
+    inspectionId: string,
+    photo: Blob,
+    kind: 'fault' | 'normal-state',
+    description: string,
+    clientUploadId: string,
+  ) {
+    return this.publicRequest<{ media: { id: string } }>(
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/media?kind=${kind}&description=${encodeURIComponent(description)}&uploadId=${encodeURIComponent(clientUploadId)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': photo.type, 'x-file-size': String(photo.size) },
+        body: photo,
+      },
+    );
+  }
   uploadGuestThermalImage(
     token: string,
     inspectionId: string,
     kind: 'unclassified' | 'thermal' | 'standard',
     image: Blob,
     originalFilename?: string,
+    clientUploadId?: string,
   ) {
     return this.publicRequest<{ media: AssetMedia }>(
-      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/thermal-media?kind=${kind}${originalFilename ? `&name=${encodeURIComponent(originalFilename)}` : ''}`,
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/thermal-media?kind=${kind}${originalFilename ? `&name=${encodeURIComponent(originalFilename)}` : ''}${clientUploadId ? `&uploadId=${encodeURIComponent(clientUploadId)}` : ''}`,
       {
         method: 'POST',
         headers: { 'content-type': image.type, 'x-file-size': String(image.size) },
@@ -1376,12 +1416,15 @@ export class ApiService {
       { method: 'POST', headers: { 'content-type': image.type }, body: image },
     );
   }
-  debugDataPlateExtraction(image: Blob) {
-    return this.request<ChargerDataPlateDebug>('/platform/ai/dataplate/debug', {
-      method: 'POST',
-      headers: { 'content-type': image.type },
-      body: image,
-    });
+  debugDataPlateExtraction(image: Blob, model: ChargerDataPlateModel) {
+    return this.request<ChargerDataPlateDebug>(
+      `/platform/ai/dataplate/debug?model=${encodeURIComponent(model)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': image.type },
+        body: image,
+      },
+    );
   }
   listInspections(organisationId: string, status = '') {
     return this.request<{ inspections: InspectionSummary[] }>(

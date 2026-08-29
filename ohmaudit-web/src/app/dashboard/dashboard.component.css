@@ -220,6 +220,103 @@
   max-width: 42rem;
   margin-top: 2rem;
 }
+.quick-actions {
+  margin-bottom: 1rem;
+}
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.75rem;
+}
+.action-grid a {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem;
+  border: 1px solid var(--oa-line-soft);
+  border-radius: 0.65rem;
+  color: var(--oa-ink);
+  background: var(--oa-canvas-soft);
+  text-decoration: none;
+  transition: 0.15s;
+}
+.action-grid a:hover {
+  border-color: #a7d9d4;
+  background: var(--oa-teal-50);
+  transform: translateY(-1px);
+}
+.action-grid a > span {
+  width: 2rem;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.25rem;
+  border-radius: 0.5rem;
+  color: var(--oa-teal-600);
+  background: var(--oa-teal-100);
+}
+.action-grid strong {
+  font-size: 0.82rem;
+}
+.action-grid small {
+  color: var(--oa-ink-muted);
+}
+.team-card {
+  margin-top: 1rem;
+}
+.team-card .card-header > div {
+  display: grid;
+}
+.team-card .card-header small {
+  color: var(--oa-ink-muted);
+}
+.team-card .card-header a {
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+.member-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.member-list li {
+  min-height: 3.4rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  border-bottom: 1px solid var(--oa-line-soft);
+}
+.member-list li:last-child {
+  border-bottom: 0;
+}
+.member-avatar {
+  width: 2rem;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 0.5rem;
+  color: var(--oa-teal-600);
+  background: var(--oa-teal-100);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.member-list li > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+}
+.member-list strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.78rem;
+}
+.member-list small {
+  color: var(--oa-ink-muted);
+}
+.compact-empty {
+  padding: 1.5rem;
+}
 @media (max-width: 78rem) {
   .metric-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -235,6 +332,9 @@
   }
   .setup-card {
     grid-row: auto;
+  }
+  .action-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 @media (max-width: 36rem) {

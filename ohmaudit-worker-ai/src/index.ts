@@ -3,6 +3,8 @@ import { extractRoute, debugExtractRoute } from './features/dataplate/routes';
 
 export type { AiBindings };
 export type { ChargerDataPlateField, ExtractionCandidate } from './features/dataplate/schema';
+export { dataPlateDebugModels, isDataPlateDebugModel } from './features/dataplate/models';
+export type { DataPlateDebugModel } from './features/dataplate/models';
 export {
   candidateFields,
   createCandidate,

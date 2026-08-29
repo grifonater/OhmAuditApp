@@ -1,0 +1,36 @@
+<main class="offline-jobs-page">
+  <header>
+    <strong class="offline-wordmark"><span>Ω</span> OhmAudit</strong>
+    <span class="offline-pill">Offline</span>
+  </header>
+  <section>
+    <p class="eyebrow">Downloaded work</p>
+    <h1>Jobs available offline</h1>
+    <p class="intro">
+      Continue a downloaded inspection normally. Completed work and images stay safely on this
+      device and upload automatically when a connection returns.
+    </p>
+    <div class="offline-job-list">
+      @for (pack of packs(); track pack.visitId) {
+        <a class="offline-job-card" [routerLink]="jobLink(pack)">
+          <span>
+            <small>{{ pack.visit.customer.name }} › {{ pack.visit.site.name }}</small>
+            <strong>{{ pack.visit.title }}</strong>
+            <small
+              >{{ pack.visit.site.postcode || 'No postcode' }} ·
+              {{ pack.visit.tasks.length }} task(s)</small
+            >
+          </span>
+          <span aria-hidden="true">→</span>
+        </a>
+      } @empty {
+        <div class="empty-state">
+          <h2>No downloaded jobs</h2>
+          <p>
+            Reconnect, open a job, and choose “Download visit for offline use” before going offline.
+          </p>
+        </div>
+      }
+    </div>
+  </section>
+</main>

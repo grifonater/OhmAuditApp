@@ -431,7 +431,7 @@ describe('InstructionService coverage', () => {
         Promise.resolve([{ manufacturer: 'Schneider' }, { manufacturer: 'NewBrand' }]),
       findManyInstructions: () =>
         Promise.resolve([
-          { step: 'unit', manufacturers: ['abb'] },
+          { step: 'unit', manufacturers: ['ABB'] },
           { step: 'submit', manufacturers: [] },
         ]),
     });
@@ -439,12 +439,18 @@ describe('InstructionService coverage', () => {
     expect(result.total).toBe(3);
     expect(result.genericSteps).toEqual(['submit']);
     expect(result.manufacturers).toHaveLength(3);
-    const [top, abbr, newbrand] = result.manufacturers;
-    expect(top).toMatchObject({ manufacturer: 'Schneider', count: 5 });
-    expect(top!.missingSteps).toEqual(['unit', 'supplies', 'connectors', 'condition', 'submit']);
-    expect(abbr).toMatchObject({ manufacturer: 'ABB', count: 3, coveredSteps: ['unit'] });
-    expect(abbr!.missingSteps).toEqual(['supplies', 'connectors', 'condition', 'submit']);
+    const [newbrand, schneider, abb] = result.manufacturers;
     expect(newbrand).toMatchObject({ manufacturer: 'NewBrand', count: 0 });
+    expect(schneider).toMatchObject({ manufacturer: 'Schneider', count: 5 });
+    expect(schneider!.missingSteps).toEqual([
+      'unit',
+      'supplies',
+      'connectors',
+      'condition',
+      'submit',
+    ]);
+    expect(abb).toMatchObject({ manufacturer: 'ABB', count: 3, coveredSteps: ['unit'] });
+    expect(abb!.missingSteps).toEqual(['supplies', 'connectors', 'condition', 'submit']);
   });
 
   it('filters manufacturers by query', async () => {

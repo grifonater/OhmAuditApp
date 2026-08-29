@@ -109,6 +109,11 @@ const dataPlateDebugSchema = dataPlateAnalysisSchema.extend({
   imageBytes: z.number().int().nonnegative(),
   parseError: z.string().optional(),
 });
+const dataPlateDebugModelSchema = z.enum([
+  '@cf/moondream/moondream3.1-9B-A2B',
+  '@cf/meta/llama-4-scout-17b-16e-instruct',
+  '@cf/mistralai/mistral-small-3.1-24b-instruct',
+]);
 const capabilityKey = z.enum(capabilities);
 const roleInput = z.object({
   name: z.string().trim().min(2).max(80),
@@ -192,6 +197,7 @@ const mediaInput = z.object({
   sortOrder: z.number().int().min(0).max(100_000).optional(),
   mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
   size: z.number().int().positive().max(2_000_000),
+  clientUploadId: z.string().trim().min(1).max(200).optional(),
 });
 const mediaUpdateInput = z
   .object({
@@ -1834,10 +1840,25 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         'perform',
       );
     }
-    const { organisationId, ...media } = input;
+    const { organisationId, clientUploadId, ...media } = input;
+    const uploadTag = clientUploadId === undefined ? undefined : `offline-upload:${clientUploadId}`;
+    if (uploadTag !== undefined) {
+      const existing = await prisma.media.findFirst({
+        where: {
+          organisationId,
+          entityType: media.entityType,
+          entityId: media.entityId,
+          tags: { has: uploadTag },
+        },
+      });
+      if (existing !== null) return context.json({ media: existing }, 200);
+    }
     return context.json(
       {
-        media: await new PortfolioService(prisma).registerMedia(organisationId, user.id, media),
+        media: await new PortfolioService(prisma).registerMedia(organisationId, user.id, {
+          ...media,
+          ...(uploadTag === undefined ? {} : { tags: [...(media.tags ?? []), uploadTag] }),
+        }),
       },
       201,
     );
@@ -1880,9 +1901,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         422,
       );
     const contentLength = Number(context.req.header('content-length') ?? 0);
-    if (contentLength > 2_000_000)
+    if (!Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > 2_000_000)
       throw new DomainError('MEDIA_TOO_LARGE', 'Images must be 2 MB or smaller.', 413);
-    await environment.MEDIA_BUCKET.put(media.storageKey, context.req.raw.body, {
+    const content = await context.req.arrayBuffer();
+    if (content.byteLength !== contentLength || content.byteLength !== media.size)
+      throw new DomainError('MEDIA_SIZE_INVALID', 'The image size does not match its record.', 422);
+    await environment.MEDIA_BUCKET.put(media.storageKey, content, {
       httpMetadata: { contentType: media.mimeType },
     });
     return context.json({ media: await portfolio.markMediaAvailable(media.id) });
@@ -2261,6 +2285,70 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     );
     return context.json({ ...result, guestUrl: `/guest/visit/${result.token}` }, 201);
   });
+  app.post('/api/v1/inspections/:inspectionId/asset-media', async (context) => {
+    const environment = parseEnvironment(context.env);
+    if (environment.MEDIA_BUCKET === undefined)
+      throw new DomainError('MEDIA_STORAGE_UNAVAILABLE', 'Media storage is not configured.', 503);
+    const organisationId = context.req.query('organisationId') ?? '';
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const mimeType = z
+      .enum(['image/jpeg', 'image/png', 'image/webp'])
+      .parse(context.req.header('content-type'));
+    const size = Number(context.req.header('content-length') ?? 0);
+    if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
+      throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
+    const kind = z.enum(['fault', 'normal-state']).parse(context.req.query('kind'));
+    const description = z.string().trim().min(1).max(500).parse(context.req.query('description'));
+    const uploadId = z.uuid().parse(context.req.query('uploadId'));
+    const prisma = prismaFor(environment);
+    const inspection = await new InspectionService(prisma).detail(
+      organisationId,
+      z.uuid().parse(context.req.param('inspectionId')),
+    );
+    if (inspection.assetId === null)
+      throw new DomainError('INSPECTION_ASSET_NOT_FOUND', 'This inspection has no asset.', 422);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      inspection.moduleKey,
+      'perform',
+    );
+    const portfolio = new PortfolioService(prisma);
+    const uploadTag = `offline-upload:${uploadId}`;
+    const existing = await prisma.media.findFirst({
+      where: {
+        organisationId,
+        entityType: 'Asset',
+        entityId: inspection.assetId,
+        tags: { has: uploadTag },
+      },
+    });
+    if (existing?.status === 'AVAILABLE') return context.json({ media: existing }, 200);
+    const content = await context.req.arrayBuffer();
+    if (content.byteLength !== size)
+      throw new DomainError('MEDIA_SIZE_INVALID', 'The image size does not match the upload.', 422);
+    const media =
+      existing ??
+      (await portfolio.registerMedia(organisationId, user.id, {
+        entityType: 'Asset',
+        entityId: inspection.assetId,
+        category: kind === 'normal-state' ? 'asset-image' : 'inspection-fault',
+        caption: description,
+        tags: [kind === 'normal-state' ? 'normal-state' : 'fault-evidence', uploadTag],
+        mimeType,
+        size,
+      }));
+    await environment.MEDIA_BUCKET.put(media.storageKey, content, {
+      httpMetadata: { contentType: mimeType },
+    });
+    return context.json({ media: await portfolio.markMediaAvailable(media.id) }, 201);
+  });
   app.post('/api/v1/visits/:visitId/sync', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
@@ -2438,9 +2526,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const mimeType = z
       .enum(['image/jpeg', 'image/png', 'image/webp'])
       .parse(context.req.header('content-type'));
-    const size = Number(
-      context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
-    );
+    const size = Number(context.req.header('content-length') ?? 0);
     if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
       throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
     const visitService = new VisitService(prismaFor(environment));
@@ -2448,16 +2534,50 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       context.req.param('token'),
       context.req.param('inspectionId'),
     );
+    const kind = z
+      .enum(['fault', 'normal-state'])
+      .default('fault')
+      .parse(context.req.query('kind'));
+    const description = z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .default('Engineer inspection evidence')
+      .parse(context.req.query('description'));
+    const uploadId = z.uuid().optional().parse(context.req.query('uploadId'));
     const portfolio = new PortfolioService(prismaFor(environment));
-    const media = await portfolio.registerMedia(owner.organisationId, undefined, {
-      entityType: 'Asset',
-      entityId: owner.assetId,
-      category: 'inspection-fault',
-      caption: 'Engineer inspection evidence',
-      mimeType,
-      size,
-    });
-    await environment.MEDIA_BUCKET.put(media.storageKey, context.req.raw.body, {
+    const uploadTag = uploadId === undefined ? undefined : `offline-upload:${uploadId}`;
+    const existing =
+      uploadTag === undefined
+        ? null
+        : await prismaFor(environment).media.findFirst({
+            where: {
+              organisationId: owner.organisationId,
+              entityType: 'Asset',
+              entityId: owner.assetId,
+              tags: { has: uploadTag },
+            },
+          });
+    if (existing?.status === 'AVAILABLE') return context.json({ media: existing }, 200);
+    const content = await context.req.arrayBuffer();
+    if (content.byteLength !== size)
+      throw new DomainError('MEDIA_SIZE_INVALID', 'The image size does not match the upload.', 422);
+    const media =
+      existing ??
+      (await portfolio.registerMedia(owner.organisationId, undefined, {
+        entityType: 'Asset',
+        entityId: owner.assetId,
+        category: kind === 'normal-state' ? 'asset-image' : 'inspection-fault',
+        caption: description,
+        tags: [
+          kind === 'normal-state' ? 'normal-state' : 'fault-evidence',
+          ...(uploadTag === undefined ? [] : [uploadTag]),
+        ],
+        mimeType,
+        size,
+      }));
+    await environment.MEDIA_BUCKET.put(media.storageKey, content, {
       httpMetadata: { contentType: mimeType },
     });
     return context.json({ media: await portfolio.markMediaAvailable(media.id) }, 201);
@@ -2471,13 +2591,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       const mimeType = z
         .enum(['image/jpeg', 'image/png', 'image/webp'])
         .parse(context.req.header('content-type'));
-      const size = Number(
-        context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
-      );
+      const size = Number(context.req.header('content-length') ?? 0);
       if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
         throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
       const kind = z.enum(['unclassified', 'thermal', 'standard']).parse(context.req.query('kind'));
       const originalFilename = optionalTrimmed(500).parse(context.req.query('name'));
+      const uploadId = z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .optional()
+        .parse(context.req.query('uploadId'));
       const prisma = prismaFor(environment);
       const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
       await new EntitlementService(prisma).requireModule(visit.organisationId, 'thermal-imaging');
@@ -2493,27 +2618,50 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           404,
         );
       const portfolio = new PortfolioService(prisma);
-      const media = await portfolio.registerMedia(visit.organisationId, undefined, {
-        entityType: 'Inspection',
-        entityId: inspectionId,
-        category:
-          kind === 'thermal'
-            ? 'thermal-image'
-            : kind === 'standard'
-              ? 'standard-image'
-              : 'unclassified-image',
-        caption:
-          originalFilename ??
-          (kind === 'thermal'
-            ? 'Infrared image'
-            : kind === 'standard'
-              ? 'Standard image'
-              : 'Uploaded image'),
-        ...(originalFilename === undefined ? {} : { originalFilename }),
-        mimeType,
-        size,
-      });
-      await environment.MEDIA_BUCKET.put(media.storageKey, context.req.raw.body, {
+      const uploadTag = uploadId === undefined ? undefined : `offline-upload:${uploadId}`;
+      const existing =
+        uploadTag === undefined
+          ? null
+          : await prisma.media.findFirst({
+              where: {
+                organisationId: visit.organisationId,
+                entityType: 'Inspection',
+                entityId: inspectionId,
+                tags: { has: uploadTag },
+              },
+            });
+      if (existing?.status === 'AVAILABLE') return context.json({ media: existing }, 200);
+      const content = await context.req.arrayBuffer();
+      if (content.byteLength !== size)
+        throw new DomainError(
+          'MEDIA_SIZE_INVALID',
+          'The image size does not match the upload.',
+          422,
+        );
+      const media =
+        existing ??
+        (await portfolio.registerMedia(visit.organisationId, undefined, {
+          entityType: 'Inspection',
+          entityId: inspectionId,
+          category:
+            kind === 'thermal'
+              ? 'thermal-image'
+              : kind === 'standard'
+                ? 'standard-image'
+                : 'unclassified-image',
+          caption:
+            originalFilename ??
+            (kind === 'thermal'
+              ? 'Infrared image'
+              : kind === 'standard'
+                ? 'Standard image'
+                : 'Uploaded image'),
+          ...(originalFilename === undefined ? {} : { originalFilename }),
+          ...(uploadTag === undefined ? {} : { tags: [uploadTag] }),
+          mimeType,
+          size,
+        }));
+      await environment.MEDIA_BUCKET.put(media.storageKey, content, {
         httpMetadata: { contentType: mimeType },
       });
       return context.json({ media: await portfolio.markMediaAvailable(media.id) }, 201);
@@ -3587,6 +3735,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       throw new DomainError('IMAGE_TOO_LARGE', 'The image must be 2 MB or smaller.', 413);
     if (context.req.raw.body === null)
       throw new DomainError('IMAGE_EMPTY', 'Select an image to analyse.', 422);
+    const selectedModel = dataPlateDebugModelSchema.safeParse(context.req.query('model'));
+    if (!selectedModel.success)
+      throw new DomainError('AI_MODEL_INVALID', 'Select a supported vision model.', 422);
     const correlationId = context.get('correlationId');
     let response: Response;
     try {
@@ -3594,7 +3745,11 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         'https://ohmaudit-ai.internal/v1/debug/extract/charger-dataplate',
         {
           method: 'POST',
-          headers: { 'content-type': mimeType, 'x-correlation-id': correlationId },
+          headers: {
+            'content-type': mimeType,
+            'x-correlation-id': correlationId,
+            'x-ai-model-id': selectedModel.data,
+          },
           body: context.req.raw.body,
         },
       );

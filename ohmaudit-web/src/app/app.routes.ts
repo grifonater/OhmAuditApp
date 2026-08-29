@@ -4,6 +4,11 @@ import { authorizationGuard } from './core/authorization.guard';
 
 export const routes: Routes = [
   {
+    path: 'offline-jobs',
+    loadComponent: () =>
+      import('./operations/offline-jobs.component').then((module) => module.OfflineJobsComponent),
+  },
+  {
     path: 'login',
     loadComponent: () => import('./auth/login.component').then((module) => module.LoginComponent),
   },
@@ -77,14 +82,6 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./settings/user-settings.component').then(
             (module) => module.UserSettingsComponent,
-          ),
-      },
-      {
-        path: 'org/:organisationId',
-        canActivate: [authorizationGuard],
-        loadComponent: () =>
-          import('./organisation/organisation.component').then(
-            (module) => module.OrganisationComponent,
           ),
       },
       {

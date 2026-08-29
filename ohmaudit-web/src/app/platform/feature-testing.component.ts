@@ -4,6 +4,7 @@ import {
   type ChargerDataPlateCandidate,
   type ChargerDataPlateDebug,
   type ChargerDataPlateField,
+  type ChargerDataPlateModel,
 } from '../core/api.service';
 import { compressImage } from '../core/image-compression';
 
@@ -21,6 +22,18 @@ export class FeatureTestingComponent {
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly result = signal<ChargerDataPlateDebug | null>(null);
+  protected readonly models: ReadonlyArray<{ id: ChargerDataPlateModel; label: string }> = [
+    { id: '@cf/moondream/moondream3.1-9B-A2B', label: 'Moondream 3.1 9B (production)' },
+    { id: '@cf/meta/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B' },
+    { id: '@cf/mistralai/mistral-small-3.1-24b-instruct', label: 'Mistral Small 3.1 24B' },
+  ];
+  protected readonly selectedModel = signal<ChargerDataPlateModel>(this.models[0]!.id);
+
+  protected onModelChange(event: Event): void {
+    this.selectedModel.set((event.target as HTMLSelectElement).value as ChargerDataPlateModel);
+    this.result.set(null);
+    this.error.set('');
+  }
 
   protected onDataPlateFile(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -52,7 +65,7 @@ export class FeatureTestingComponent {
     try {
       const image = await compressImage(file, { maxDimension: 3072, targetBytes: 1_000_000 });
       if (image.size > 2_000_000) throw new Error('The photo is too large. Try a closer crop.');
-      this.result.set(await this.api.debugDataPlateExtraction(image));
+      this.result.set(await this.api.debugDataPlateExtraction(image, this.selectedModel()));
     } catch (error: unknown) {
       this.error.set(
         error instanceof Error ? error.message : 'The data plate could not be analysed.',

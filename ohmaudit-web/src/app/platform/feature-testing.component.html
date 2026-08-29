@@ -23,6 +23,18 @@
         <p>JPEG, PNG or WebP, up to 2 MB. A clear, close photo without glare reads best.</p>
       </div>
     </div>
+    <label class="field model-field">
+      Vision model
+      <select [value]="selectedModel()" [disabled]="busy()" (change)="onModelChange($event)">
+        @for (model of models; track model.id) {
+          <option [value]="model.id">{{ model.label }}</option>
+        }
+      </select>
+      <small
+        >The production inspection tool remains on Moondream until its configured model
+        changes.</small
+      >
+    </label>
     <label class="button secondary compact">
       Choose photo
       <input

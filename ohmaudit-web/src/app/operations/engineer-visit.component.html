@@ -317,6 +317,47 @@
                   </select></label
                 >
               </div>
+              <div class="normal-state-photo">
+                <div>
+                  <strong>Charge point condition photos</strong>
+                  <small
+                    >Photograph the complete charger in its normal state. Images are attached to the
+                    asset.</small
+                  >
+                </div>
+                <label class="field">
+                  Image description
+                  <input
+                    [formControl]="normalPhotoDescription"
+                    maxlength="500"
+                    placeholder="e.g. Front view before testing, bay 4"
+                  />
+                </label>
+                <div class="data-plate-actions">
+                  <label class="button secondary touch-button data-plate-capture">
+                    Upload image
+                    <input
+                      hidden
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      [disabled]="normalPhotoDescription.invalid"
+                      (change)="capturePhoto($event, 'normal-state')"
+                    />
+                  </label>
+                  <label class="button touch-button data-plate-capture">
+                    Take photo
+                    <input
+                      hidden
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      capture="environment"
+                      [disabled]="normalPhotoDescription.invalid"
+                      (change)="capturePhoto($event, 'normal-state')"
+                    />
+                  </label>
+                </div>
+                <p class="muted">{{ normalPhotoCount() }} charger image(s) saved on this device</p>
+              </div>
             </section>
 
             <section id="supplies" class="card inspection-step">

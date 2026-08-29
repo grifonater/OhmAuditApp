@@ -80,7 +80,7 @@ const emptyDetails = (): ThermalDetails => ({
 })
 export class ThermalInspectionComponent {
   private readonly api = inject(ApiService);
-  private readonly offline = inject(OfflineVisitService);
+  protected readonly offline = inject(OfflineVisitService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -178,19 +178,11 @@ export class ThermalInspectionComponent {
     if (!inspection || !files.length) return;
     const invalid = files.find(
       ({ type, size }) =>
-        !['image/jpeg', 'image/png', 'image/webp'].includes(type) || size < 1 || size > 2_000_000,
+        !['image/jpeg', 'image/png', 'image/webp'].includes(type) || size < 1 || size > 25_000_000,
     );
     if (invalid) {
-      this.error.set(
-        `${invalid.name} is not a supported image or is larger than 2 MB. Compress the image and try again.`,
-      );
+      this.error.set(`${invalid.name} is not a supported image or is larger than 25 MB.`);
       input.value = '';
-      return;
-    }
-    if (!navigator.onLine) {
-      this.error.set(
-        'Reconnect before uploading images. Your report details remain saved on this device.',
-      );
       return;
     }
     this.uploading.set(true);
@@ -203,26 +195,50 @@ export class ThermalInspectionComponent {
             const blob = await compressPhoto(file);
             if (blob.size > 2_000_000)
               throw new Error(`${file.name} is larger than 2 MB after compression.`);
-            const uploaded = this.guestToken
-              ? await this.api.uploadGuestThermalImage(
-                  this.guestToken,
+            const media = this.offline.online()
+              ? (this.guestToken
+                  ? await this.api.uploadGuestThermalImage(
+                      this.guestToken,
+                      inspection.id,
+                      'unclassified',
+                      blob,
+                      file.name,
+                    )
+                  : await this.uploadAuthenticated(inspection.id, file.name, blob)
+                ).media
+              : await this.offline.storeThermalImage(
+                  this.organisationId || this.visit()?.organisationId || '',
+                  this.visit()?.id ?? this.visitId,
                   inspection.id,
-                  'unclassified',
+                  this.guestToken || undefined,
                   blob,
                   file.name,
-                )
-              : await this.uploadAuthenticated(inspection.id, file.name, blob);
-            this.images.update((items) => [...items, uploaded.media]);
+                  this.images().length + completed,
+                );
+            if (!media.id.startsWith('offline:'))
+              await this.offline.cacheThermalImage(
+                this.organisationId || this.visit()?.organisationId || '',
+                this.visit()?.id ?? this.visitId,
+                inspection.id,
+                this.guestToken || undefined,
+                media,
+                blob,
+              );
+            this.images.update((items) => [...items, media]);
             this.imageUrls.update((urls) => ({
               ...urls,
-              [uploaded.media.id]: URL.createObjectURL(blob),
+              [media.id]: URL.createObjectURL(blob),
             }));
             completed += 1;
             this.uploadProgress.set(`${completed} of ${files.length} uploaded`);
           }),
         );
       }
-      this.saved.set(`${files.length} image${files.length === 1 ? '' : 's'} uploaded`);
+      this.saved.set(
+        this.offline.online()
+          ? `${files.length} image${files.length === 1 ? '' : 's'} uploaded`
+          : `${files.length} image${files.length === 1 ? '' : 's'} saved on device`,
+      );
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'The images could not be uploaded.');
     } finally {
@@ -427,11 +443,6 @@ export class ThermalInspectionComponent {
       );
       return;
     }
-    if (!navigator.onLine) {
-      await this.saveDraft('Saved on this device — reconnect to submit');
-      this.error.set('Reconnect to submit this image-based report.');
-      return;
-    }
     const defects = this.targets()
       .filter(({ condition }) => condition === 'FAULT')
       .map((target) => ({
@@ -476,9 +487,23 @@ export class ThermalInspectionComponent {
     try {
       await this.saveDraft();
       if (this.guestToken)
-        await this.api.submitGuestInspection(this.guestToken, inspection.id, submission);
-      else await this.api.submitInspection(this.organisationId, inspection.id, submission);
-      await this.offline.discardDraft(inspection.id);
+        await this.offline.queueGuest(
+          this.guestToken,
+          visit.organisationId,
+          visit.id,
+          this.taskId,
+          inspection.id,
+          submission,
+        );
+      else
+        await this.offline.queue(
+          this.organisationId,
+          visit.id,
+          'Inspection',
+          'SUBMIT_INSPECTION',
+          { inspectionId: inspection.id, submission },
+          this.taskId,
+        );
       await this.router.navigate(
         this.guestToken
           ? ['/guest/visit', this.guestToken]
@@ -520,27 +545,64 @@ export class ThermalInspectionComponent {
   private async load(): Promise<void> {
     this.busy.set(true);
     try {
-      const visit = this.guestToken
-        ? (await this.api.guestVisit(this.guestToken)).visit
-        : (await this.api.getVisit(this.organisationId, this.visitId)).visit;
+      const cached = await this.offline.pack(this.visitId, this.guestToken || undefined);
+      let visit: VisitSummary;
+      if (!this.offline.online()) {
+        if (cached === undefined)
+          throw new Error(
+            'This visit is not saved for offline use. Reconnect and download the visit pack.',
+          );
+        visit = cached;
+      } else {
+        try {
+          visit = this.guestToken
+            ? (await this.api.guestVisit(this.guestToken)).visit
+            : (await this.api.getVisit(this.organisationId, this.visitId)).visit;
+        } catch (error) {
+          if (cached === undefined) throw error;
+          visit = cached;
+        }
+      }
       const task = visit.tasks.find(({ id }) => id === this.taskId);
       if (!task || task.moduleKey !== 'thermal-imaging')
         throw new Error('This thermal imaging task is unavailable.');
       let inspectionId = task.inspection?.id;
+      if (!inspectionId && !this.offline.online())
+        throw new Error('This thermal task was not prepared in the downloaded visit pack.');
       if (!inspectionId)
         inspectionId = this.guestToken
           ? (await this.api.startGuestInspection(this.guestToken, task.id)).inspection.id
           : (await this.api.startInspection(this.organisationId, task.id)).inspection.id;
       this.visit.set(visit);
       this.task.set(task);
-      const equipmentRequest = this.guestToken
-        ? this.api.listGuestEquipment(this.guestToken)
-        : this.api.listEquipment(this.organisationId);
-      const [, equipment] = await Promise.all([
-        this.refreshInspection(inspectionId),
-        equipmentRequest,
-      ]);
-      this.equipment.set(equipment.equipment);
+      const cachedContext = await this.offline.thermalContext(inspectionId);
+      if (!this.offline.online() && cachedContext === undefined)
+        throw new Error(
+          'This thermal task is not available offline. Download the visit pack again.',
+        );
+      if (!this.offline.online() && cachedContext !== undefined) {
+        this.inspection.set(cachedContext.inspection);
+        this.equipment.set(cachedContext.equipment);
+        this.images.set(await this.offline.thermalImages(inspectionId));
+        void this.loadImageUrls(this.images());
+      } else {
+        const equipmentRequest = this.guestToken
+          ? this.api.listGuestEquipment(this.guestToken)
+          : this.api.listEquipment(this.organisationId);
+        try {
+          const [, equipment] = await Promise.all([
+            this.refreshInspection(inspectionId),
+            equipmentRequest,
+          ]);
+          this.equipment.set(equipment.equipment);
+        } catch (error) {
+          if (cachedContext === undefined) throw error;
+          this.inspection.set(cachedContext.inspection);
+          this.equipment.set(cachedContext.equipment);
+          this.images.set(await this.offline.thermalImages(inspectionId));
+          void this.loadImageUrls(this.images());
+        }
+      }
       const draft = await this.offline.draft(inspectionId);
       const source = draft ?? this.inspection()?.revisions[0]?.data;
       if (source) this.restore(source);
@@ -566,7 +628,9 @@ export class ThermalInspectionComponent {
         queue.slice(offset, offset + 6).map(async (image) => {
           try {
             let blob: Blob | undefined;
+            blob = await this.offline.thermalImageBlob(image.id);
             for (let attempt = 0; attempt < 2; attempt += 1) {
+              if (blob?.size) break;
               try {
                 blob = this.guestToken
                   ? await this.api.downloadGuestMedia(this.guestToken, image.id)
@@ -614,6 +678,25 @@ export class ThermalInspectionComponent {
     ordered?: AssetMedia[],
   ): Promise<void> {
     try {
+      const intended = ids.map((id, index) => {
+        const current = this.images().find((image) => image.id === id);
+        const orderedImage = ordered?.[index];
+        if (!current) return undefined;
+        return {
+          ...current,
+          ...(ordered
+            ? {
+                sortOrder: index,
+                ...(orderedImage?.id === id ? { category: orderedImage.category } : {}),
+              }
+            : (patch ?? {})),
+        };
+      });
+      await this.offline.updateThermalImages(
+        intended
+          .filter((media): media is AssetMedia => media !== undefined)
+          .map((media) => ({ id: media.id, media })),
+      );
       const updates = await Promise.all(
         ids.map((id, index) => {
           const orderedImage = ordered?.[index];
@@ -623,6 +706,8 @@ export class ThermalInspectionComponent {
                 ...(orderedImage?.id === id ? { category: orderedImage.category } : {}),
               }
             : (patch ?? {});
+          if (!this.offline.online() || id.startsWith('offline:'))
+            return Promise.resolve({ media: intended[index]! });
           return this.guestToken
             ? this.api.updateGuestMedia(this.guestToken, id, input)
             : this.api.updateMedia(this.organisationId, id, input);

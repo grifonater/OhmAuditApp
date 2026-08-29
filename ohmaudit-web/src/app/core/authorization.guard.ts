@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { AppConfigService } from './app-config.service';
 import { AuthService } from './auth.service';
 import { authorizationUrl } from './authorization-url';
+import { OfflineVisitService } from './offline-visit.service';
 
 interface AuthorizationAccount {
   user: { platformRole: 'USER' | 'PLATFORM_ADMIN' };
@@ -29,6 +30,7 @@ export const authorizationGuard: CanActivateFn = async (route) => {
   const auth = inject(AuthService);
   const config = inject(AppConfigService);
   const router = inject(Router);
+  const offline = inject(OfflineVisitService);
   try {
     const account = await getJson<AuthorizationAccount>('/me', auth, config);
     if (route.data['platformAdmin'] === true && account.user.platformRole !== 'PLATFORM_ADMIN')
@@ -53,6 +55,15 @@ export const authorizationGuard: CanActivateFn = async (route) => {
     }
     return true;
   } catch {
+    const organisationId = route.paramMap.get('organisationId');
+    const visitId = route.paramMap.get('visitId') ?? undefined;
+    const offlineVisitRoute = route.routeConfig?.path?.includes('visits') === true;
+    if (
+      organisationId !== null &&
+      offlineVisitRoute &&
+      (await offline.hasPack(organisationId, visitId))
+    )
+      return true;
     return router.createUrlTree(['/app']);
   }
 };

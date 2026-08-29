@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createCandidate, parseExtractionAnswer } from '../src/index';
+import {
+  createCandidate,
+  dataPlateDebugModels,
+  isDataPlateDebugModel,
+  parseExtractionAnswer,
+} from '../src/index';
 
 describe('AI worker', () => {
   it('marks every extraction candidate for human confirmation', () => {
@@ -40,5 +45,11 @@ describe('AI worker', () => {
       createCandidate('serialNumber', 'SN 2024-884123'),
       createCandidate('maximumPowerKw', '11'),
     ]);
+  });
+
+  it('only accepts configured debug vision models', () => {
+    expect(dataPlateDebugModels).toHaveLength(3);
+    expect(isDataPlateDebugModel('@cf/meta/llama-4-scout-17b-16e-instruct')).toBe(true);
+    expect(isDataPlateDebugModel('@cf/meta/llama-3.1-8b-instruct')).toBe(false);
   });
 });

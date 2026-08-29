@@ -305,6 +305,34 @@
   background: linear-gradient(145deg, #f4f9ff, #fff);
 }
 
+.ev-mobile-app .normal-state-photo {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+  padding: 0.7rem;
+  border: 1px solid #b9d9c7;
+  border-radius: 0.6rem;
+  background: #f5fbf7;
+}
+
+.ev-mobile-app .normal-state-photo > div:first-child {
+  display: grid;
+  gap: 0.15rem;
+  color: #124b2d;
+  font-size: 0.78rem;
+}
+
+.ev-mobile-app .normal-state-photo small {
+  color: #5e6f86;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.ev-mobile-app .normal-state-photo p {
+  margin: 0;
+  font-size: 0.68rem;
+}
+
 .ev-mobile-app .data-plate-intro {
   display: grid;
   grid-template-columns: auto 1fr;

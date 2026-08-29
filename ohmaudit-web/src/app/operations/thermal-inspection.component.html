@@ -10,6 +10,9 @@
         {{ visit()?.site?.name }} · {{ visit()?.scheduledStart?.slice(0, 10) }} ·
         {{ visit()?.title }}
       </p>
+      @if (!offline.online()) {
+        <p>Offline mode · images and the completed report will sync automatically</p>
+      }
     </div>
     <div class="header-actions">
       @if (saved()) {
@@ -193,7 +196,8 @@
       <label class="upload-drop panel" [class.uploading]="uploading()"
         ><span class="upload-icon">⇧</span
         ><strong>{{ uploading() ? uploadProgress() : 'Upload inspection images' }}</strong
-        ><small>Choose multiple JPEG, PNG or WebP files · up to 2 MB each</small
+        ><small
+          >Choose multiple JPEG, PNG or WebP files · images are compressed on this device</small
         ><input
           type="file"
           multiple
@@ -673,7 +677,13 @@
           (click)="submit()"
           [disabled]="busy()"
         >
-          {{ busy() ? 'Submitting…' : 'Submit for office review →' }}
+          {{
+            busy()
+              ? 'Submitting…'
+              : offline.online()
+                ? 'Submit for office review →'
+                : 'Queue for sync →'
+          }}
         </button>
       </footer>
     </section>

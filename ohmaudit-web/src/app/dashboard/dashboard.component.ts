@@ -5,6 +5,7 @@ import {
   type CurrentUserResponse,
   type Entitlement,
   type OnboardingState,
+  type OrganisationMember,
 } from '../core/api.service';
 import { OrganisationContextService } from '../core/organisation-context.service';
 
@@ -21,6 +22,7 @@ export class DashboardComponent {
   protected readonly account = signal<CurrentUserResponse | undefined>(undefined);
   protected readonly onboarding = signal<OnboardingState | undefined>(undefined);
   protected readonly entitlements = signal<Entitlement[]>([]);
+  protected readonly members = signal<OrganisationMember[]>([]);
   protected readonly metrics = signal({ customers: 0, sites: 0, assets: 0, attention: 0 });
   protected readonly loading = signal(true);
   protected readonly error = signal('');
@@ -82,6 +84,12 @@ export class DashboardComponent {
         assets: portfolio.summary.assets,
         attention: 0,
       });
+      const membership = this.account()?.memberships.find(
+        (item) => item.organisation.id === organisationId,
+      );
+      if (membership?.role.capabilities.includes('organisation.users.manage')) {
+        this.members.set((await this.api.listMembers(organisationId)).members);
+      }
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to load Organisation data.');
     } finally {
