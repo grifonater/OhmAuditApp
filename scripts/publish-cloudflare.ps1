@@ -141,7 +141,7 @@ function Assert-WebConfig([object]$ApiProduction) {
 
 function Get-SecretNames([string]$Project) {
   $projectPath = Join-Path $workspaceRoot $Project
-  $output = & pnpm --dir $projectPath exec wrangler secret list --env $environmentName --json
+  $output = & pnpm --dir $projectPath exec wrangler secret list --env $environmentName --format json
   if ($LASTEXITCODE -ne 0) {
     throw "Could not list Cloudflare secrets for $Project. Deploy or configure the Worker first."
   }
