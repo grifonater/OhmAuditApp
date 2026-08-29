@@ -5,7 +5,7 @@ import { PortfolioService } from '../src/portfolio/portfolio.service';
 
 describe('Job activity', () => {
   it('builds a Visit timeline that includes related inspection and asset events with the actor', async () => {
-    let query: { where: unknown; include: unknown; orderBy: unknown };
+    let query!: { where: unknown; include: unknown; orderBy: unknown };
     const prisma = {
       visit: {
         findFirst: () =>
@@ -39,7 +39,7 @@ describe('Job activity', () => {
   });
 
   it('keeps the exact filter for a non-Visit entity', async () => {
-    let query: { where: unknown };
+    let query!: { where: unknown };
     const prisma = {
       auditEvent: {
         findMany: (input: { where: unknown }) => {
@@ -69,7 +69,7 @@ describe('Job activity', () => {
   });
 
   it('lists the current certificate per approved inspection with inspection context', async () => {
-    let query: { where: unknown; include: unknown };
+    let query!: { where: unknown; include: unknown };
     const findMany = vi.fn((input: { where: unknown; include: unknown }) => {
       query = input;
       return Promise.resolve([
