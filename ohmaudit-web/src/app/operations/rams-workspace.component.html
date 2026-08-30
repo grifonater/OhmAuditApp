@@ -610,10 +610,6 @@
                   Add step
                 </button>
               </div>
-              <div class="method-total">
-                <strong>Total estimated time</strong
-                ><span>{{ totalEstimatedMinutes() }} minutes</span>
-              </div>
               <div class="card-body method-list">
                 @for (step of currentDraft.methodStatement.steps; track step.id) {
                   <div class="method-row">
@@ -632,24 +628,6 @@
                         placeholder="Detailed safe method *"
                         (input)="updateMethodStep($index, 'detail', $any($event.target).value)"
                       ></textarea>
-                      <input
-                        [value]="step.responsibility"
-                        [disabled]="!editable()"
-                        placeholder="Responsible role or person *"
-                        (input)="
-                          updateMethodStep($index, 'responsibility', $any($event.target).value)
-                        "
-                      />
-                      <label class="minutes-field"
-                        >Estimated minutes<input
-                          type="number"
-                          min="0"
-                          [value]="step.estimatedMinutes"
-                          [disabled]="!editable()"
-                          (input)="
-                            updateMethodStep($index, 'estimatedMinutes', $any($event.target).value)
-                          "
-                      /></label>
                     </div>
                     <label class="required-toggle"
                       ><input

@@ -455,8 +455,6 @@ export interface RamsMethodStep {
   title: string;
   required: boolean;
   detail: string;
-  responsibility: string;
-  estimatedMinutes: number;
 }
 export interface RamsHazard {
   id: string;
@@ -599,6 +597,21 @@ export interface RamsMethodGroup {
   steps: RamsMethodStep[];
   createdAt: string;
   updatedAt: string;
+}
+export interface RamsLibraryHazard {
+  id: string;
+  name: string;
+  description: string;
+  isDefault: boolean;
+  data: RamsHazard;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface RamsLibraryHazardInput {
+  name: string;
+  description: string;
+  isDefault: boolean;
+  data: RamsHazard;
 }
 export interface RamsDetail extends RamsSummary {
   draftData: RamsDraft;
@@ -1453,6 +1466,29 @@ export class ApiService {
   deleteRamsMethodGroup(organisationId: string, groupId: string) {
     return this.request(
       `/organisations/${encodeURIComponent(organisationId)}/rams-method-groups/${encodeURIComponent(groupId)}`,
+      { method: 'DELETE' },
+    );
+  }
+  listRamsHazards(organisationId: string) {
+    return this.request<{ hazards: RamsLibraryHazard[] }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-hazards`,
+    );
+  }
+  createRamsHazard(organisationId: string, input: RamsLibraryHazardInput) {
+    return this.request<{ hazard: RamsLibraryHazard }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-hazards`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  updateRamsHazard(organisationId: string, hazardId: string, input: RamsLibraryHazardInput) {
+    return this.request<{ hazard: RamsLibraryHazard }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-hazards/${encodeURIComponent(hazardId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    );
+  }
+  deleteRamsHazard(organisationId: string, hazardId: string) {
+    return this.request(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-hazards/${encodeURIComponent(hazardId)}`,
       { method: 'DELETE' },
     );
   }

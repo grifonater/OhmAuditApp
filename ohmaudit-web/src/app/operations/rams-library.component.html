@@ -33,6 +33,14 @@
     >
       Method statements <span>{{ groups().length }}</span>
     </button>
+    <button
+      type="button"
+      role="tab"
+      [class.active]="activeTab() === 'hazards'"
+      (click)="switchTab('hazards')"
+    >
+      Hazard library <span>{{ hazards().length }}</span>
+    </button>
   </nav>
 
   <section class="library-toolbar">
@@ -65,6 +73,10 @@
     } @else if (activeTab() === 'methods' && canManage()) {
       <button class="button primary" type="button" (click)="showGroupCreate.set(true)">
         Create method group
+      </button>
+    } @else if (activeTab() === 'hazards' && canManage()) {
+      <button class="button primary" type="button" (click)="showHazardCreate.set(true)">
+        Add hazard
       </button>
     }
   </section>
@@ -312,18 +324,6 @@
                   [value]="step.detail"
                   (input)="updateGroupStep($index, 'detail', $any($event.target).value)"
                 ></textarea
-                ><input
-                  placeholder="Responsibility *"
-                  [value]="step.responsibility"
-                  (input)="updateGroupStep($index, 'responsibility', $any($event.target).value)"
-                /><label
-                  >Minutes<input
-                    type="number"
-                    min="0"
-                    [value]="step.estimatedMinutes"
-                    (input)="
-                      updateGroupStep($index, 'estimatedMinutes', $any($event.target).value)
-                    " /></label
                 ><label class="check-field"
                   ><input
                     type="checkbox"
@@ -407,30 +407,6 @@
                           updateGroupStep($index, 'detail', $any($event.target).value, group.id)
                         "
                       ></textarea
-                      ><input
-                        placeholder="Responsibility *"
-                        [value]="step.responsibility"
-                        (input)="
-                          updateGroupStep(
-                            $index,
-                            'responsibility',
-                            $any($event.target).value,
-                            group.id
-                          )
-                        "
-                      /><label
-                        >Minutes<input
-                          type="number"
-                          min="0"
-                          [value]="step.estimatedMinutes"
-                          (input)="
-                            updateGroupStep(
-                              $index,
-                              'estimatedMinutes',
-                              $any($event.target).value,
-                              group.id
-                            )
-                          " /></label
                       ><label class="check-field"
                         ><input
                           type="checkbox"
@@ -496,13 +472,7 @@
             <ol class="method-preview">
               @for (step of group.steps.slice(0, 3); track step.id) {
                 <li>
-                  <strong>{{ step.title }}</strong
-                  ><span
-                    >{{ step.responsibility
-                    }}{{
-                      step.estimatedMinutes ? ' / ' + step.estimatedMinutes + ' min' : ''
-                    }}</span
-                  >
+                  <strong>{{ step.title }}</strong>
                 </li>
               }
               @if (group.steps.length > 3) {
@@ -528,6 +498,323 @@
         <div class="card library-empty">
           <h2>No method groups found</h2>
           <p>Create a reusable sequence to append to RAMS method statements.</p>
+        </div>
+      }
+    </section>
+  }
+
+  @if (activeTab() === 'hazards') {
+    @if (showHazardCreate()) {
+      <section class="card editor-card">
+        <div class="card-header">
+          <div>
+            <h2>Add library hazard</h2>
+            <small>Define a reusable hazard with controls to pre-fill new RAMS.</small>
+          </div>
+          <button class="button ghost compact" type="button" (click)="showHazardCreate.set(false)">
+            Cancel
+          </button>
+        </div>
+        <div class="card-body hazard-editor">
+          <div class="editor-grid">
+            <label class="field"
+              >Hazard name *<input
+                [value]="newHazard().name"
+                (input)="updateNewHazard('name', $any($event.target).value)" /></label
+            ><label class="field"
+              >Description<input
+                [value]="newHazard().description"
+                (input)="updateNewHazard('description', $any($event.target).value)" /></label
+            ><label class="field check-field"
+              ><input
+                type="checkbox"
+                [checked]="newHazard().isDefault"
+                (change)="updateNewHazard('isDefault', $any($event.target).checked)"
+              />
+              Default hazard
+              <small class="field-hint"
+                >Automatically added to every new RAMS in this organisation.</small
+              ></label
+            >
+            <label class="field full"
+              >Hazard description *<textarea
+                rows="2"
+                [value]="newHazard().hazard"
+                (input)="updateNewHazard('hazard', $any($event.target).value)"
+              ></textarea>
+            </label>
+            <label class="field"
+              >People at risk<input
+                [value]="newHazard().peopleAtRisk"
+                (input)="updateNewHazard('peopleAtRisk', $any($event.target).value)" /></label
+            ><label class="field"
+              >How they may be harmed<input
+                [value]="newHazard().howHarmed"
+                (input)="updateNewHazard('howHarmed', $any($event.target).value)" /></label
+            ><label class="field full"
+              >Control measures *<textarea
+                rows="3"
+                [value]="newHazard().controls"
+                (input)="updateNewHazard('controls', $any($event.target).value)"
+              ></textarea>
+            </label>
+            <label class="field full"
+              >Further actions<input
+                [value]="newHazard().furtherActions"
+                (input)="updateNewHazard('furtherActions', $any($event.target).value)"
+            /></label>
+            <label class="field"
+              >Initial likelihood<select
+                [value]="newHazard().initialLikelihood"
+                (change)="updateNewHazard('initialLikelihood', toNumber($any($event.target).value))"
+              >
+                @for (option of likelihoods; track option) {
+                  <option [value]="option">{{ option }}</option>
+                }
+              </select></label
+            ><label class="field"
+              >Initial severity<select
+                [value]="newHazard().initialSeverity"
+                (change)="updateNewHazard('initialSeverity', toNumber($any($event.target).value))"
+              >
+                @for (option of severities; track option) {
+                  <option [value]="option">{{ option }}</option>
+                }
+              </select></label
+            ><label class="field"
+              >Residual likelihood<select
+                [value]="newHazard().residualLikelihood"
+                (change)="
+                  updateNewHazard('residualLikelihood', toNumber($any($event.target).value))
+                "
+              >
+                @for (option of likelihoods; track option) {
+                  <option [value]="option">{{ option }}</option>
+                }
+              </select></label
+            ><label class="field"
+              >Residual severity<select
+                [value]="newHazard().residualSeverity"
+                (change)="updateNewHazard('residualSeverity', toNumber($any($event.target).value))"
+              >
+                @for (option of severities; track option) {
+                  <option [value]="option">{{ option }}</option>
+                }
+              </select></label
+            >
+          </div>
+          <div class="group-footer">
+            <button class="button primary" type="button" (click)="createHazard()">
+              Add hazard
+            </button>
+          </div>
+        </div>
+      </section>
+    }
+    <section class="library-list" aria-label="Hazard library">
+      @for (hazard of filteredHazards(); track hazard.id) {
+        <article class="card reusable-card hazard-card">
+          <div class="reusable-heading">
+            <span class="document-mark hazard">HAZ</span>
+            <div>
+              <strong>{{ hazard.name }}</strong>
+              <p>{{ hazard.description || 'No description' }}</p>
+              <small>Updated {{ formatDate(hazard.updatedAt) }}</small>
+              @if (hazard.isDefault) {
+                <span class="default-badge">Default</span>
+              }
+            </div>
+          </div>
+          @if (editingHazardId() === hazard.id) {
+            @if (hazardEdits()[hazard.id]; as edit) {
+              <div class="inline-editor hazard-editor">
+                <div class="editor-grid">
+                  <label class="field"
+                    >Hazard name *<input
+                      [value]="edit.name"
+                      (input)="
+                        updateHazardEdit(hazard.id, 'name', $any($event.target).value)
+                      " /></label
+                  ><label class="field"
+                    >Description<input
+                      [value]="edit.description"
+                      (input)="
+                        updateHazardEdit(hazard.id, 'description', $any($event.target).value)
+                      " /></label
+                  ><label class="field check-field"
+                    ><input
+                      type="checkbox"
+                      [checked]="edit.isDefault"
+                      (change)="
+                        updateHazardEdit(hazard.id, 'isDefault', $any($event.target).checked)
+                      "
+                    />
+                    Default hazard</label
+                  >
+                  <label class="field full"
+                    >Hazard description *<textarea
+                      rows="2"
+                      [value]="edit.hazard"
+                      (input)="updateHazardEdit(hazard.id, 'hazard', $any($event.target).value)"
+                    ></textarea>
+                  </label>
+                  <label class="field"
+                    >People at risk<input
+                      [value]="edit.peopleAtRisk"
+                      (input)="
+                        updateHazardEdit(hazard.id, 'peopleAtRisk', $any($event.target).value)
+                      " /></label
+                  ><label class="field"
+                    >How they may be harmed<input
+                      [value]="edit.howHarmed"
+                      (input)="
+                        updateHazardEdit(hazard.id, 'howHarmed', $any($event.target).value)
+                      " /></label
+                  ><label class="field full"
+                    >Control measures *<textarea
+                      rows="3"
+                      [value]="edit.controls"
+                      (input)="updateHazardEdit(hazard.id, 'controls', $any($event.target).value)"
+                    ></textarea>
+                  </label>
+                  <label class="field full"
+                    >Further actions<input
+                      [value]="edit.furtherActions"
+                      (input)="
+                        updateHazardEdit(hazard.id, 'furtherActions', $any($event.target).value)
+                      "
+                  /></label>
+                  <label class="field"
+                    >Initial likelihood<select
+                      [value]="edit.initialLikelihood"
+                      (change)="
+                        updateHazardEdit(
+                          hazard.id,
+                          'initialLikelihood',
+                          toNumber($any($event.target).value)
+                        )
+                      "
+                    >
+                      @for (option of likelihoods; track option) {
+                        <option [value]="option">{{ option }}</option>
+                      }
+                    </select></label
+                  ><label class="field"
+                    >Initial severity<select
+                      [value]="edit.initialSeverity"
+                      (change)="
+                        updateHazardEdit(
+                          hazard.id,
+                          'initialSeverity',
+                          toNumber($any($event.target).value)
+                        )
+                      "
+                    >
+                      @for (option of severities; track option) {
+                        <option [value]="option">{{ option }}</option>
+                      }
+                    </select></label
+                  ><label class="field"
+                    >Residual likelihood<select
+                      [value]="edit.residualLikelihood"
+                      (change)="
+                        updateHazardEdit(
+                          hazard.id,
+                          'residualLikelihood',
+                          toNumber($any($event.target).value)
+                        )
+                      "
+                    >
+                      @for (option of likelihoods; track option) {
+                        <option [value]="option">{{ option }}</option>
+                      }
+                    </select></label
+                  ><label class="field"
+                    >Residual severity<select
+                      [value]="edit.residualSeverity"
+                      (change)="
+                        updateHazardEdit(
+                          hazard.id,
+                          'residualSeverity',
+                          toNumber($any($event.target).value)
+                        )
+                      "
+                    >
+                      @for (option of severities; track option) {
+                        <option [value]="option">{{ option }}</option>
+                      }
+                    </select></label
+                  >
+                </div>
+                <div class="group-footer">
+                  <button
+                    class="button ghost compact"
+                    type="button"
+                    (click)="editingHazardId.set('')"
+                  >
+                    Cancel</button
+                  ><button
+                    class="button primary compact"
+                    type="button"
+                    (click)="saveHazard(hazard)"
+                  >
+                    Save hazard
+                  </button>
+                </div>
+              </div>
+            }
+          } @else {
+            <div class="hazard-row">
+              <div class="hazard-text">
+                <strong>{{ hazard.data.hazard }}</strong>
+                @if (hazard.data.peopleAtRisk || hazard.data.howHarmed) {
+                  <p>
+                    @if (hazard.data.peopleAtRisk) {
+                      <span>People at risk: {{ hazard.data.peopleAtRisk }}</span>
+                    }
+                    @if (hazard.data.howHarmed) {
+                      <span>How harmed: {{ hazard.data.howHarmed }}</span>
+                    }
+                  </p>
+                }
+                @if (hazard.data.controls) {
+                  <p class="hazard-controls">{{ hazard.data.controls }}</p>
+                }
+              </div>
+              <div class="card-actions">
+                @if (canManage()) {
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    [disabled]="busy()"
+                    (click)="toggleHazardDefault(hazard)"
+                  >
+                    {{ hazard.isDefault ? 'Unset default' : 'Set as default' }}
+                  </button>
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    (click)="startHazardEdit(hazard)"
+                  >
+                    Edit</button
+                  ><button
+                    class="button danger compact"
+                    type="button"
+                    (click)="archiveHazard(hazard)"
+                  >
+                    Archive
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </article>
+      } @empty {
+        <div class="card library-empty">
+          <h2>No hazards in the library</h2>
+          <p>
+            Add reusable hazards with control measures. Default hazards are pre-added to new RAMS.
+          </p>
         </div>
       }
     </section>

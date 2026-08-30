@@ -66,8 +66,6 @@ function payload(): RamsRenderPayload {
             title: 'Isolate supply',
             required: true,
             detail: 'Lock off, label and prove dead.',
-            responsibility: 'Authorised electrician',
-            estimatedMinutes: 30,
           },
         ],
       },

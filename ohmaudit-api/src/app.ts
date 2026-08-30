@@ -383,8 +383,6 @@ const ramsMethodStepInput = z.object({
   title: ramsDraftRowText(2000),
   required: z.boolean(),
   detail: z.string().max(10000).optional().default(''),
-  responsibility: ramsDraftRowText(500).optional().default(''),
-  estimatedMinutes: z.number().int().min(0).max(100000).optional().default(0),
 });
 const ramsDraftInput = z.object({
   schemaVersion: z.literal(2).optional().default(2),
@@ -529,11 +527,34 @@ const ramsMethodGroupInput = z.object({
       ramsMethodStepInput.extend({
         title: z.string().trim().min(1).max(2000),
         detail: z.string().trim().min(1).max(10000),
-        responsibility: z.string().trim().min(1).max(500),
       }),
     )
     .min(1)
     .max(200),
+});
+const ramsHazardDataInput = z.object({
+  id: ramsDraftRowText(100).optional().default(''),
+  hazard: z.string().trim().max(1000),
+  peopleAtRisk: z.string().trim().max(1000).optional().default(''),
+  initialLikelihood: z.number().int().min(1).max(5).optional().default(3),
+  initialSeverity: z.number().int().min(1).max(5).optional().default(3),
+  controls: z.string().max(5000),
+  residualLikelihood: z.number().int().min(1).max(5).optional().default(1),
+  residualSeverity: z.number().int().min(1).max(5).optional().default(3),
+  howHarmed: z.string().max(5000).optional().default(''),
+  furtherActions: z.string().max(5000).optional().default(''),
+  actionOwner: ramsDraftRowText(500).optional().default(''),
+  actionDueDate: z
+    .union([z.iso.date(), z.literal('')])
+    .optional()
+    .default(''),
+  actionStatus: z.enum(['OPEN', 'CONTROLLED']).optional().default('OPEN'),
+});
+const ramsHazardInput = z.object({
+  name: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(5000).default(''),
+  isDefault: z.boolean().optional().default(false),
+  data: ramsHazardDataInput,
 });
 const ramsReviewInput = z.object({
   action: z.enum(['APPROVE', 'RETURN']),
@@ -2761,6 +2782,76 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       return context.body(null, 204);
     },
   );
+  app.get('/api/v1/organisations/:organisationId/rams-hazards', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      hazards: await new RamsLibraryService(prismaFor(environment)).listHazards(organisationId),
+    });
+  });
+  app.post('/api/v1/organisations/:organisationId/rams-hazards', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const input = ramsHazardInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json(
+      {
+        hazard: await new RamsLibraryService(prismaFor(environment)).createHazard(
+          organisationId,
+          user.id,
+          context.get('correlationId'),
+          input,
+        ),
+      },
+      201,
+    );
+  });
+  app.patch('/api/v1/organisations/:organisationId/rams-hazards/:hazardId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const hazardId = z.uuid().parse(context.req.param('hazardId'));
+    const input = ramsHazardInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json({
+      hazard: await new RamsLibraryService(prismaFor(environment)).updateHazard(
+        organisationId,
+        hazardId,
+        user.id,
+        context.get('correlationId'),
+        input,
+      ),
+    });
+  });
+  app.delete('/api/v1/organisations/:organisationId/rams-hazards/:hazardId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const hazardId = z.uuid().parse(context.req.param('hazardId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    await new RamsLibraryService(prismaFor(environment)).archiveHazard(
+      organisationId,
+      hazardId,
+      user.id,
+      context.get('correlationId'),
+    );
+    return context.body(null, 204);
+  });
   app.get('/api/v1/rams/:ramsId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));

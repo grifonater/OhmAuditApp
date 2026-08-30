@@ -3,14 +3,31 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   ApiService,
   type OrganisationRamsSummary,
+  type RamsHazard,
+  type RamsLibraryHazard,
   type RamsMethodGroup,
   type RamsMethodStep,
   type RamsTemplate,
 } from '../core/api.service';
 
-type LibraryTab = 'all' | 'templates' | 'methods';
+type LibraryTab = 'all' | 'templates' | 'methods' | 'hazards';
 type TemplateEdit = { name: string; description: string; sourceRamsId: string };
 type GroupEdit = { name: string; description: string; steps: RamsMethodStep[] };
+type HazardFields = {
+  hazard: string;
+  peopleAtRisk: string;
+  howHarmed: string;
+  controls: string;
+  furtherActions: string;
+  actionOwner: string;
+  actionDueDate: string;
+  actionStatus: 'OPEN' | 'CONTROLLED';
+  initialLikelihood: number;
+  initialSeverity: number;
+  residualLikelihood: number;
+  residualSeverity: number;
+};
+type HazardEdit = { name: string; description: string; isDefault: boolean } & HazardFields;
 
 @Component({
   selector: 'oa-rams-library',
@@ -28,6 +45,7 @@ export class RamsLibraryComponent {
   protected readonly rams = signal<OrganisationRamsSummary[]>([]);
   protected readonly templates = signal<RamsTemplate[]>([]);
   protected readonly groups = signal<RamsMethodGroup[]>([]);
+  protected readonly hazards = signal<RamsLibraryHazard[]>([]);
   protected readonly capabilities = signal<string[]>([]);
   protected readonly query = signal('');
   protected readonly status = signal('ALL');
@@ -44,6 +62,12 @@ export class RamsLibraryComponent {
   protected readonly newGroup = signal<GroupEdit>(this.blankGroup());
   protected readonly groupEdits = signal<Record<string, GroupEdit>>({});
   protected readonly editingGroupId = signal('');
+  protected readonly showHazardCreate = signal(false);
+  protected readonly newHazard = signal<HazardEdit>(this.blankHazard());
+  protected readonly hazardEdits = signal<Record<string, HazardEdit>>({});
+  protected readonly editingHazardId = signal('');
+  protected readonly likelihoods = [1, 2, 3, 4, 5];
+  protected readonly severities = [5, 4, 3, 2, 1];
   protected readonly canManage = computed(() => this.capabilities().includes('rams.manage'));
   protected readonly filteredRams = computed(() => {
     const query = this.query().trim().toLocaleLowerCase('en-GB');
@@ -78,6 +102,17 @@ export class RamsLibraryComponent {
         item.name.toLocaleLowerCase('en-GB').includes(query) ||
         item.description.toLocaleLowerCase('en-GB').includes(query) ||
         item.steps.some((step) => step.title.toLocaleLowerCase('en-GB').includes(query)),
+    );
+  });
+  protected readonly filteredHazards = computed(() => {
+    const query = this.query().trim().toLocaleLowerCase('en-GB');
+    return this.hazards().filter(
+      (item) =>
+        !query ||
+        item.name.toLocaleLowerCase('en-GB').includes(query) ||
+        item.description.toLocaleLowerCase('en-GB').includes(query) ||
+        item.data.hazard.toLocaleLowerCase('en-GB').includes(query) ||
+        item.data.controls.toLocaleLowerCase('en-GB').includes(query),
     );
   });
 
@@ -203,8 +238,6 @@ export class RamsLibraryComponent {
       const step = steps[index];
       if (!step) return;
       if (field === 'required') step.required = Boolean(value);
-      else if (field === 'estimatedMinutes')
-        step.estimatedMinutes = Math.max(0, Number(value) || 0);
       else step[field] = String(value);
     });
   }
@@ -255,6 +288,79 @@ export class RamsLibraryComponent {
     });
   }
 
+  protected startHazardEdit(hazard: RamsLibraryHazard): void {
+    this.hazardEdits.update((edits) => ({
+      ...edits,
+      [hazard.id]: this.hazardToEdit(hazard),
+    }));
+    this.editingHazardId.set(hazard.id);
+  }
+
+  protected readonly toNumber = (value: unknown): number => Number(value);
+
+  protected updateHazardEdit(
+    id: string,
+    field: keyof HazardEdit,
+    value: string | boolean | number,
+  ): void {
+    this.hazardEdits.update((edits) => {
+      const current = edits[id] ?? this.blankHazard();
+      return {
+        ...edits,
+        [id]: { ...current, [field]: value },
+      };
+    });
+  }
+
+  protected updateNewHazard(field: keyof HazardEdit, value: string | boolean | number): void {
+    this.newHazard.update((hazard) => ({ ...hazard, [field]: value }));
+  }
+
+  protected async createHazard(): Promise<void> {
+    const hazard = this.newHazard();
+    if (!hazard.name.trim() || !hazard.hazard.trim() || !this.canManage()) return;
+    await this.run(async () => {
+      await this.api.createRamsHazard(this.organisationId, this.cleanHazard(hazard));
+      this.newHazard.set(this.blankHazard());
+      this.showHazardCreate.set(false);
+      await this.reloadHazards();
+      this.notice.set('Hazard added to the library.');
+    });
+  }
+
+  protected async saveHazard(hazard: RamsLibraryHazard): Promise<void> {
+    const edit = this.hazardEdits()[hazard.id];
+    if (!edit?.name.trim() || !edit?.hazard.trim() || !this.canManage()) return;
+    await this.run(async () => {
+      await this.api.updateRamsHazard(this.organisationId, hazard.id, this.cleanHazard(edit));
+      this.editingHazardId.set('');
+      await this.reloadHazards();
+      this.notice.set('Library hazard saved.');
+    });
+  }
+
+  protected async archiveHazard(hazard: RamsLibraryHazard): Promise<void> {
+    if (!this.canManage() || !confirm(`Archive the "${hazard.name}" library hazard?`)) return;
+    await this.run(async () => {
+      await this.api.deleteRamsHazard(this.organisationId, hazard.id);
+      await this.reloadHazards();
+      this.notice.set('Library hazard archived.');
+    });
+  }
+
+  protected async toggleHazardDefault(hazard: RamsLibraryHazard): Promise<void> {
+    if (!this.canManage()) return;
+    await this.run(async () => {
+      const edit = this.hazardToEdit(hazard);
+      await this.api.updateRamsHazard(this.organisationId, hazard.id, {
+        ...this.cleanHazard(edit),
+        isDefault: !hazard.isDefault,
+      });
+      await this.reloadHazards();
+      this.notice.set(hazard.isDefault ? 'No longer a default hazard.' : 'Set as default hazard.');
+    });
+  }
+
   protected formatDate(value: string): string {
     return new Intl.DateTimeFormat('en-GB', {
       day: 'numeric',
@@ -272,16 +378,17 @@ export class RamsLibraryComponent {
 
   private initialTab(): LibraryTab {
     const tab = this.route.snapshot.queryParamMap.get('tab');
-    return tab === 'templates' || tab === 'methods' ? tab : 'all';
+    return tab === 'templates' || tab === 'methods' || tab === 'hazards' ? tab : 'all';
   }
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const [account, rams, templates, groups] = await Promise.all([
+      const [account, rams, templates, groups, hazards] = await Promise.all([
         this.api.currentUser(),
         this.api.listRams(this.organisationId),
         this.api.listRamsTemplates(this.organisationId),
         this.api.listRamsMethodGroups(this.organisationId),
+        this.api.listRamsHazards(this.organisationId),
       ]);
       this.capabilities.set(
         account.memberships.find(({ organisation }) => organisation.id === this.organisationId)
@@ -290,6 +397,7 @@ export class RamsLibraryComponent {
       this.rams.set(rams.rams);
       this.templates.set(templates.templates);
       this.groups.set(groups.groups);
+      this.hazards.set(hazards.hazards);
     });
   }
 
@@ -299,6 +407,10 @@ export class RamsLibraryComponent {
 
   private async reloadGroups(): Promise<void> {
     this.groups.set((await this.api.listRamsMethodGroups(this.organisationId)).groups);
+  }
+
+  private async reloadHazards(): Promise<void> {
+    this.hazards.set((await this.api.listRamsHazards(this.organisationId)).hazards);
   }
 
   private changeGroupSteps(
@@ -326,7 +438,7 @@ export class RamsLibraryComponent {
     return (
       steps.length > 0 &&
       steps.length <= 200 &&
-      steps.every((step) => step.title.trim() && step.detail.trim() && step.responsibility.trim())
+      steps.every((step) => step.title.trim() && step.detail.trim())
     );
   }
 
@@ -347,9 +459,77 @@ export class RamsLibraryComponent {
       id: crypto.randomUUID(),
       title: '',
       detail: '',
-      responsibility: '',
       required: true,
-      estimatedMinutes: 0,
+    };
+  }
+
+  private blankHazard(): HazardEdit {
+    return {
+      name: '',
+      description: '',
+      isDefault: false,
+      hazard: '',
+      peopleAtRisk: '',
+      howHarmed: '',
+      controls: '',
+      furtherActions: '',
+      actionOwner: '',
+      actionDueDate: '',
+      actionStatus: 'OPEN',
+      initialLikelihood: 3,
+      initialSeverity: 3,
+      residualLikelihood: 1,
+      residualSeverity: 3,
+    };
+  }
+
+  private hazardToEdit(hazard: RamsLibraryHazard): HazardEdit {
+    const data = hazard.data;
+    return {
+      name: hazard.name,
+      description: hazard.description,
+      isDefault: hazard.isDefault,
+      hazard: data.hazard,
+      peopleAtRisk: data.peopleAtRisk,
+      howHarmed: data.howHarmed,
+      controls: data.controls,
+      furtherActions: data.furtherActions ?? '',
+      actionOwner: data.actionOwner ?? '',
+      actionDueDate: data.actionDueDate ?? '',
+      actionStatus: data.actionStatus ?? 'OPEN',
+      initialLikelihood: data.initialLikelihood,
+      initialSeverity: data.initialSeverity,
+      residualLikelihood: data.residualLikelihood,
+      residualSeverity: data.residualSeverity,
+    };
+  }
+
+  private cleanHazard(edit: HazardEdit): {
+    name: string;
+    description: string;
+    isDefault: boolean;
+    data: RamsHazard;
+  } {
+    const clamp = (value: number): number => Math.min(5, Math.max(1, Math.round(value) || 1));
+    return {
+      name: edit.name.trim(),
+      description: edit.description.trim(),
+      isDefault: edit.isDefault,
+      data: {
+        id: crypto.randomUUID(),
+        hazard: edit.hazard.trim(),
+        peopleAtRisk: edit.peopleAtRisk.trim(),
+        howHarmed: edit.howHarmed.trim(),
+        controls: edit.controls.trim(),
+        furtherActions: edit.furtherActions.trim(),
+        actionOwner: edit.actionOwner.trim(),
+        actionDueDate: edit.actionDueDate.trim(),
+        actionStatus: edit.actionStatus,
+        initialLikelihood: clamp(edit.initialLikelihood),
+        initialSeverity: clamp(edit.initialSeverity),
+        residualLikelihood: clamp(edit.residualLikelihood),
+        residualSeverity: clamp(edit.residualSeverity),
+      },
     };
   }
 

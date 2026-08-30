@@ -6,8 +6,6 @@ export interface RamsMethodStep {
   title: string;
   required: boolean;
   detail: string;
-  responsibility: string;
-  estimatedMinutes: number;
 }
 
 export interface RamsHazard {
@@ -221,7 +219,6 @@ type RamsJsonKey =
   | 'steps'
   | 'required'
   | 'detail'
-  | 'estimatedMinutes'
   | 'hazards'
   | 'hazard'
   | 'peopleAtRisk'
@@ -347,8 +344,6 @@ export function normalizeRamsDraft(value: unknown): RamsDraft {
         title: text(item.title),
         required: typeof item.required === 'boolean' ? item.required : false,
         detail: text(item.detail),
-        responsibility: text(item.responsibility),
-        estimatedMinutes: number(item.estimatedMinutes, 0),
       })),
     },
     riskAssessment: {
@@ -632,6 +627,19 @@ export class RamsService {
         permits: visit.site.inductionInformation ?? '',
       },
     });
+    const defaultHazards = await this.prisma.ramsHazardLibraryItem.findMany({
+      where: { organisationId, status: 'ACTIVE', isDefault: true },
+      orderBy: { name: 'asc' },
+      take: 200,
+    });
+    if (defaultHazards.length > 0) {
+      draft.riskAssessment.hazards = defaultHazards.map((libraryHazard) => ({
+        ...normalizeRamsDraft({
+          riskAssessment: { hazards: [libraryHazard.data as unknown as RamsHazard] },
+        }).riskAssessment.hazards[0]!,
+        id: crypto.randomUUID(),
+      }));
+    }
     const created = await this.prisma.$transaction(async (transaction) => {
       const rams = await transaction.rams.create({
         data: {
@@ -957,12 +965,7 @@ export class RamsService {
       missing.push('emergency contact and assembly point');
     if (
       draft.methodStatement.steps.some(
-        (step) =>
-          !step.id.trim() ||
-          !step.title.trim() ||
-          !step.detail.trim() ||
-          !step.responsibility.trim() ||
-          step.estimatedMinutes <= 0,
+        (step) => !step.id.trim() || !step.title.trim() || !step.detail.trim(),
       )
     )
       missing.push('complete method statement steps');

@@ -1,6 +1,11 @@
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import { DomainError } from '../shared/domain-error';
-import { normalizeRamsDraft, type RamsDraft, type RamsMethodStep } from './rams.service';
+import {
+  normalizeRamsDraft,
+  type RamsDraft,
+  type RamsHazard,
+  type RamsMethodStep,
+} from './rams.service';
 
 export interface RamsTemplateInput {
   name: string;
@@ -12,6 +17,13 @@ export interface RamsMethodStatementGroupInput {
   name: string;
   description: string;
   steps: RamsMethodStep[];
+}
+
+export interface RamsLibraryHazardInput {
+  name: string;
+  description: string;
+  isDefault: boolean;
+  data: RamsHazard;
 }
 
 function cleanName(name: string): string {
@@ -28,6 +40,10 @@ function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
 
 function normalizeSteps(steps: RamsMethodStep[]): RamsMethodStep[] {
   return normalizeRamsDraft({ methodStatement: { steps } }).methodStatement.steps;
+}
+
+function normalizeHazard(hazard: RamsHazard): RamsHazard {
+  return normalizeRamsDraft({ riskAssessment: { hazards: [hazard] } }).riskAssessment.hazards[0]!;
 }
 
 function normalizeTemplateData(value: RamsDraft): RamsDraft {
@@ -308,6 +324,132 @@ export class RamsLibraryService {
     });
   }
 
+  async listHazards(organisationId: string, includeArchived = false) {
+    const hazards = await this.prisma.ramsHazardLibraryItem.findMany({
+      where: { organisationId, ...(includeArchived ? {} : { status: 'ACTIVE' as const }) },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+    });
+    return hazards.map((hazard) => ({
+      ...hazard,
+      data: normalizeHazard(hazard.data as unknown as RamsHazard),
+    }));
+  }
+
+  async createHazard(
+    organisationId: string,
+    actorUserId: string,
+    correlationId: string,
+    input: RamsLibraryHazardInput,
+  ) {
+    const name = cleanName(input.name);
+    const data = normalizeHazard(input.data);
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const hazard = await transaction.ramsHazardLibraryItem.create({
+          data: {
+            organisationId,
+            name,
+            normalisedName: normaliseName(name),
+            description: input.description.trim(),
+            isDefault: input.isDefault,
+            data: data as unknown as Prisma.InputJsonValue,
+          },
+        });
+        await transaction.auditEvent.create({
+          data: {
+            organisationId,
+            actorUserId,
+            correlationId,
+            eventType: 'RamsLibraryHazardCreated',
+            entityType: 'RamsHazardLibraryItem',
+            entityId: hazard.id,
+            data: { name: hazard.name },
+          },
+        });
+        return { ...hazard, data };
+      });
+    } catch (error: unknown) {
+      this.translateDuplicate(
+        error,
+        'RAMS_HAZARD_EXISTS',
+        'A library hazard with this name already exists.',
+      );
+    }
+  }
+
+  async updateHazard(
+    organisationId: string,
+    hazardId: string,
+    actorUserId: string,
+    correlationId: string,
+    input: RamsLibraryHazardInput,
+  ) {
+    const current = await this.requireHazard(organisationId, hazardId);
+    const name = cleanName(input.name);
+    const data = normalizeHazard(input.data);
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const hazard = await transaction.ramsHazardLibraryItem.update({
+          where: { id: hazardId },
+          data: {
+            name,
+            normalisedName: normaliseName(name),
+            description: input.description.trim(),
+            isDefault: input.isDefault,
+            data: data as unknown as Prisma.InputJsonValue,
+          },
+        });
+        await transaction.auditEvent.create({
+          data: {
+            organisationId,
+            actorUserId,
+            correlationId,
+            eventType: 'RamsLibraryHazardUpdated',
+            entityType: 'RamsHazardLibraryItem',
+            entityId: hazard.id,
+            data: { previousName: current.name, name: hazard.name },
+          },
+        });
+        return { ...hazard, data };
+      });
+    } catch (error: unknown) {
+      this.translateDuplicate(
+        error,
+        'RAMS_HAZARD_EXISTS',
+        'A library hazard with this name already exists.',
+      );
+    }
+  }
+
+  async archiveHazard(
+    organisationId: string,
+    hazardId: string,
+    actorUserId: string,
+    correlationId: string,
+  ): Promise<void> {
+    const current = await this.requireHazard(organisationId, hazardId);
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.ramsHazardLibraryItem.update({
+        where: { id: hazardId },
+        data: {
+          status: 'ARCHIVED',
+          normalisedName: `${current.normalisedName}#archived#${hazardId}`,
+        },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'RamsLibraryHazardArchived',
+          entityType: 'RamsHazardLibraryItem',
+          entityId: hazardId,
+          data: { name: current.name },
+        },
+      });
+    });
+  }
+
   private async requireTemplate(organisationId: string, templateId: string) {
     const template = await this.prisma.ramsTemplate.findFirst({
       where: { id: templateId, organisationId, status: 'ACTIVE' },
@@ -328,6 +470,15 @@ export class RamsLibraryService {
         404,
       );
     return group;
+  }
+
+  private async requireHazard(organisationId: string, hazardId: string) {
+    const hazard = await this.prisma.ramsHazardLibraryItem.findFirst({
+      where: { id: hazardId, organisationId, status: 'ACTIVE' },
+    });
+    if (hazard === null)
+      throw new DomainError('RAMS_HAZARD_NOT_FOUND', 'The library hazard was not found.', 404);
+    return hazard;
   }
 
   private translateDuplicate(error: unknown, code: string, message: string): never {

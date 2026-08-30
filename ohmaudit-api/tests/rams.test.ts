@@ -33,8 +33,6 @@ const readyDraft: RamsDraft = normalizeRamsDraft({
         title: 'Confirm isolation.',
         required: true,
         detail: 'Prove the voltage indicator before and after isolation.',
-        responsibility: 'Lead engineer',
-        estimatedMinutes: 15,
       },
     ],
   },

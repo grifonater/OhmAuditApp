@@ -182,9 +182,7 @@ export class RamsWorkspaceComponent {
     );
     const methodComplete =
       draft.methodStatement.steps.length > 0 &&
-      draft.methodStatement.steps.every(
-        (step) => step.title.trim() && step.detail.trim() && step.responsibility.trim(),
-      );
+      draft.methodStatement.steps.every((step) => step.title.trim() && step.detail.trim());
     const requirementsComplete = Boolean(
       draft.requirements.ppe.length > 0 &&
       draft.requirements.emergencyArrangements.length > 0 &&
@@ -341,15 +339,13 @@ export class RamsWorkspaceComponent {
         title: '',
         required: true,
         detail: '',
-        responsibility: '',
-        estimatedMinutes: 0,
       }),
     );
   }
 
   protected updateMethodStep(
     index: number,
-    field: 'title' | 'required' | 'detail' | 'responsibility' | 'estimatedMinutes',
+    field: 'title' | 'required' | 'detail',
     value: string | boolean | number,
   ): void {
     this.mutate((draft) => {
@@ -357,8 +353,6 @@ export class RamsWorkspaceComponent {
       if (!step) return;
       if (field === 'title' && typeof value === 'string') step.title = value;
       if (field === 'detail' && typeof value === 'string') step.detail = value;
-      if (field === 'responsibility' && typeof value === 'string') step.responsibility = value;
-      if (field === 'estimatedMinutes') step.estimatedMinutes = Math.max(0, Number(value) || 0);
       if (field === 'required' && typeof value === 'boolean') step.required = value;
     });
   }
@@ -376,13 +370,6 @@ export class RamsWorkspaceComponent {
   protected removeMethodStep(index: number): void {
     this.mutate((draft) => draft.methodStatement.steps.splice(index, 1));
   }
-
-  protected readonly totalEstimatedMinutes = computed(() =>
-    (this.draft()?.methodStatement.steps ?? []).reduce(
-      (total, step) => total + step.estimatedMinutes,
-      0,
-    ),
-  );
 
   protected addHazard(): void {
     const hazard: RamsHazard = {
@@ -799,8 +786,6 @@ export class RamsWorkspaceComponent {
     draft.methodStatement.steps = (draft.methodStatement.steps ?? []).map((step) => ({
       ...step,
       detail: step.detail ?? '',
-      responsibility: step.responsibility ?? '',
-      estimatedMinutes: step.estimatedMinutes ?? 0,
     }));
     draft.riskAssessment.hazards = (draft.riskAssessment.hazards ?? []).map((hazard) => ({
       ...hazard,

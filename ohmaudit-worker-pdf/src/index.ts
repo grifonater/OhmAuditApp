@@ -1099,12 +1099,7 @@ function isRamsMethodStep(value: unknown): boolean {
     isString(value['id']) &&
     isString(value['title']) &&
     typeof value['required'] === 'boolean' &&
-    isOptionalString(value['detail']) &&
-    isOptionalString(value['responsibility']) &&
-    (value['estimatedMinutes'] === undefined ||
-      (typeof value['estimatedMinutes'] === 'number' &&
-        Number.isFinite(value['estimatedMinutes']) &&
-        value['estimatedMinutes'] >= 0))
+    isOptionalString(value['detail'])
   );
 }
 

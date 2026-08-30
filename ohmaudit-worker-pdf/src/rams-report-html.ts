@@ -11,8 +11,6 @@ export interface RamsMethodStep {
   title: string;
   required: boolean;
   detail?: string;
-  responsibility?: string;
-  estimatedMinutes?: number;
 }
 
 export interface RamsHazard {
@@ -222,14 +220,12 @@ function riskMatrix(): string {
 }
 
 function methodRows(steps: RamsMethodStep[]): string {
-  if (steps.length === 0) return '<tr><td colspan="5">No method steps recorded.</td></tr>';
+  if (steps.length === 0) return '<tr><td colspan="3">No method steps recorded.</td></tr>';
   return steps
     .map(
       (step, index) => `<tr>
         <td class="number">${index + 1}</td>
         <td><strong>${value(step.title)}</strong><div class="subcopy">${value(step.detail, 'No additional detail')}</div></td>
-        <td>${value(step.responsibility)}</td>
-        <td>${step.estimatedMinutes === undefined ? 'Not recorded' : `${escapeHtml(step.estimatedMinutes)} min`}</td>
         <td>${step.required ? 'Yes' : 'No'}</td>
       </tr>`,
     )
@@ -473,7 +469,7 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
 
     <section class="section">
       <h2 class="section-title"><span>4</span> Method statement</h2>
-      <table><thead><tr><th>#</th><th>Safe work sequence</th><th>Responsibility</th><th>Duration</th><th>Mandatory</th></tr></thead><tbody>${methodRows(data.methodStatement.steps)}</tbody></table>
+      <table><thead><tr><th>#</th><th>Safe work sequence</th><th>Mandatory</th></tr></thead><tbody>${methodRows(data.methodStatement.steps)}</tbody></table>
     </section>
 
     <section class="section">

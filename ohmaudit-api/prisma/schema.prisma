@@ -222,6 +222,7 @@ model Organisation {
   ramsRevisions                RamsRevision[]
   ramsTemplates                RamsTemplate[]
   ramsMethodStatementGroups    RamsMethodStatementGroup[]
+  ramsHazardLibraryItems       RamsHazardLibraryItem[]
 
   @@map("organisations")
 }
@@ -756,6 +757,24 @@ model RamsMethodStatementGroup {
   @@unique([organisationId, normalisedName])
   @@index([organisationId, status, name])
   @@map("rams_method_statement_groups")
+}
+
+model RamsHazardLibraryItem {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  name           String
+  normalisedName String       @map("normalised_name")
+  description    String       @default("")
+  isDefault      Boolean      @default(false) @map("is_default")
+  data           Json
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, normalisedName])
+  @@index([organisationId, status, isDefault])
+  @@map("rams_hazard_library_items")
 }
 
 model JobCategory {

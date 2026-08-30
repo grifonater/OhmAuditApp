@@ -88,9 +88,7 @@ describe('RAMS reusable content', () => {
           id: 'old',
           title: 'Isolate',
           detail: 'Lock off',
-          responsibility: 'Engineer',
           required: true,
-          estimatedMinutes: 10,
         },
       ],
       () => 'new',
@@ -106,9 +104,7 @@ describe('RAMS reusable content', () => {
       id: 'step-old',
       title: 'Test',
       detail: 'Test safely',
-      responsibility: 'Engineer',
       required: true,
-      estimatedMinutes: 20,
     });
     let id = 0;
     const result = applyRamsTemplate(current, template, () => `new-${++id}`);

@@ -108,8 +108,6 @@ describe('RAMS library', () => {
             title: 'Isolate',
             required: true,
             detail: '',
-            responsibility: '',
-            estimatedMinutes: 0,
           },
         ],
       },
@@ -153,8 +151,6 @@ describe('RAMS library', () => {
             title: 'Isolate',
             required: true,
             detail: undefined as unknown as string,
-            responsibility: undefined as unknown as string,
-            estimatedMinutes: undefined as unknown as number,
           },
         ],
       },
@@ -168,15 +164,11 @@ describe('RAMS library', () => {
             title: 'Isolate',
             required: true,
             detail: '',
-            responsibility: '',
-            estimatedMinutes: 0,
           },
         ],
       },
     });
-    expect(group.steps).toEqual(
-      expect.arrayContaining([expect.objectContaining({ detail: '', estimatedMinutes: 0 })]),
-    );
+    expect(group.steps).toEqual(expect.arrayContaining([expect.objectContaining({ detail: '' })]));
   });
 
   it('archives only an active template in the tenant and records its audit event', async () => {
