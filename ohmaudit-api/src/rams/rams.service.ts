@@ -1,5 +1,9 @@
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import { DomainError } from '../shared/domain-error';
+import {
+  baselineRamsRequirementDefaults,
+  normalizeRamsRequirementDefaults,
+} from './rams-requirement-defaults';
 
 function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
@@ -728,6 +732,18 @@ export class RamsService {
       .toLocaleUpperCase('en-GB')
       .replace(/[^A-Z0-9-]+/gu, '-');
     const title = `RAMS - ${visit.title}`;
+    const [storedDefaults, defaultHazards] = await Promise.all([
+      this.prisma.ramsRequirementDefaults.findUnique({ where: { organisationId } }),
+      this.prisma.ramsHazardLibraryItem.findMany({
+        where: { organisationId, status: 'ACTIVE', isDefault: true },
+        orderBy: { name: 'asc' },
+        take: 200,
+      }),
+    ]);
+    const defaults =
+      storedDefaults === null
+        ? baselineRamsRequirementDefaults()
+        : normalizeRamsRequirementDefaults(storedDefaults);
     const draft = normalizeRamsDraft({
       overview: {
         title,
@@ -740,7 +756,14 @@ export class RamsService {
         engineerBriefing: visit.engineerNotes ? [visit.engineerNotes] : [],
       },
       requirements: {
-        ppe: visit.site.ppeRequirements ? [visit.site.ppeRequirements] : [],
+        ...defaults,
+        ppe: normalizeRamsRequirementDefaults({
+          ...defaults,
+          ppe: [
+            ...defaults.ppe,
+            ...(visit.site.ppeRequirements ? [visit.site.ppeRequirements] : []),
+          ],
+        }).ppe,
       },
       supportingInformation: {
         siteAccess: [visit.site.accessInstructions, visit.site.parkingInformation]
@@ -748,11 +771,6 @@ export class RamsService {
           .join('\n'),
         permits: visit.site.inductionInformation ?? '',
       },
-    });
-    const defaultHazards = await this.prisma.ramsHazardLibraryItem.findMany({
-      where: { organisationId, status: 'ACTIVE', isDefault: true },
-      orderBy: { name: 'asc' },
-      take: 200,
     });
     if (defaultHazards.length > 0) {
       draft.riskAssessment.hazards = defaultHazards.map((libraryHazard) => ({
@@ -1398,7 +1416,6 @@ export class RamsService {
     if (draft.scope.keyActivities.length === 0) missing.push('key work activity');
     if (draft.scope.workAreas.length === 0) missing.push('work area');
     if (!draft.scope.workBoundaries.trim()) missing.push('work boundaries');
-    if (draft.scope.responsibilities.length === 0) missing.push('responsible person');
     if (draft.methodStatement.steps.length === 0) missing.push('method statement step');
     if (draft.riskAssessment.hazards.length === 0) missing.push('risk assessment hazard');
     if (draft.requirements.ppe.length === 0) missing.push('PPE requirement');

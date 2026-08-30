@@ -1,4 +1,4 @@
-import type { RamsDraft, RamsMethodStep } from './api.service';
+import type { RamsDraft, RamsHazard, RamsLibraryHazard, RamsMethodStep } from './api.service';
 
 export type IdFactory = () => string;
 
@@ -14,6 +14,53 @@ export function ramsRiskBand(score: number): RamsRiskBand {
 
 export function ramsRiskClass(score: number): string {
   return ramsRiskBand(score).toLocaleLowerCase('en-GB').replace(' ', '-');
+}
+
+export function createRamsHazard(createId: IdFactory): RamsHazard {
+  return {
+    id: createId(),
+    hazard: '',
+    peopleAtRisk: '',
+    howHarmed: '',
+    controls: '',
+    furtherActions: '',
+    actionOwner: '',
+    actionDueDate: '',
+    actionStatus: 'OPEN',
+    initialLikelihood: 3,
+    initialSeverity: 5,
+    residualLikelihood: 1,
+    residualSeverity: 3,
+  };
+}
+
+function hazardSemanticKey(hazard: RamsHazard): string {
+  return [hazard.hazard, hazard.peopleAtRisk, hazard.howHarmed, hazard.controls]
+    .map((value) => value.trim().toLocaleLowerCase('en-GB'))
+    .join('\u0000');
+}
+
+export function importRamsHazards(
+  current: RamsHazard[],
+  selected: RamsLibraryHazard[],
+  createId: IdFactory,
+  maximum = 200,
+): { hazards: RamsHazard[]; imported: number; skipped: number } {
+  const hazards = structuredClone(current);
+  const keys = new Set(hazards.map(hazardSemanticKey));
+  let imported = 0;
+  let skipped = 0;
+  for (const item of selected) {
+    const key = hazardSemanticKey(item.data);
+    if (keys.has(key) || hazards.length >= maximum) {
+      skipped++;
+      continue;
+    }
+    hazards.push({ ...structuredClone(item.data), id: createId() });
+    keys.add(key);
+    imported++;
+  }
+  return { hazards, imported, skipped };
 }
 
 export function blankRamsDraft(): RamsDraft {
@@ -127,7 +174,24 @@ export function applyRamsTemplate(
     ...structuredClone(item),
     id: createId(),
   }));
-  next.requirements.ppe = structuredClone(current.requirements.ppe);
+  for (const key of [
+    'ppe',
+    'tools',
+    'competencies',
+    'emergencyArrangements',
+    'welfare',
+    'plant',
+  ] as const) {
+    const seen = new Set<string>();
+    next.requirements[key] = [...current.requirements[key], ...template.requirements[key]].filter(
+      (item) => {
+        const normalized = item.trim().toLocaleLowerCase('en-GB');
+        if (!normalized || seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      },
+    );
+  }
   next.requirements.emergencyDetails = structuredClone(current.requirements.emergencyDetails);
   next.supportingInformation.siteAccess = current.supportingInformation.siteAccess;
   next.supportingInformation.permits = current.supportingInformation.permits;

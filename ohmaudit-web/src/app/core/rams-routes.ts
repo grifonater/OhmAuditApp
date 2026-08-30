@@ -13,6 +13,11 @@ export const ramsLibraryRoute = {
   capabilities: ['rams.read'],
 } as const;
 
+export const ramsTemplateEditRoute = {
+  path: 'org/:organisationId/rams/templates/:templateId/edit',
+  capabilities: ['rams.manage'],
+} as const;
+
 export const engineerVisitRoutePath = 'org/:organisationId/visits/:visitId';
 
 export function ramsPdfPath(ramsId: string, organisationId: string): string {

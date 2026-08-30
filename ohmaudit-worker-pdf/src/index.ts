@@ -11,6 +11,28 @@ export interface PdfBindings {
   BROWSER?: BrowserRun;
 }
 
+function escapeHtml(value: string | number): string {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function ramsFooterTemplate(payload: RamsRenderPayload): string {
+  const reference = escapeHtml(payload.reference);
+  const revision = escapeHtml(payload.revisionNumber ?? 'DRAFT');
+
+  return `<div style="box-sizing:border-box;width:100%;height:14mm;padding:0 12mm 2mm;color:#53647b;font-family:Arial,Helvetica,sans-serif;font-size:6pt;line-height:1.2;overflow:hidden">
+    <div style="box-sizing:border-box;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr) minmax(0,1.2fr);column-gap:4mm;width:100%;height:100%;padding-top:2mm;border-top:1px solid #9ba9ba;overflow:hidden">
+      <div style="min-width:0;max-height:100%;overflow:hidden;overflow-wrap:anywhere;word-break:break-word">CONTROLLED DOCUMENT &middot; VERIFY CURRENT REVISION BEFORE USE</div>
+      <div style="min-width:0;overflow:hidden;text-align:center;white-space:nowrap;text-overflow:ellipsis">${reference} &middot; REV ${revision}</div>
+      <div style="min-width:0;max-height:100%;overflow:hidden;overflow-wrap:anywhere;text-align:right;word-break:break-word">Powered by OhmAudit management platform<br>Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
+    </div>
+  </div>`;
+}
+
 export interface ReportImagePayload {
   base64: string;
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
@@ -1434,7 +1456,9 @@ async function renderRamsReportWithBrowser(
         format: 'a4',
         printBackground: true,
         preferCSSPageSize: true,
-        displayHeaderFooter: false,
+        displayHeaderFooter: true,
+        headerTemplate: '<div></div>',
+        footerTemplate: ramsFooterTemplate(payload),
         tagged: true,
         outline: true,
         timeout,

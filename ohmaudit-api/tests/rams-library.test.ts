@@ -31,6 +31,77 @@ const draft = normalizeRamsDraft({
 });
 
 describe('RAMS library', () => {
+  it('returns defensive baseline requirement defaults when an organisation row is missing', async () => {
+    const prisma = {
+      ramsRequirementDefaults: { findUnique: () => Promise.resolve(null) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new RamsLibraryService(prisma).getRequirementDefaults('organisation-a'),
+    ).resolves.toEqual({
+      ppe: ['Safety footwear', 'High-visibility clothing'],
+      tools: ['Suitable, inspected tools and equipment for the task'],
+      competencies: ['Competent and authorised for the assigned work'],
+      emergencyArrangements: [
+        'Stop work, make the area safe and follow the site emergency procedure',
+      ],
+      welfare: ['Confirm suitable welfare facilities before work starts'],
+      plant: ['Only trained and authorised persons may operate plant and machinery'],
+    });
+  });
+
+  it('trims, deduplicates, upserts, and audits complete requirement defaults', async () => {
+    let upsertInput: unknown;
+    let auditInput: unknown;
+    const transaction = {
+      ramsRequirementDefaults: {
+        upsert: (input: unknown) => {
+          upsertInput = input;
+          return Promise.resolve({ organisationId: 'organisation-a' });
+        },
+      },
+      auditEvent: {
+        create: (input: unknown) => {
+          auditInput = input;
+          return Promise.resolve({ id: 'audit-a' });
+        },
+      },
+    } as unknown as Prisma.TransactionClient;
+    const prisma = {
+      $transaction: (operation: (client: Prisma.TransactionClient) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+    const input = {
+      ppe: [' Safety footwear ', 'Safety footwear'],
+      tools: [' Inspected tools '],
+      competencies: ['Authorised'],
+      emergencyArrangements: ['Stop work'],
+      welfare: ['Welfare available'],
+      plant: ['Trained operators'],
+    };
+
+    const result = await new RamsLibraryService(prisma).updateRequirementDefaults(
+      'organisation-a',
+      'user-a',
+      'correlation-a',
+      input,
+    );
+
+    expect(result.ppe).toEqual(['Safety footwear']);
+    expect(upsertInput).toMatchObject({
+      where: { organisationId: 'organisation-a' },
+      create: { organisationId: 'organisation-a', ppe: ['Safety footwear'] },
+      update: { ppe: ['Safety footwear'] },
+    });
+    expect(auditInput).toMatchObject({
+      data: {
+        eventType: 'RamsRequirementDefaultsUpdated',
+        entityType: 'RamsRequirementDefaults',
+        entityId: 'organisation-a',
+      },
+    });
+  });
+
   it('tenant-scopes active template and method-group listings', async () => {
     const templateFindMany = vi.fn(() => Promise.resolve([]));
     const groupFindMany = vi.fn(() => Promise.resolve([]));

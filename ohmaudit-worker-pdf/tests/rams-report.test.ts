@@ -227,8 +227,10 @@ describe('RAMS A4 renderer', () => {
     expect(html).toContain(`src="${signatureData}"`);
     expect(html).not.toContain('Mandatory');
     expect(html).toContain('Revision history');
-    expect(html).toContain('CONTROLLED DOCUMENT');
-    expect(html).toContain('Powered by OhmAudit management platform');
+    expect(html).toContain('@page { size: A4 portrait; margin: 11mm 0 22mm; }');
+    expect(html).not.toContain('class="footer"');
+    expect(html).not.toContain('CONTROLLED DOCUMENT');
+    expect(html).not.toContain('Powered by OhmAudit management platform');
     expect(html).toContain('white-space: nowrap');
     expect(html).toContain('.risk-table th:nth-child(1) { width: 9mm; }');
     expect(html).toContain('<th class="number">#</th>');
@@ -304,6 +306,8 @@ describe('RAMS A4 renderer', () => {
   });
 
   it('uses Browser Run for A4 printing with JavaScript disabled', async () => {
+    const input = payload();
+    input.reference = `RAMS-<&"'-${'x'.repeat(300)}`;
     let options: BrowserRunPDFOptions | undefined;
     const browser = {
       quickAction: (_action: 'pdf', received: BrowserRunPDFOptions) => {
@@ -319,7 +323,7 @@ describe('RAMS A4 renderer', () => {
       new Request('https://pdf.test/render/rams-a4-v1', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload()),
+        body: JSON.stringify(input),
       }),
       { ...environment, BROWSER: browser },
     );
@@ -334,8 +338,24 @@ describe('RAMS A4 renderer', () => {
       format: 'a4',
       printBackground: true,
       preferCSSPageSize: true,
-      displayHeaderFooter: false,
+      displayHeaderFooter: true,
+      headerTemplate: '<div></div>',
     });
+    const footerTemplate = options?.pdfOptions?.footerTemplate ?? '';
+    expect(footerTemplate).toContain('box-sizing:border-box;width:100%');
+    expect(footerTemplate).toContain('padding:0 12mm 2mm');
+    expect(footerTemplate).toContain('grid-template-columns:minmax(0,1.2fr)');
+    expect(footerTemplate).toContain(
+      'CONTROLLED DOCUMENT &middot; VERIFY CURRENT REVISION BEFORE USE',
+    );
+    expect(footerTemplate).toContain('Powered by OhmAudit management platform');
+    expect(footerTemplate).toContain(
+      'Page <span class="pageNumber"></span> of <span class="totalPages"></span>',
+    );
+    expect(footerTemplate).toContain('RAMS-&lt;&amp;&quot;&#039;-');
+    expect(footerTemplate).not.toContain(`RAMS-<&"'-`);
+    expect(footerTemplate).toContain('overflow-wrap:anywhere');
+    expect(footerTemplate).toContain('text-overflow:ellipsis');
     expect(options !== undefined && 'html' in options ? options.html : '').toContain(
       'Electrical safety',
     );

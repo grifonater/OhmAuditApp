@@ -373,6 +373,14 @@ const visitUpdateInput = z
   });
 const jobCategoryInput = z.object({ name: z.string().trim().min(2).max(80) });
 const ramsListItem = z.string().trim().min(1).max(2000);
+const ramsRequirementDefaultsInput = z.object({
+  ppe: z.array(ramsListItem).max(100),
+  tools: z.array(ramsListItem).max(100),
+  competencies: z.array(ramsListItem).max(100),
+  emergencyArrangements: z.array(ramsListItem).max(100),
+  welfare: z.array(ramsListItem).max(100),
+  plant: z.array(ramsListItem).max(100),
+});
 const ramsDraftRowText = (maximum: number) => z.string().trim().max(maximum);
 const ramsNamedReferenceInput = z.object({
   id: ramsDraftRowText(100),
@@ -537,7 +545,7 @@ const ramsHazardDataInput = z.object({
   hazard: z.string().trim().max(1000),
   peopleAtRisk: z.string().trim().max(1000).optional().default(''),
   initialLikelihood: z.number().int().min(1).max(5).optional().default(3),
-  initialSeverity: z.number().int().min(1).max(5).optional().default(3),
+  initialSeverity: z.number().int().min(1).max(5).optional().default(5),
   controls: z.string().max(5000),
   residualLikelihood: z.number().int().min(1).max(5).optional().default(1),
   residualSeverity: z.number().int().min(1).max(5).optional().default(3),
@@ -2665,6 +2673,38 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     );
     return context.json({
       templates: await new RamsLibraryService(prismaFor(environment)).listTemplates(organisationId),
+    });
+  });
+  app.get('/api/v1/organisations/:organisationId/rams-requirement-defaults', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      defaults: await new RamsLibraryService(prismaFor(environment)).getRequirementDefaults(
+        organisationId,
+      ),
+    });
+  });
+  app.put('/api/v1/organisations/:organisationId/rams-requirement-defaults', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const input = ramsRequirementDefaultsInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json({
+      defaults: await new RamsLibraryService(prismaFor(environment)).updateRequirementDefaults(
+        organisationId,
+        user.id,
+        context.get('correlationId'),
+        input,
+      ),
     });
   });
   app.post('/api/v1/organisations/:organisationId/rams-templates', async (context) => {

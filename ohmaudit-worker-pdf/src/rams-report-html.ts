@@ -465,14 +465,13 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
     .signature-table td { height: 10mm; }
     .signature-table .signature { padding: 1mm 2mm; text-align: center; }
     .signature-table .signature img { display: inline-block; max-width: 48mm; height: 9mm; object-fit: contain; }
-    .footer { position: fixed; right: 12mm; bottom: 5mm; left: 12mm; display: flex; justify-content: space-between; padding-top: 2mm; border-top: 1px solid #9ba9ba; color: #53647b; font-size: 6pt; }
     .watermark { position: fixed; z-index: 0; top: 128mm; left: 22mm; width: 166mm; transform: rotate(-32deg); color: rgba(166, 44, 55, .10); font-size: 52pt; font-weight: 900; letter-spacing: .08em; text-align: center; pointer-events: none; }
     .document > *:not(.watermark) { position: relative; z-index: 1; }
-    @page { size: A4 portrait; margin: 11mm 0 16mm; }
+    @page { size: A4 portrait; margin: 11mm 0 22mm; }
     @media print {
       html, body { width: 210mm; background: #fff; }
       .document { width: auto; margin: 0; padding-top: 0; padding-bottom: 0; box-shadow: none; }
-      .footer, .watermark { position: fixed; }
+      .watermark { position: fixed; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
   </style>
@@ -612,8 +611,6 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
       <h2 class="section-title"><span>10</span> Revision history</h2>
       <table><thead><tr><th>Revision</th><th>Date</th><th>Created by</th><th>Status</th><th>Summary</th></tr></thead><tbody>${revisionRows(payload.revisionHistory)}</tbody></table>
     </section>
-
-    <footer class="footer"><span>CONTROLLED DOCUMENT · VERIFY CURRENT REVISION BEFORE USE</span><span>${value(payload.reference)} · REV ${value(payload.revisionNumber, 'DRAFT')}</span><span>Powered by OhmAudit management platform</span></footer>
   </main>
 </body>
 </html>`;

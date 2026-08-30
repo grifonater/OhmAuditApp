@@ -8,12 +8,15 @@ import {
   type RamsMethodGroup,
   type RamsRevisionDetail,
   type RamsTemplate,
+  type RamsLibraryHazard,
   type VisitSummary,
 } from '../core/api.service';
 import {
   applyRamsTemplate,
   cloneMethodSteps,
+  createRamsHazard,
   hasReplaceableRamsWork,
+  importRamsHazards,
   ramsRiskClass,
   ramsRiskScore,
 } from '../core/rams-library';
@@ -50,7 +53,10 @@ export class RamsWorkspaceComponent {
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly visitId = this.route.snapshot.paramMap.get('visitId') ?? '';
   private readonly routeRamsId = this.route.snapshot.paramMap.get('ramsId');
+  protected readonly templateId = this.route.snapshot.paramMap.get('templateId') ?? '';
+  protected readonly templateMode = computed(() => Boolean(this.templateId));
   protected readonly rams = signal<RamsDetail | undefined>(undefined);
+  protected readonly template = signal<RamsTemplate | undefined>(undefined);
   protected readonly draft = signal<RamsDraft | undefined>(undefined);
   protected readonly capabilities = signal<string[]>([]);
   protected readonly busy = signal(false);
@@ -60,6 +66,9 @@ export class RamsWorkspaceComponent {
   protected readonly savedAt = signal<Date | undefined>(undefined);
   protected readonly templates = signal<RamsTemplate[]>([]);
   protected readonly methodGroups = signal<RamsMethodGroup[]>([]);
+  protected readonly hazardLibrary = signal<RamsLibraryHazard[]>([]);
+  protected readonly hazardQuery = signal('');
+  protected readonly selectedHazardIds = signal<string[]>([]);
   protected readonly templateQuery = signal('');
   protected readonly methodGroupQuery = signal('');
   protected readonly selectedTemplateId = signal('');
@@ -129,6 +138,7 @@ export class RamsWorkspaceComponent {
   protected readonly canReview = computed(() => this.capabilities().includes('rams.review'));
   protected readonly canApprove = computed(() => this.capabilities().includes('rams.approve'));
   protected readonly editable = computed(() => {
+    if (this.templateMode()) return this.canManage();
     const status = this.rams()?.status;
     return this.canManage() && (status === 'DRAFT' || status === 'RETURNED');
   });
@@ -149,6 +159,16 @@ export class RamsWorkspaceComponent {
         group.name.toLocaleLowerCase('en-GB').includes(query) ||
         group.description.toLocaleLowerCase('en-GB').includes(query) ||
         group.steps.some((step) => step.title.toLocaleLowerCase('en-GB').includes(query)),
+    );
+  });
+  protected readonly filteredHazards = computed(() => {
+    const query = this.hazardQuery().trim().toLocaleLowerCase('en-GB');
+    return this.hazardLibrary().filter(
+      (item) =>
+        !query ||
+        item.name.toLocaleLowerCase('en-GB').includes(query) ||
+        item.description.toLocaleLowerCase('en-GB').includes(query) ||
+        item.data.hazard.toLocaleLowerCase('en-GB').includes(query),
     );
   });
   protected readonly sectionCompletion = computed<Record<RamsTab, boolean>>(() => {
@@ -190,7 +210,7 @@ export class RamsWorkspaceComponent {
       draft.scope.keyActivities.some((item) => item.trim()) &&
       draft.scope.workAreas.some((item) => item.trim()) &&
       draft.scope.workBoundaries.trim() &&
-      draft.scope.responsibilities.some(
+      draft.scope.responsibilities.every(
         (item) => item.name.trim() && item.role.trim() && item.responsibility.trim(),
       ),
     );
@@ -380,22 +400,30 @@ export class RamsWorkspaceComponent {
   }
 
   protected addHazard(): void {
-    const hazard: RamsHazard = {
-      id: crypto.randomUUID(),
-      hazard: '',
-      peopleAtRisk: '',
-      initialLikelihood: 3,
-      initialSeverity: 3,
-      controls: '',
-      residualLikelihood: 1,
-      residualSeverity: 3,
-      howHarmed: '',
-      furtherActions: '',
-      actionOwner: '',
-      actionDueDate: '',
-      actionStatus: 'OPEN',
-    };
-    this.mutate((draft) => draft.riskAssessment.hazards.push(hazard));
+    this.mutate((draft) =>
+      draft.riskAssessment.hazards.push(createRamsHazard(() => crypto.randomUUID())),
+    );
+  }
+
+  protected toggleHazardSelection(id: string): void {
+    this.selectedHazardIds.update((ids) =>
+      ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id],
+    );
+  }
+
+  protected importSelectedHazards(): void {
+    const current = this.draft();
+    if (!current || !this.editable()) return;
+    const selectedIds = new Set(this.selectedHazardIds());
+    const selected = this.hazardLibrary().filter(({ id }) => selectedIds.has(id));
+    const result = importRamsHazards(current.riskAssessment.hazards, selected, () =>
+      crypto.randomUUID(),
+    );
+    this.mutate((draft) => (draft.riskAssessment.hazards = result.hazards));
+    this.selectedHazardIds.set([]);
+    this.notice.set(
+      `${result.imported} hazard${result.imported === 1 ? '' : 's'} imported${result.skipped ? `; ${result.skipped} duplicate or over-limit selection${result.skipped === 1 ? '' : 's'} skipped` : ''}.`,
+    );
   }
 
   protected updateHazard(index: number, field: keyof RamsHazard, value: string | number): void {
@@ -667,10 +695,25 @@ export class RamsWorkspaceComponent {
   }
 
   protected async save(): Promise<void> {
-    const rams = this.rams();
     const draft = this.draft();
-    if (!rams || !draft || !this.editable()) return;
+    if (!draft || !this.editable()) return;
     await this.run(async () => {
+      if (this.templateMode()) {
+        const template = this.template();
+        if (!template) return;
+        const result = await this.api.updateRamsTemplate(this.organisationId, template.id, {
+          name: template.name,
+          description: template.description,
+          data: this.cleanDraft(draft),
+        });
+        this.template.set(result.template);
+        this.draft.set(this.normalizeDraft(result.template.data));
+        this.savedAt.set(new Date());
+        this.notice.set('Template content saved.');
+        return;
+      }
+      const rams = this.rams();
+      if (!rams) return;
       await this.api.updateRams(this.organisationId, rams.id, this.cleanDraft(draft));
       await this.reload(rams.id);
       this.savedAt.set(new Date());
@@ -764,18 +807,25 @@ export class RamsWorkspaceComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const [account, templates, groups] = await Promise.all([
+      const [account, templates, groups, hazards] = await Promise.all([
         this.api.currentUser(),
         this.api.listRamsTemplates(this.organisationId),
         this.api.listRamsMethodGroups(this.organisationId),
+        this.api.listRamsHazards(this.organisationId),
       ]);
       this.templates.set(templates.templates);
       this.methodGroups.set(groups.groups);
+      this.hazardLibrary.set(hazards.hazards);
       this.capabilities.set(
         account.memberships.find(({ organisation }) => organisation.id === this.organisationId)
           ?.role.capabilities ?? [],
       );
-      if (this.routeRamsId === null) {
+      if (this.templateMode()) {
+        const template = templates.templates.find(({ id }) => id === this.templateId);
+        if (!template) throw new Error('RAMS template not found.');
+        this.template.set(template);
+        this.draft.set(this.normalizeDraft(template.data));
+      } else if (this.routeRamsId === null) {
         const { rams } = await this.api.createVisitRams(this.organisationId, this.visitId);
         this.setRams(rams);
         await this.router.navigate(

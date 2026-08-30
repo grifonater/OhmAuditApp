@@ -4,6 +4,7 @@ import {
   ramsCreateRoute,
   ramsDetailRoute,
   ramsLibraryRoute,
+  ramsTemplateEditRoute,
   ramsPdfFileName,
   ramsPdfPath,
 } from '../src/app/core/rams-routes';
@@ -13,6 +14,11 @@ describe('RAMS routes', () => {
     expect(ramsCreateRoute.capabilities).toEqual(['rams.manage']);
     expect(ramsDetailRoute.capabilities).toEqual(['rams.read']);
     expect(ramsLibraryRoute.capabilities).toEqual(['rams.read']);
+    expect(ramsTemplateEditRoute.capabilities).toEqual(['rams.manage']);
+  });
+
+  it('keeps template editing at organisation scope', () => {
+    expect(ramsTemplateEditRoute.path).toBe('org/:organisationId/rams/templates/:templateId/edit');
   });
 
   it('keeps the library at organisation scope', () => {

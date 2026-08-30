@@ -1,5 +1,10 @@
 import type { Routes } from '@angular/router';
-import { ramsCreateRoute, ramsDetailRoute, ramsLibraryRoute } from './core/rams-routes';
+import {
+  ramsCreateRoute,
+  ramsDetailRoute,
+  ramsLibraryRoute,
+  ramsTemplateEditRoute,
+} from './core/rams-routes';
 import { authGuard } from './core/auth.guard';
 import { authorizationGuard } from './core/authorization.guard';
 
@@ -181,6 +186,15 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./operations/rams-library.component').then(
             (module) => module.RamsLibraryComponent,
+          ),
+      },
+      {
+        path: ramsTemplateEditRoute.path,
+        canActivate: [authorizationGuard],
+        data: { capabilities: [...ramsTemplateEditRoute.capabilities] },
+        loadComponent: () =>
+          import('./operations/rams-workspace.component').then(
+            (module) => module.RamsWorkspaceComponent,
           ),
       },
       {

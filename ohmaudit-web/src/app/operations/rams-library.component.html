@@ -41,6 +41,14 @@
     >
       Hazard library <span>{{ hazards().length }}</span>
     </button>
+    <button
+      type="button"
+      role="tab"
+      [class.active]="activeTab() === 'requirements'"
+      (click)="switchTab('requirements')"
+    >
+      Requirements defaults
+    </button>
   </nav>
 
   <section class="library-toolbar">
@@ -285,6 +293,18 @@
                 >Apply to job</a
               >
               @if (canManage()) {
+                <a
+                  class="button secondary compact"
+                  [routerLink]="[
+                    '/app/org',
+                    organisationId,
+                    'rams',
+                    'templates',
+                    template.id,
+                    'edit',
+                  ]"
+                  >Edit content</a
+                >
                 <button
                   class="button secondary compact"
                   type="button"
@@ -898,6 +918,61 @@
         </div>
       }
     </section>
+  }
+
+  @if (activeTab() === 'requirements') {
+    <section class="requirement-defaults-grid" aria-label="RAMS requirement defaults">
+      @for (card of requirementDefaultCards; track card.key) {
+        <article class="card requirement-default-card">
+          <div class="card-header">
+            <div>
+              <h2>{{ card.label }}</h2>
+              <small>Applied as an organisation baseline when templates are used.</small>
+            </div>
+            @if (canManage()) {
+              <button
+                class="button secondary compact"
+                type="button"
+                (click)="addRequirementDefault(card.key)"
+              >
+                Add item
+              </button>
+            }
+          </div>
+          <div class="card-body requirement-default-list">
+            @for (item of requirementDefaults()[card.key]; track $index) {
+              <div class="requirement-default-row">
+                <input
+                  [value]="item"
+                  [disabled]="!canManage()"
+                  [placeholder]="card.label + ' item'"
+                  (input)="updateRequirementDefault(card.key, $index, $any($event.target).value)"
+                />
+                @if (canManage()) {
+                  <button type="button" (click)="removeRequirementDefault(card.key, $index)">
+                    Remove
+                  </button>
+                }
+              </div>
+            } @empty {
+              <p class="field-hint">No defaults configured.</p>
+            }
+          </div>
+        </article>
+      }
+    </section>
+    @if (canManage()) {
+      <div class="requirement-default-actions">
+        <button
+          class="button primary"
+          type="button"
+          [disabled]="busy()"
+          (click)="saveRequirementDefaults()"
+        >
+          Save requirements defaults
+        </button>
+      </div>
+    }
   }
 
   @if (error()) {

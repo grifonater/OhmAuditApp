@@ -7,12 +7,20 @@ import {
   type RamsLibraryHazard,
   type RamsMethodGroup,
   type RamsMethodStep,
+  type RamsRequirementDefaultCategory,
+  type RamsRequirementDefaults,
   type RamsTemplate,
 } from '../core/api.service';
-import { blankRamsDraft, ramsRiskBand, ramsRiskClass, ramsRiskScore } from '../core/rams-library';
+import {
+  blankRamsDraft,
+  createRamsHazard,
+  ramsRiskBand,
+  ramsRiskClass,
+  ramsRiskScore,
+} from '../core/rams-library';
 import { RiskMatrixComponent } from '../shared/risk-matrix.component';
 
-type LibraryTab = 'all' | 'templates' | 'methods' | 'hazards';
+type LibraryTab = 'all' | 'templates' | 'methods' | 'hazards' | 'requirements';
 type TemplateEdit = { name: string; description: string; sourceRamsId: string };
 type GroupEdit = { name: string; description: string; steps: RamsMethodStep[] };
 type HazardFields = {
@@ -48,6 +56,20 @@ export class RamsLibraryComponent {
   protected readonly templates = signal<RamsTemplate[]>([]);
   protected readonly groups = signal<RamsMethodGroup[]>([]);
   protected readonly hazards = signal<RamsLibraryHazard[]>([]);
+  protected readonly requirementDefaults = signal<RamsRequirementDefaults>(
+    this.blankRequirementDefaults(),
+  );
+  protected readonly requirementDefaultCards: Array<{
+    key: RamsRequirementDefaultCategory;
+    label: string;
+  }> = [
+    { key: 'ppe', label: 'PPE' },
+    { key: 'tools', label: 'Tools & equipment' },
+    { key: 'competencies', label: 'Competencies' },
+    { key: 'emergencyArrangements', label: 'Emergency arrangements' },
+    { key: 'welfare', label: 'Welfare' },
+    { key: 'plant', label: 'Plant & machinery' },
+  ];
   protected readonly capabilities = signal<string[]>([]);
   protected readonly query = signal('');
   protected readonly status = signal('ALL');
@@ -438,6 +460,52 @@ export class RamsLibraryComponent {
     });
   }
 
+  protected addRequirementDefault(category: RamsRequirementDefaultCategory): void {
+    if (!this.canManage()) return;
+    this.requirementDefaults.update((defaults) => ({
+      ...defaults,
+      [category]: [...defaults[category], ''],
+    }));
+  }
+
+  protected updateRequirementDefault(
+    category: RamsRequirementDefaultCategory,
+    index: number,
+    value: string,
+  ): void {
+    if (!this.canManage()) return;
+    this.requirementDefaults.update((defaults) => {
+      const next = structuredClone(defaults);
+      next[category][index] = value;
+      return next;
+    });
+  }
+
+  protected removeRequirementDefault(
+    category: RamsRequirementDefaultCategory,
+    index: number,
+  ): void {
+    if (!this.canManage()) return;
+    this.requirementDefaults.update((defaults) => {
+      const next = structuredClone(defaults);
+      next[category].splice(index, 1);
+      return next;
+    });
+  }
+
+  protected async saveRequirementDefaults(): Promise<void> {
+    if (!this.canManage()) return;
+    await this.run(async () => {
+      const cleaned = structuredClone(this.requirementDefaults());
+      for (const { key } of this.requirementDefaultCards) {
+        cleaned[key] = cleaned[key].map((item) => item.trim()).filter(Boolean);
+      }
+      const result = await this.api.updateRamsRequirementDefaults(this.organisationId, cleaned);
+      this.requirementDefaults.set(result.defaults);
+      this.notice.set('Requirement defaults saved.');
+    });
+  }
+
   protected formatDate(value: string): string {
     return new Intl.DateTimeFormat('en-GB', {
       day: 'numeric',
@@ -455,17 +523,20 @@ export class RamsLibraryComponent {
 
   private initialTab(): LibraryTab {
     const tab = this.route.snapshot.queryParamMap.get('tab');
-    return tab === 'templates' || tab === 'methods' || tab === 'hazards' ? tab : 'all';
+    return tab === 'templates' || tab === 'methods' || tab === 'hazards' || tab === 'requirements'
+      ? tab
+      : 'all';
   }
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const [account, rams, templates, groups, hazards] = await Promise.all([
+      const [account, rams, templates, groups, hazards, requirementDefaults] = await Promise.all([
         this.api.currentUser(),
         this.api.listRams(this.organisationId, { limit: 50 }),
         this.api.listRamsTemplates(this.organisationId),
         this.api.listRamsMethodGroups(this.organisationId),
         this.api.listRamsHazards(this.organisationId),
+        this.api.getRamsRequirementDefaults(this.organisationId),
       ]);
       this.capabilities.set(
         account.memberships.find(({ organisation }) => organisation.id === this.organisationId)
@@ -476,6 +547,7 @@ export class RamsLibraryComponent {
       this.templates.set(templates.templates);
       this.groups.set(groups.groups);
       this.hazards.set(hazards.hazards);
+      this.requirementDefaults.set(requirementDefaults.defaults);
     });
   }
 
@@ -557,22 +629,23 @@ export class RamsLibraryComponent {
   }
 
   private blankHazard(): HazardEdit {
+    const hazard = createRamsHazard(() => crypto.randomUUID());
     return {
       name: '',
       description: '',
       isDefault: false,
-      hazard: '',
-      peopleAtRisk: '',
-      howHarmed: '',
-      controls: '',
-      furtherActions: '',
-      actionOwner: '',
-      actionDueDate: '',
-      actionStatus: 'OPEN',
-      initialLikelihood: 3,
-      initialSeverity: 5,
-      residualLikelihood: 1,
-      residualSeverity: 3,
+      ...hazard,
+    };
+  }
+
+  private blankRequirementDefaults(): RamsRequirementDefaults {
+    return {
+      ppe: [],
+      tools: [],
+      competencies: [],
+      emergencyArrangements: [],
+      welfare: [],
+      plant: [],
     };
   }
 

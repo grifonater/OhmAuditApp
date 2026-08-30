@@ -106,10 +106,21 @@ describe('RAMS workflow', () => {
             site: {
               accessInstructions: null,
               parkingInformation: null,
-              ppeRequirements: null,
+              ppeRequirements: 'Safety footwear',
               inductionInformation: null,
             },
             jobCategory: null,
+          }),
+      },
+      ramsRequirementDefaults: {
+        findUnique: () =>
+          Promise.resolve({
+            ppe: ['Safety footwear', 'Arc-rated clothing'],
+            tools: ['Inspected tools'],
+            competencies: ['Authorised electrician'],
+            emergencyArrangements: ['Follow the site emergency procedure'],
+            welfare: ['Confirm welfare facilities'],
+            plant: ['Authorised operators only'],
           }),
       },
       ramsHazardLibraryItem: { findMany: () => Promise.resolve([]) },
@@ -132,6 +143,16 @@ describe('RAMS workflow', () => {
       data: {
         organisationId: 'organisation-a',
         visits: { create: { visitId: 'visit-a' } },
+        draftData: {
+          requirements: {
+            ppe: ['Safety footwear', 'Arc-rated clothing'],
+            tools: ['Inspected tools'],
+            competencies: ['Authorised electrician'],
+            emergencyArrangements: ['Follow the site emergency procedure'],
+            welfare: ['Confirm welfare facilities'],
+            plant: ['Authorised operators only'],
+          },
+        },
       },
     });
   });
@@ -210,6 +231,63 @@ describe('RAMS workflow', () => {
             status: 'DRAFT',
             currentRevisionNumber: 0,
             draftData: { ...readyDraft, methodStatement: { steps: [] } },
+          }),
+      },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new RamsService(prisma).submit('organisation-a', 'rams-a', 'user-a', 'correlation-a'),
+    ).rejects.toMatchObject({ code: 'RAMS_NOT_READY', status: 422 });
+  });
+
+  it('allows a ready draft with no responsibility rows', async () => {
+    const transaction = {
+      ramsRevision: { create: () => Promise.resolve({ id: 'revision-a' }) },
+      rams: {
+        update: () =>
+          Promise.resolve({ id: 'rams-a', status: 'UNDER_REVIEW', currentRevisionNumber: 1 }),
+      },
+      auditEvent: { create: () => Promise.resolve({ id: 'audit-a' }) },
+    } as unknown as Prisma.TransactionClient;
+    const prisma = {
+      rams: {
+        findFirst: () =>
+          Promise.resolve({
+            id: 'rams-a',
+            visits: [{ visitId: 'visit-a' }],
+            status: 'DRAFT',
+            currentRevisionNumber: 0,
+            draftData: {
+              ...readyDraft,
+              scope: { ...readyDraft.scope, responsibilities: [] },
+            },
+          }),
+      },
+      $transaction: (operation: (client: Prisma.TransactionClient) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new RamsService(prisma).submit('organisation-a', 'rams-a', 'user-a', 'correlation-a'),
+    ).resolves.toMatchObject({ status: 'UNDER_REVIEW' });
+  });
+
+  it('rejects an entered responsibility row unless all required values are present', async () => {
+    const prisma = {
+      rams: {
+        findFirst: () =>
+          Promise.resolve({
+            id: 'rams-a',
+            visits: [{ visitId: 'visit-a' }],
+            status: 'DRAFT',
+            currentRevisionNumber: 0,
+            draftData: {
+              ...readyDraft,
+              scope: {
+                ...readyDraft.scope,
+                responsibilities: [{ id: 'person-a', name: 'Alex', role: '', responsibility: '' }],
+              },
+            },
           }),
       },
     } as unknown as PrismaClient;

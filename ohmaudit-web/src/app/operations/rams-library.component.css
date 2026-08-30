@@ -401,6 +401,32 @@
   font-size: 0.62rem;
   font-weight: 400;
 }
+.requirement-defaults-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+.requirement-default-list {
+  display: grid;
+  gap: 0.45rem;
+}
+.requirement-default-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+.requirement-default-row button {
+  border: 0;
+  color: var(--oa-ink-muted);
+  background: transparent;
+  font-size: 0.64rem;
+}
+.requirement-default-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
 .editor-grid .field.check-field {
   display: flex;
   align-items: center;
@@ -411,6 +437,9 @@
   min-height: 0;
 }
 @media (max-width: 46rem) {
+  .requirement-defaults-grid {
+    grid-template-columns: 1fr;
+  }
   .hazard-row {
     grid-template-columns: 1fr;
   }

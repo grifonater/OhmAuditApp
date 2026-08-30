@@ -223,6 +223,7 @@ model Organisation {
   ramsTemplates                RamsTemplate[]
   ramsMethodStatementGroups    RamsMethodStatementGroup[]
   ramsHazardLibraryItems       RamsHazardLibraryItem[]
+  ramsRequirementDefaults      RamsRequirementDefaults?
   ramsAcknowledgements         RamsAcknowledgement[]
 
   @@map("organisations")
@@ -810,6 +811,21 @@ model RamsHazardLibraryItem {
   @@unique([organisationId, normalisedName])
   @@index([organisationId, status, isDefault])
   @@map("rams_hazard_library_items")
+}
+
+model RamsRequirementDefaults {
+  organisationId        String       @id @map("organisation_id") @db.Uuid
+  ppe                   Json
+  tools                 Json
+  competencies          Json
+  emergencyArrangements Json         @map("emergency_arrangements")
+  welfare               Json
+  plant                 Json
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+  organisation          Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@map("rams_requirement_defaults")
 }
 
 model JobCategory {

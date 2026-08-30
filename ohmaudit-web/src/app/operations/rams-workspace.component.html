@@ -1,6 +1,30 @@
 <main class="page rams-page">
-  @if (rams(); as currentRams) {
-    @if (draft(); as currentDraft) {
+  @if (draft(); as currentDraft) {
+    @let currentRams = rams()!;
+    @if (templateMode()) {
+      <div class="rams-toolbar">
+        <nav class="breadcrumbs" aria-label="Breadcrumb">
+          <a [routerLink]="['/app/org', organisationId, 'rams']">RAMS library</a>
+          <span>/</span>
+          <strong>Edit template content</strong>
+        </nav>
+        <div class="toolbar-actions">
+          <button class="button primary" type="button" [disabled]="busy()" (click)="save()">
+            Save template
+          </button>
+        </div>
+      </div>
+      <header class="card rams-hero template-hero">
+        <div class="rams-mark" aria-hidden="true">T</div>
+        <div class="rams-identity">
+          <div class="reference-line"><strong>Reusable RAMS content</strong></div>
+          <h1>{{ template()?.name }}</h1>
+          <div class="job-meta">
+            <span>{{ template()?.description || 'No description' }}</span>
+          </div>
+        </div>
+      </header>
+    } @else {
       <div class="rams-toolbar">
         <nav class="breadcrumbs" aria-label="Breadcrumb">
           <a [routerLink]="['/app/org', organisationId, 'visits']">Jobs</a>
@@ -104,26 +128,28 @@
           >
         </div>
       }
+    }
 
-      <nav class="rams-tabs" role="tablist" aria-label="RAMS sections">
-        @for (tab of tabs; track tab.key) {
-          <button
-            type="button"
-            role="tab"
-            [attr.aria-selected]="activeTab() === tab.key"
-            [class.active]="activeTab() === tab.key"
-            [class.complete]="sectionCompletion()[tab.key]"
-            (click)="switchTab(tab.key)"
-          >
-            <span>{{ sectionCompletion()[tab.key] ? 'OK' : tab.number }}</span>
-            {{ tab.label }}
-          </button>
-        }
-      </nav>
+    <nav class="rams-tabs" role="tablist" aria-label="RAMS sections">
+      @for (tab of tabs; track tab.key) {
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="activeTab() === tab.key"
+          [class.active]="activeTab() === tab.key"
+          [class.complete]="sectionCompletion()[tab.key]"
+          (click)="switchTab(tab.key)"
+        >
+          <span>{{ sectionCompletion()[tab.key] ? 'OK' : tab.number }}</span>
+          {{ tab.label }}
+        </button>
+      }
+    </nav>
 
-      <div class="workspace-layout">
-        <section class="workspace-main">
-          @if (activeTab() === 'overview') {
+    <div class="workspace-layout">
+      <section class="workspace-main">
+        @if (activeTab() === 'overview') {
+          @if (!templateMode()) {
             <article class="card linked-jobs-panel">
               <div class="card-header">
                 <div>
@@ -220,25 +246,27 @@
                 </button>
               </div>
             </article>
-            <article class="card section-card">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Section 1</p>
-                  <h2>RAMS overview</h2>
-                </div>
-                <span class="section-status" [class.done]="sectionCompletion().overview">{{
-                  sectionCompletion().overview ? 'Complete' : 'In progress'
-                }}</span>
+          }
+          <article class="card section-card">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Section 1</p>
+                <h2>RAMS overview</h2>
               </div>
-              <div class="card-body overview-form">
-                <label class="field full"
-                  >RAMS title *
-                  <input
-                    [value]="currentDraft.overview.title"
-                    [disabled]="!editable()"
-                    (input)="updateOverview('title', $any($event.target).value)"
-                  />
-                </label>
+              <span class="section-status" [class.done]="sectionCompletion().overview">{{
+                sectionCompletion().overview ? 'Complete' : 'In progress'
+              }}</span>
+            </div>
+            <div class="card-body overview-form">
+              <label class="field full"
+                >RAMS title *
+                <input
+                  [value]="currentDraft.overview.title"
+                  [disabled]="!editable()"
+                  (input)="updateOverview('title', $any($event.target).value)"
+                />
+              </label>
+              @if (!templateMode()) {
                 <div class="field">
                   <span>Linked job</span>
                   <a
@@ -258,46 +286,50 @@
                     disabled
                   />
                 </label>
-                <label class="field"
-                  >Category
-                  <input
-                    [value]="currentDraft.overview.category"
-                    [disabled]="!editable()"
-                    (input)="updateOverview('category', $any($event.target).value)"
-                  />
-                </label>
+              }
+              <label class="field"
+                >Category
+                <input
+                  [value]="currentDraft.overview.category"
+                  [disabled]="!editable()"
+                  (input)="updateOverview('category', $any($event.target).value)"
+                />
+              </label>
+              @if (!templateMode()) {
                 <label class="field"
                   >Prepared by
                   <input [value]="personName(currentRams.preparedBy)" disabled />
                 </label>
-                <label class="field"
-                  >Effective from *
-                  <input
-                    type="date"
-                    [value]="currentDraft.overview.effectiveFrom"
-                    [disabled]="!editable()"
-                    (input)="updateOverview('effectiveFrom', $any($event.target).value)"
-                  />
-                </label>
-                <label class="field"
-                  >Review by
-                  <input
-                    type="date"
-                    [value]="currentDraft.overview.reviewBy"
-                    [disabled]="!editable()"
-                    (input)="updateOverview('reviewBy', $any($event.target).value)"
-                  />
-                </label>
-                <label class="field full"
-                  >Revision summary
-                  <textarea
-                    rows="3"
-                    [value]="currentDraft.overview.revisionSummary"
-                    [disabled]="!editable()"
-                    placeholder="Summarise what this issue covers or what changed"
-                    (input)="updateOverview('revisionSummary', $any($event.target).value)"
-                  ></textarea>
-                </label>
+              }
+              <label class="field"
+                >Effective from *
+                <input
+                  type="date"
+                  [value]="currentDraft.overview.effectiveFrom"
+                  [disabled]="!editable()"
+                  (input)="updateOverview('effectiveFrom', $any($event.target).value)"
+                />
+              </label>
+              <label class="field"
+                >Review by
+                <input
+                  type="date"
+                  [value]="currentDraft.overview.reviewBy"
+                  [disabled]="!editable()"
+                  (input)="updateOverview('reviewBy', $any($event.target).value)"
+                />
+              </label>
+              <label class="field full"
+                >Revision summary
+                <textarea
+                  rows="3"
+                  [value]="currentDraft.overview.revisionSummary"
+                  [disabled]="!editable()"
+                  placeholder="Summarise what this issue covers or what changed"
+                  (input)="updateOverview('revisionSummary', $any($event.target).value)"
+                ></textarea>
+              </label>
+              @if (!templateMode()) {
                 <div class="context-panel full">
                   <div>
                     <span>Job context</span
@@ -324,1397 +356,1430 @@
                     >
                   </div>
                 </div>
-              </div>
-            </article>
-            <div class="overview-preview-grid">
-              <article class="card mini-preview">
-                <div class="card-header">
-                  <h2>Scope of works</h2>
-                  <button class="button ghost compact" type="button" (click)="switchTab('scope')">
-                    Edit
-                  </button>
-                </div>
-                <p>{{ currentDraft.scope.scopeOfWorks || 'Add the work covered by this RAMS.' }}</p>
-              </article>
-              <article class="card mini-preview">
-                <div class="card-header">
-                  <h2>Exclusions</h2>
-                  <button class="button ghost compact" type="button" (click)="switchTab('scope')">
-                    Edit
-                  </button>
-                </div>
-                <ul>
-                  @for (item of currentDraft.scope.exclusions; track $index) {
-                    <li>{{ item }}</li>
-                  } @empty {
-                    <li>No exclusions recorded.</li>
-                  }
-                </ul>
-              </article>
-              <article class="card mini-preview">
-                <div class="card-header">
-                  <h2>Engineer briefing</h2>
-                  <button class="button ghost compact" type="button" (click)="switchTab('scope')">
-                    Edit
-                  </button>
-                </div>
-                <ul>
-                  @for (item of currentDraft.scope.engineerBriefing; track $index) {
-                    <li>{{ item }}</li>
-                  } @empty {
-                    <li>No briefing points recorded.</li>
-                  }
-                </ul>
-              </article>
-            </div>
-          }
-
-          @if (activeTab() === 'scope') {
-            <article class="card section-card">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Section 2</p>
-                  <h2>Scope of works</h2>
-                </div>
-                <span class="prefill-note">Prefilled from job</span>
-              </div>
-              <div class="card-body scope-layout">
-                <label class="field full"
-                  >Detailed scope *
-                  <textarea
-                    rows="9"
-                    [value]="currentDraft.scope.scopeOfWorks"
-                    [disabled]="!editable()"
-                    (input)="updateScope('scopeOfWorks', $any($event.target).value)"
-                  ></textarea>
-                  <small
-                    >Describe the work sequence, equipment, boundaries and intended outcome.</small
-                  >
-                </label>
-                <label class="field full"
-                  >Work boundaries *
-                  <textarea
-                    rows="4"
-                    [value]="currentDraft.scope.workBoundaries"
-                    [disabled]="!editable()"
-                    placeholder="Define physical, operational and isolation boundaries"
-                    (input)="updateScope('workBoundaries', $any($event.target).value)"
-                  ></textarea>
-                </label>
-                @for (
-                  list of [
-                    {
-                      key: 'keyActivities',
-                      title: 'Key activities',
-                      help: 'The principal work activities covered.',
-                    },
-                    {
-                      key: 'workAreas',
-                      title: 'Work areas',
-                      help: 'Locations where work will take place.',
-                    },
-                    {
-                      key: 'assumptions',
-                      title: 'Assumptions',
-                      help: 'Conditions relied upon when planning the work.',
-                    },
-                  ];
-                  track list.key
-                ) {
-                  <section class="list-editor">
-                    <div class="subsection-heading">
-                      <div>
-                        <h3>{{ list.title }}{{ list.key !== 'assumptions' ? ' *' : '' }}</h3>
-                        <small>{{ list.help }}</small>
-                      </div>
-                      <button
-                        class="button secondary compact"
-                        type="button"
-                        [disabled]="!editable()"
-                        (click)="addScopeItem($any(list.key))"
-                      >
-                        Add item
-                      </button>
-                    </div>
-                    @for (item of scopeItems(currentDraft, $any(list.key)); track $index) {
-                      <div class="editable-row">
-                        <span>{{ $index + 1 }}</span
-                        ><input
-                          [value]="item"
-                          [disabled]="!editable()"
-                          (input)="
-                            updateScopeItem($any(list.key), $index, $any($event.target).value)
-                          "
-                        /><button
-                          class="icon-button"
-                          type="button"
-                          [disabled]="!editable()"
-                          (click)="removeScopeItem($any(list.key), $index)"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    } @empty {
-                      <p class="empty-copy">No items recorded.</p>
-                    }
-                  </section>
-                }
-                <section class="list-editor">
-                  <div class="subsection-heading">
-                    <div>
-                      <h3>Exclusions</h3>
-                      <small>Work that is outside this RAMS.</small>
-                    </div>
-                    <button
-                      class="button secondary compact"
-                      type="button"
-                      [disabled]="!editable()"
-                      (click)="addScopeItem('exclusions')"
-                    >
-                      Add exclusion
-                    </button>
-                  </div>
-                  @for (item of currentDraft.scope.exclusions; track $index) {
-                    <div class="editable-row">
-                      <span>{{ $index + 1 }}</span
-                      ><input
-                        [value]="item"
-                        [disabled]="!editable()"
-                        (input)="updateScopeItem('exclusions', $index, $any($event.target).value)"
-                      /><button
-                        class="icon-button"
-                        type="button"
-                        [disabled]="!editable()"
-                        (click)="removeScopeItem('exclusions', $index)"
-                        aria-label="Remove exclusion"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  } @empty {
-                    <p class="empty-copy">No exclusions recorded.</p>
-                  }
-                </section>
-                <section class="list-editor full">
-                  <div class="subsection-heading">
-                    <div>
-                      <h3>Responsibilities *</h3>
-                      <small>Identify accountable people and their duties.</small>
-                    </div>
-                    <button
-                      class="button secondary compact"
-                      type="button"
-                      [disabled]="!editable()"
-                      (click)="addResponsibility()"
-                    >
-                      Add person
-                    </button>
-                  </div>
-                  @for (item of currentDraft.scope.responsibilities; track item.id) {
-                    <div class="structured-row responsibility-row">
-                      <input
-                        [value]="item.name"
-                        [disabled]="!editable()"
-                        placeholder="Name *"
-                        (input)="updateResponsibility($index, 'name', $any($event.target).value)"
-                      />
-                      <input
-                        [value]="item.role"
-                        [disabled]="!editable()"
-                        placeholder="Role *"
-                        (input)="updateResponsibility($index, 'role', $any($event.target).value)"
-                      />
-                      <input
-                        [value]="item.organisation"
-                        [disabled]="!editable()"
-                        placeholder="Organisation"
-                        (input)="
-                          updateResponsibility($index, 'organisation', $any($event.target).value)
-                        "
-                      />
-                      <input
-                        [value]="item.contact"
-                        [disabled]="!editable()"
-                        placeholder="Contact"
-                        (input)="updateResponsibility($index, 'contact', $any($event.target).value)"
-                      />
-                      <textarea
-                        rows="2"
-                        [value]="item.responsibility"
-                        [disabled]="!editable()"
-                        placeholder="Responsibility *"
-                        (input)="
-                          updateResponsibility($index, 'responsibility', $any($event.target).value)
-                        "
-                      ></textarea>
-                      <button
-                        class="icon-button"
-                        type="button"
-                        [disabled]="!editable()"
-                        (click)="removeResponsibility($index)"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  } @empty {
-                    <p class="empty-copy">Add at least one responsible person.</p>
-                  }
-                </section>
-                <section class="list-editor">
-                  <div class="subsection-heading">
-                    <div>
-                      <h3>Engineer briefing</h3>
-                      <small>Instructions that must be covered before work starts.</small>
-                    </div>
-                    <button
-                      class="button secondary compact"
-                      type="button"
-                      [disabled]="!editable()"
-                      (click)="addScopeItem('engineerBriefing')"
-                    >
-                      Add point
-                    </button>
-                  </div>
-                  @for (item of currentDraft.scope.engineerBriefing; track $index) {
-                    <div class="editable-row">
-                      <span>{{ $index + 1 }}</span
-                      ><input
-                        [value]="item"
-                        [disabled]="!editable()"
-                        (input)="
-                          updateScopeItem('engineerBriefing', $index, $any($event.target).value)
-                        "
-                      /><button
-                        class="icon-button"
-                        type="button"
-                        [disabled]="!editable()"
-                        (click)="removeScopeItem('engineerBriefing', $index)"
-                        aria-label="Remove briefing point"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  } @empty {
-                    <p class="empty-copy">No engineer briefing points recorded.</p>
-                  }
-                </section>
-              </div>
-            </article>
-          }
-
-          @if (activeTab() === 'method') {
-            <article class="card reusable-content-panel method-library-panel">
-              <div class="reusable-panel-copy">
-                <p class="eyebrow">Method library</p>
-                <h2>Add a saved method statement</h2>
-                <small
-                  >Append a sequence or replace the current steps. A RAMS supports up to 200
-                  steps.</small
-                >
-              </div>
-              <div class="reusable-picker method-picker">
-                <input
-                  type="search"
-                  placeholder="Search method groups"
-                  [value]="methodGroupQuery()"
-                  [disabled]="!editable()"
-                  (input)="methodGroupQuery.set($any($event.target).value)"
-                  aria-label="Search method statement groups"
-                />
-                <select
-                  [value]="selectedMethodGroupId()"
-                  [disabled]="!editable()"
-                  (change)="selectedMethodGroupId.set($any($event.target).value)"
-                  aria-label="Method statement group"
-                >
-                  <option value="">Choose a method group</option>
-                  @for (group of filteredMethodGroups(); track group.id) {
-                    <option [value]="group.id">
-                      {{ group.name }} ({{ group.steps.length }} steps)
-                    </option>
-                  }
-                </select>
-                <button
-                  class="button secondary compact"
-                  type="button"
-                  [disabled]="!editable() || !selectedMethodGroupId()"
-                  (click)="applyMethodGroup('APPEND')"
-                >
-                  Append
-                </button>
-                <button
-                  class="button ghost compact"
-                  type="button"
-                  [disabled]="!editable() || !selectedMethodGroupId()"
-                  (click)="applyMethodGroup('REPLACE')"
-                >
-                  Replace
-                </button>
-              </div>
-            </article>
-            <article class="card section-card">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Section 3</p>
-                  <h2>Method statement</h2>
-                  <small>Put the safe work sequence in the order it will be carried out.</small>
-                </div>
-                <button
-                  class="button primary compact"
-                  type="button"
-                  [disabled]="!editable()"
-                  (click)="addMethodStep()"
-                >
-                  Add step
-                </button>
-              </div>
-              <div class="card-body method-list">
-                @for (step of currentDraft.methodStatement.steps; track step.id) {
-                  <div class="method-row">
-                    <span class="step-number">{{ $index + 1 }}</span>
-                    <div class="method-fields">
-                      <input
-                        [value]="step.title"
-                        [disabled]="!editable()"
-                        placeholder="Step title *"
-                        (input)="updateMethodStep($index, 'title', $any($event.target).value)"
-                      />
-                      <textarea
-                        rows="3"
-                        [value]="step.detail"
-                        [disabled]="!editable()"
-                        placeholder="Detailed safe method *"
-                        (input)="updateMethodStep($index, 'detail', $any($event.target).value)"
-                      ></textarea>
-                    </div>
-                    <div class="row-actions">
-                      <button
-                        type="button"
-                        [disabled]="!editable() || $first"
-                        (click)="moveMethodStep($index, -1)"
-                        aria-label="Move up"
-                      >
-                        Up</button
-                      ><button
-                        type="button"
-                        [disabled]="!editable() || $last"
-                        (click)="moveMethodStep($index, 1)"
-                        aria-label="Move down"
-                      >
-                        Down</button
-                      ><button
-                        type="button"
-                        [disabled]="!editable()"
-                        (click)="removeMethodStep($index)"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                } @empty {
-                  <div class="empty-state">
-                    <h3>No method steps</h3>
-                    <p>Add each task in the order it must be completed.</p>
-                    <button
-                      class="button primary"
-                      type="button"
-                      [disabled]="!editable()"
-                      (click)="addMethodStep()"
-                    >
-                      Add first step
-                    </button>
-                  </div>
-                }
-              </div>
-            </article>
-          }
-
-          @if (activeTab() === 'risk') {
-            <article class="card section-card risk-section">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Section 4</p>
-                  <h2>Risk assessment</h2>
-                  <small
-                    >Score the hazard before and after controls using likelihood x severity.</small
-                  >
-                </div>
-                <button
-                  class="button primary compact"
-                  type="button"
-                  [disabled]="!editable()"
-                  (click)="addHazard()"
-                >
-                  Add hazard
-                </button>
-              </div>
-              <div class="risk-table-wrap">
-                <table class="risk-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Hazard</th>
-                      <th>Who may be harmed</th>
-                      <th>How they may be harmed</th>
-                      <th>Initial risk</th>
-                      <th>Controls</th>
-                      <th>Residual risk</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (hazard of currentDraft.riskAssessment.hazards; track hazard.id) {
-                      <tr>
-                        <td>{{ $index + 1 }}</td>
-                        <td>
-                          <textarea
-                            rows="3"
-                            [value]="hazard.hazard"
-                            [disabled]="!editable()"
-                            placeholder="Hazard"
-                            (input)="updateHazard($index, 'hazard', $any($event.target).value)"
-                          ></textarea>
-                        </td>
-                        <td>
-                          <textarea
-                            rows="3"
-                            [value]="hazard.howHarmed"
-                            [disabled]="!editable()"
-                            placeholder="Injury or harm *"
-                            (input)="updateHazard($index, 'howHarmed', $any($event.target).value)"
-                          ></textarea>
-                        </td>
-                        <td>
-                          <textarea
-                            rows="3"
-                            [value]="hazard.peopleAtRisk"
-                            [disabled]="!editable()"
-                            placeholder="People at risk"
-                            (input)="
-                              updateHazard($index, 'peopleAtRisk', $any($event.target).value)
-                            "
-                          ></textarea>
-                        </td>
-                        <td>
-                          <div class="score-inputs">
-                            <label
-                              >L<select
-                                [value]="hazard.initialLikelihood"
-                                [disabled]="!editable()"
-                                (change)="
-                                  updateHazard(
-                                    $index,
-                                    'initialLikelihood',
-                                    $any($event.target).value
-                                  )
-                                "
-                              >
-                                @for (value of likelihoods; track value) {
-                                  <option
-                                    [value]="value"
-                                    [selected]="hazard.initialLikelihood === value"
-                                  >
-                                    {{ value }}
-                                  </option>
-                                }
-                              </select></label
-                            ><label
-                              >S<select
-                                [value]="hazard.initialSeverity"
-                                [disabled]="!editable()"
-                                (change)="
-                                  updateHazard($index, 'initialSeverity', $any($event.target).value)
-                                "
-                              >
-                                @for (value of likelihoods; track value) {
-                                  <option
-                                    [value]="value"
-                                    [selected]="hazard.initialSeverity === value"
-                                  >
-                                    {{ value }}
-                                  </option>
-                                }
-                              </select></label
-                            ><strong
-                              class="risk-score"
-                              [class]="
-                                riskClass(
-                                  riskScore(hazard.initialLikelihood, hazard.initialSeverity)
-                                )
-                              "
-                              >{{
-                                riskScore(hazard.initialLikelihood, hazard.initialSeverity)
-                              }}</strong
-                            >
-                          </div>
-                        </td>
-                        <td>
-                          <textarea
-                            rows="4"
-                            [value]="hazard.controls"
-                            [disabled]="!editable()"
-                            placeholder="Control measures"
-                            (input)="updateHazard($index, 'controls', $any($event.target).value)"
-                          ></textarea>
-                        </td>
-                        <td>
-                          <div class="score-inputs">
-                            <label
-                              >L<select
-                                [value]="hazard.residualLikelihood"
-                                [disabled]="!editable()"
-                                (change)="
-                                  updateHazard(
-                                    $index,
-                                    'residualLikelihood',
-                                    $any($event.target).value
-                                  )
-                                "
-                              >
-                                @for (value of likelihoods; track value) {
-                                  <option
-                                    [value]="value"
-                                    [selected]="hazard.residualLikelihood === value"
-                                  >
-                                    {{ value }}
-                                  </option>
-                                }
-                              </select></label
-                            ><label
-                              >S<select
-                                [value]="hazard.residualSeverity"
-                                [disabled]="!editable()"
-                                (change)="
-                                  updateHazard(
-                                    $index,
-                                    'residualSeverity',
-                                    $any($event.target).value
-                                  )
-                                "
-                              >
-                                @for (value of likelihoods; track value) {
-                                  <option
-                                    [value]="value"
-                                    [selected]="hazard.residualSeverity === value"
-                                  >
-                                    {{ value }}
-                                  </option>
-                                }
-                              </select></label
-                            ><strong
-                              class="risk-score"
-                              [class]="
-                                riskClass(
-                                  riskScore(hazard.residualLikelihood, hazard.residualSeverity)
-                                )
-                              "
-                              >{{
-                                riskScore(hazard.residualLikelihood, hazard.residualSeverity)
-                              }}</strong
-                            >
-                          </div>
-                        </td>
-                        <td>
-                          <button
-                            class="icon-button"
-                            type="button"
-                            [disabled]="!editable()"
-                            (click)="removeHazard($index)"
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                      <tr class="action-row">
-                        <td></td>
-                        <td colspan="3">
-                          <label class="field"
-                            >Further actions<textarea
-                              rows="2"
-                              [value]="hazard.furtherActions"
-                              [disabled]="!editable()"
-                              placeholder="Any additional controls or follow-up"
-                              (input)="
-                                updateHazard($index, 'furtherActions', $any($event.target).value)
-                              "
-                            ></textarea>
-                          </label>
-                        </td>
-                        <td colspan="2">
-                          <div class="action-fields">
-                            <label class="field"
-                              >Action owner<input
-                                [value]="hazard.actionOwner"
-                                [disabled]="!editable()"
-                                (input)="
-                                  updateHazard($index, 'actionOwner', $any($event.target).value)
-                                " /></label
-                            ><label class="field"
-                              >Due date<input
-                                type="date"
-                                [value]="hazard.actionDueDate"
-                                [disabled]="!editable()"
-                                (input)="
-                                  updateHazard($index, 'actionDueDate', $any($event.target).value)
-                                "
-                            /></label>
-                          </div>
-                        </td>
-                        <td colspan="2">
-                          <label class="field"
-                            >Status<select
-                              [value]="hazard.actionStatus"
-                              [disabled]="!editable()"
-                              (change)="
-                                updateHazard($index, 'actionStatus', $any($event.target).value)
-                              "
-                            >
-                              <option value="OPEN">Open</option>
-                              <option value="CONTROLLED">Controlled</option>
-                            </select></label
-                          >
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-                @if (currentDraft.riskAssessment.hazards.length === 0) {
-                  <div class="empty-state">
-                    <h3>No hazards added</h3>
-                    <p>Add a hazard, identify who could be harmed, and record controls.</p>
-                  </div>
-                }
-              </div>
-              <div class="risk-legend">
-                <span><i class="low"></i>1-4 Low</span><span><i class="medium"></i>5-9 Medium</span
-                ><span><i class="high"></i>10-15 High</span
-                ><span><i class="very-high"></i>16-25 Very high</span>
-              </div>
-              @if (highResidualHazards().length) {
-                <div class="high-risk-summary" role="alert">
-                  <strong
-                    >{{ highResidualHazards().length }} high residual risk{{
-                      highResidualHazards().length === 1 ? '' : 's'
-                    }}</strong
-                  ><span>Review controls and further actions before requesting approval.</span>
-                </div>
               }
+            </div>
+          </article>
+          <div class="overview-preview-grid">
+            <article class="card mini-preview">
+              <div class="card-header">
+                <h2>Scope of works</h2>
+                <button class="button ghost compact" type="button" (click)="switchTab('scope')">
+                  Edit
+                </button>
+              </div>
+              <p>{{ currentDraft.scope.scopeOfWorks || 'Add the work covered by this RAMS.' }}</p>
             </article>
-          }
+            <article class="card mini-preview">
+              <div class="card-header">
+                <h2>Exclusions</h2>
+                <button class="button ghost compact" type="button" (click)="switchTab('scope')">
+                  Edit
+                </button>
+              </div>
+              <ul>
+                @for (item of currentDraft.scope.exclusions; track $index) {
+                  <li>{{ item }}</li>
+                } @empty {
+                  <li>No exclusions recorded.</li>
+                }
+              </ul>
+            </article>
+            <article class="card mini-preview">
+              <div class="card-header">
+                <h2>Engineer briefing</h2>
+                <button class="button ghost compact" type="button" (click)="switchTab('scope')">
+                  Edit
+                </button>
+              </div>
+              <ul>
+                @for (item of currentDraft.scope.engineerBriefing; track $index) {
+                  <li>{{ item }}</li>
+                } @empty {
+                  <li>No briefing points recorded.</li>
+                }
+              </ul>
+            </article>
+          </div>
+        }
 
-          @if (activeTab() === 'requirements') {
-            <div class="requirements-grid">
-              <article class="card requirement-card">
-                <div class="card-header">
-                  <div>
-                    <p class="eyebrow">PPE</p>
-                    <h2>PPE requirements *</h2>
-                  </div>
-                  <span class="count-pill">{{ currentDraft.requirements.ppe.length }}</span>
-                </div>
-                <div class="card-body option-grid">
-                  @for (option of ppeOptions; track option) {
-                    <button
-                      type="button"
-                      class="option-chip"
-                      [class.selected]="hasRequirement('ppe', option)"
-                      [disabled]="!editable()"
-                      (click)="toggleRequirement('ppe', option)"
-                    >
-                      <span>{{ hasRequirement('ppe', option) ? 'OK' : '+' }}</span
-                      >{{ option }}
-                    </button>
-                  }
-                </div>
-                <div class="custom-list">
-                  @for (item of currentDraft.requirements.ppe; track $index) {
-                    @if (!ppeOptions.includes(item) || !item) {
-                      <div class="editable-row">
-                        <input
-                          [value]="item"
-                          [disabled]="!editable()"
-                          placeholder="Custom PPE"
-                          (input)="updateRequirement('ppe', $index, $any($event.target).value)"
-                        /><button
-                          class="icon-button"
-                          type="button"
-                          [disabled]="!editable()"
-                          (click)="removeRequirement('ppe', $index)"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    }
-                  }
-                  <button
-                    class="button ghost compact"
-                    type="button"
-                    [disabled]="!editable()"
-                    (click)="addCustomRequirement('ppe')"
-                  >
-                    Add custom PPE
-                  </button>
-                </div>
-              </article>
-              <article class="card requirement-card">
-                <div class="card-header">
-                  <div>
-                    <p class="eyebrow">Equipment</p>
-                    <h2>Tools &amp; equipment</h2>
-                  </div>
-                  <span class="count-pill">{{ currentDraft.requirements.tools.length }}</span>
-                </div>
-                <div class="card-body option-grid">
-                  @for (option of toolOptions; track option) {
-                    <button
-                      type="button"
-                      class="option-chip"
-                      [class.selected]="hasRequirement('tools', option)"
-                      [disabled]="!editable()"
-                      (click)="toggleRequirement('tools', option)"
-                    >
-                      <span>{{ hasRequirement('tools', option) ? 'OK' : '+' }}</span
-                      >{{ option }}
-                    </button>
-                  }
-                </div>
-                <div class="custom-list">
-                  @for (item of currentDraft.requirements.tools; track $index) {
-                    @if (!toolOptions.includes(item) || !item) {
-                      <div class="editable-row">
-                        <input
-                          [value]="item"
-                          [disabled]="!editable()"
-                          placeholder="Custom tool or equipment"
-                          (input)="updateRequirement('tools', $index, $any($event.target).value)"
-                        /><button
-                          class="icon-button"
-                          type="button"
-                          [disabled]="!editable()"
-                          (click)="removeRequirement('tools', $index)"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    }
-                  }
-                  <button
-                    class="button ghost compact"
-                    type="button"
-                    [disabled]="!editable()"
-                    (click)="addCustomRequirement('tools')"
-                  >
-                    Add custom equipment
-                  </button>
-                </div>
-              </article>
-              <article class="card requirement-card">
-                <div class="card-header">
-                  <div>
-                    <p class="eyebrow">People</p>
-                    <h2>Competencies</h2>
-                  </div>
-                  <span class="count-pill">{{
-                    currentDraft.requirements.competencies.length
-                  }}</span>
-                </div>
-                <div class="card-body option-grid">
-                  @for (option of competencyOptions; track option) {
-                    <button
-                      type="button"
-                      class="option-chip"
-                      [class.selected]="hasRequirement('competencies', option)"
-                      [disabled]="!editable()"
-                      (click)="toggleRequirement('competencies', option)"
-                    >
-                      <span>{{ hasRequirement('competencies', option) ? 'OK' : '+' }}</span
-                      >{{ option }}
-                    </button>
-                  }
-                </div>
-                <div class="custom-list">
-                  <button
-                    class="button ghost compact"
-                    type="button"
-                    [disabled]="!editable()"
-                    (click)="addCustomRequirement('competencies')"
-                  >
-                    Add custom competency
-                  </button>
-                  @for (item of currentDraft.requirements.competencies; track $index) {
-                    @if (!competencyOptions.includes(item) || !item) {
-                      <div class="editable-row">
-                        <input
-                          [value]="item"
-                          [disabled]="!editable()"
-                          placeholder="Custom competency"
-                          (input)="
-                            updateRequirement('competencies', $index, $any($event.target).value)
-                          "
-                        /><button
-                          class="icon-button"
-                          type="button"
-                          [disabled]="!editable()"
-                          (click)="removeRequirement('competencies', $index)"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    }
-                  }
-                </div>
-              </article>
-              <article class="card requirement-card">
-                <div class="card-header">
-                  <div>
-                    <p class="eyebrow">Emergency</p>
-                    <h2>Emergency arrangements *</h2>
-                  </div>
-                  <span class="count-pill">{{
-                    currentDraft.requirements.emergencyArrangements.length
-                  }}</span>
-                </div>
-                <div class="card-body option-grid">
-                  @for (option of emergencyOptions; track option) {
-                    <button
-                      type="button"
-                      class="option-chip"
-                      [class.selected]="hasRequirement('emergencyArrangements', option)"
-                      [disabled]="!editable()"
-                      (click)="toggleRequirement('emergencyArrangements', option)"
-                    >
-                      <span>{{ hasRequirement('emergencyArrangements', option) ? 'OK' : '+' }}</span
-                      >{{ option }}
-                    </button>
-                  }
-                </div>
-                <div class="custom-list">
-                  <button
-                    class="button ghost compact"
-                    type="button"
-                    [disabled]="!editable()"
-                    (click)="addCustomRequirement('emergencyArrangements')"
-                  >
-                    Add arrangement
-                  </button>
-                  @for (item of currentDraft.requirements.emergencyArrangements; track $index) {
-                    @if (!emergencyOptions.includes(item) || !item) {
-                      <div class="editable-row">
-                        <input
-                          [value]="item"
-                          [disabled]="!editable()"
-                          placeholder="Emergency arrangement"
-                          (input)="
-                            updateRequirement(
-                              'emergencyArrangements',
-                              $index,
-                              $any($event.target).value
-                            )
-                          "
-                        /><button
-                          class="icon-button"
-                          type="button"
-                          [disabled]="!editable()"
-                          (click)="removeRequirement('emergencyArrangements', $index)"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    }
-                  }
-                </div>
-              </article>
-              @for (card of requirementCards; track card.key) {
-                <article class="card requirement-card">
-                  <div class="card-header">
+        @if (activeTab() === 'scope') {
+          <article class="card section-card">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Section 2</p>
+                <h2>Scope of works</h2>
+              </div>
+              <span class="prefill-note">Prefilled from job</span>
+            </div>
+            <div class="card-body scope-layout">
+              <label class="field full"
+                >Detailed scope *
+                <textarea
+                  rows="9"
+                  [value]="currentDraft.scope.scopeOfWorks"
+                  [disabled]="!editable()"
+                  (input)="updateScope('scopeOfWorks', $any($event.target).value)"
+                ></textarea>
+                <small>Describe the work sequence, equipment and intended outcome.</small>
+              </label>
+              <label class="field full"
+                >Work boundaries *
+                <textarea
+                  rows="4"
+                  [value]="currentDraft.scope.workBoundaries"
+                  [disabled]="!editable()"
+                  placeholder="Define barriers, exclusion zones, access restrictions, isolation limits and interfaces with live or occupied areas"
+                  (input)="updateScope('workBoundaries', $any($event.target).value)"
+                ></textarea>
+                <small
+                  >Boundaries are barriers, exclusion zones, access restrictions, isolation limits
+                  and interfaces with live or occupied areas.</small
+                >
+              </label>
+              @for (
+                list of [
+                  {
+                    key: 'keyActivities',
+                    title: 'Key activities',
+                    help: 'The principal work activities covered.',
+                  },
+                  {
+                    key: 'workAreas',
+                    title: 'Work areas',
+                    help: 'Specific buildings, floors, rooms, plant or outdoor zones where work will take place.',
+                  },
+                  {
+                    key: 'assumptions',
+                    title: 'Assumptions',
+                    help: 'Conditions relied upon when planning the work.',
+                  },
+                ];
+                track list.key
+              ) {
+                <section class="list-editor">
+                  <div class="subsection-heading">
                     <div>
-                      <p class="eyebrow">{{ card.eyebrow }}</p>
-                      <h2>{{ card.label }}</h2>
+                      <h3>{{ list.title }}{{ list.key !== 'assumptions' ? ' *' : '' }}</h3>
+                      <small>{{ list.help }}</small>
                     </div>
-                    <span class="count-pill">{{ currentDraft.requirements[card.key].length }}</span>
-                  </div>
-                  <div class="custom-list standalone-list">
-                    @for (item of currentDraft.requirements[card.key]; track $index) {
-                      <div class="editable-row">
-                        <span>{{ $index + 1 }}</span
-                        ><input
-                          [value]="item"
-                          [disabled]="!editable()"
-                          [placeholder]="card.label + ' item'"
-                          (input)="updateRequirement(card.key, $index, $any($event.target).value)"
-                        /><button
-                          class="icon-button"
-                          type="button"
-                          [disabled]="!editable()"
-                          (click)="removeRequirement(card.key, $index)"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    } @empty {
-                      <p class="empty-copy">None recorded.</p>
-                    }
                     <button
-                      class="button ghost compact"
+                      class="button secondary compact"
                       type="button"
                       [disabled]="!editable()"
-                      (click)="addCustomRequirement(card.key)"
+                      (click)="addScopeItem($any(list.key))"
                     >
                       Add item
                     </button>
                   </div>
-                </article>
-              }
-              <article class="card requirement-card emergency-details-card">
-                <div class="card-header">
-                  <div>
-                    <p class="eyebrow">Emergency</p>
-                    <h2>Emergency details *</h2>
-                  </div>
-                </div>
-                <div class="card-body emergency-grid">
-                  <label class="field"
-                    >Contact name *<input
-                      [value]="currentDraft.requirements.emergencyDetails.contactName"
-                      [disabled]="!editable()"
-                      (input)="updateEmergencyDetail('contactName', $any($event.target).value)"
-                  /></label>
-                  <label class="field"
-                    >Contact number *<input
-                      type="tel"
-                      [value]="currentDraft.requirements.emergencyDetails.contactNumber"
-                      [disabled]="!editable()"
-                      (input)="updateEmergencyDetail('contactNumber', $any($event.target).value)"
-                  /></label>
-                  <label class="field"
-                    >Nearest hospital<input
-                      [value]="currentDraft.requirements.emergencyDetails.nearestHospital"
-                      [disabled]="!editable()"
-                      (input)="updateEmergencyDetail('nearestHospital', $any($event.target).value)"
-                  /></label>
-                  <label class="field"
-                    >Hospital address<input
-                      [value]="currentDraft.requirements.emergencyDetails.hospitalAddress"
-                      [disabled]="!editable()"
-                      (input)="updateEmergencyDetail('hospitalAddress', $any($event.target).value)"
-                  /></label>
-                  <label class="field full"
-                    >Assembly point *<input
-                      [value]="currentDraft.requirements.emergencyDetails.assemblyPoint"
-                      [disabled]="!editable()"
-                      (input)="updateEmergencyDetail('assemblyPoint', $any($event.target).value)"
-                  /></label>
-                  <label class="field full"
-                    >Additional information<textarea
-                      rows="3"
-                      [value]="currentDraft.requirements.emergencyDetails.additionalInfo"
-                      [disabled]="!editable()"
-                      (input)="updateEmergencyDetail('additionalInfo', $any($event.target).value)"
-                    ></textarea>
-                  </label>
-                </div>
-              </article>
-            </div>
-          }
-
-          @if (activeTab() === 'supporting') {
-            <article class="card section-card">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Section 6</p>
-                  <h2>Supporting information</h2>
-                  <small
-                    >Record site controls and link the documents needed to carry out the
-                    work.</small
-                  >
-                </div>
-              </div>
-              <div class="card-body supporting-grid">
-                <label class="field"
-                  >Site access &amp; parking<textarea
-                    rows="6"
-                    [value]="currentDraft.supportingInformation.siteAccess"
-                    [disabled]="!editable()"
-                    (input)="updateSupporting('siteAccess', $any($event.target).value)"
-                  ></textarea>
-                </label>
-                <label class="field"
-                  >Permits &amp; induction<textarea
-                    rows="6"
-                    [value]="currentDraft.supportingInformation.permits"
-                    [disabled]="!editable()"
-                    (input)="updateSupporting('permits', $any($event.target).value)"
-                  ></textarea>
-                </label>
-                <label class="field"
-                  >Welfare arrangements<textarea
-                    rows="6"
-                    [value]="currentDraft.supportingInformation.welfare"
-                    [disabled]="!editable()"
-                    (input)="updateSupporting('welfare', $any($event.target).value)"
-                  ></textarea>
-                </label>
-                <label class="field"
-                  >Environmental controls<textarea
-                    rows="6"
-                    [value]="currentDraft.supportingInformation.environmental"
-                    [disabled]="!editable()"
-                    (input)="updateSupporting('environmental', $any($event.target).value)"
-                  ></textarea>
-                </label>
-              </div>
-            </article>
-            <article class="card section-card references-card">
-              <div class="card-header">
-                <div>
-                  <h2>Reference documents</h2>
-                  <small
-                    >Link drawings, manuals, permits or specifications used by this RAMS.</small
-                  >
-                </div>
-                <button
-                  class="button secondary compact"
-                  type="button"
-                  [disabled]="!editable()"
-                  (click)="addReference()"
-                >
-                  Add reference
-                </button>
-              </div>
-              <div class="card-body reference-list">
-                @for (
-                  reference of currentDraft.supportingInformation.references;
-                  track reference.id
-                ) {
-                  <div class="reference-row">
-                    <input
-                      [value]="reference.title"
-                      [disabled]="!editable()"
-                      placeholder="Document title"
-                      (input)="updateReference($index, 'title', $any($event.target).value)"
-                    /><input
-                      [value]="reference.url"
-                      [disabled]="!editable()"
-                      placeholder="Document URL or reference"
-                      (input)="updateReference($index, 'url', $any($event.target).value)"
-                    /><button
-                      class="icon-button"
-                      type="button"
-                      [disabled]="!editable()"
-                      (click)="removeReference($index)"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                } @empty {
-                  <p class="empty-copy">No supporting references have been linked.</p>
-                }
-              </div>
-            </article>
-            @for (
-              group of [
-                { key: 'permitReferences', title: 'Permit references' },
-                { key: 'coshhReferences', title: 'COSHH references' },
-                { key: 'workingAtHeightReferences', title: 'Working at height references' },
-                { key: 'legislationReferences', title: 'Legislation references' },
-              ];
-              track group.key
-            ) {
-              <article class="card section-card references-card">
-                <div class="card-header">
-                  <h2>{{ group.title }}</h2>
-                  <button
-                    class="button secondary compact"
-                    type="button"
-                    [disabled]="!editable()"
-                    (click)="addStructuredReference($any(group.key))"
-                  >
-                    Add reference
-                  </button>
-                </div>
-                <div class="card-body reference-list">
-                  @for (
-                    reference of structuredReferences(currentDraft, $any(group.key));
-                    track reference.id
-                  ) {
-                    <div class="reference-row">
-                      <input
-                        [value]="reference.name"
+                  @for (item of scopeItems(currentDraft, $any(list.key)); track $index) {
+                    <div class="editable-row">
+                      <span>{{ $index + 1 }}</span
+                      ><input
+                        [value]="item"
                         [disabled]="!editable()"
-                        placeholder="Name"
-                        (input)="
-                          updateStructuredReference(
-                            $any(group.key),
-                            $index,
-                            'name',
-                            $any($event.target).value
-                          )
-                        "
-                      /><input
-                        [value]="reference.reference"
-                        [disabled]="!editable()"
-                        placeholder="Reference number or URL"
-                        (input)="
-                          updateStructuredReference(
-                            $any(group.key),
-                            $index,
-                            'reference',
-                            $any($event.target).value
-                          )
-                        "
+                        (input)="updateScopeItem($any(list.key), $index, $any($event.target).value)"
                       /><button
                         class="icon-button"
                         type="button"
                         [disabled]="!editable()"
-                        (click)="removeStructuredReference($any(group.key), $index)"
+                        (click)="removeScopeItem($any(list.key), $index)"
                       >
                         Remove
                       </button>
                     </div>
                   } @empty {
-                    <p class="empty-copy">No references recorded.</p>
+                    <p class="empty-copy">No items recorded.</p>
                   }
-                </div>
-              </article>
-            }
-            <article class="card section-card references-card">
-              <div class="card-header">
-                <div>
-                  <h2>Controlled documents</h2>
-                  <small>Record document metadata only; no file upload is needed.</small>
-                </div>
-                <button
-                  class="button secondary compact"
-                  type="button"
-                  [disabled]="!editable()"
-                  (click)="addDocument()"
-                >
-                  Add document
-                </button>
-              </div>
-              <div class="card-body reference-list">
-                @for (document of currentDraft.supportingInformation.documents; track document.id) {
-                  <div class="document-row">
-                    <input
-                      [value]="document.name"
-                      [disabled]="!editable()"
-                      placeholder="Document name"
-                      (input)="updateDocument($index, 'name', $any($event.target).value)"
-                    /><input
-                      [value]="document.type"
-                      [disabled]="!editable()"
-                      placeholder="Type"
-                      (input)="updateDocument($index, 'type', $any($event.target).value)"
-                    /><input
-                      [value]="document.reference"
-                      [disabled]="!editable()"
-                      placeholder="Reference"
-                      (input)="updateDocument($index, 'reference', $any($event.target).value)"
-                    /><input
-                      [value]="document.status"
-                      [disabled]="!editable()"
-                      placeholder="Status"
-                      (input)="updateDocument($index, 'status', $any($event.target).value)"
-                    /><button
-                      class="icon-button"
-                      type="button"
-                      [disabled]="!editable()"
-                      (click)="removeDocument($index)"
-                    >
-                      Remove
-                    </button>
+                </section>
+              }
+              <section class="list-editor">
+                <div class="subsection-heading">
+                  <div>
+                    <h3>Exclusions</h3>
+                    <small>Work that is outside this RAMS.</small>
                   </div>
-                } @empty {
-                  <p class="empty-copy">No controlled documents recorded.</p>
-                }
-              </div>
-            </article>
-            <article class="card section-card references-card">
-              <div class="card-header">
-                <div>
-                  <h2>Electrical safety references</h2>
-                  <small>Record isolation points, permits, drawings or safe systems of work.</small>
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="addScopeItem('exclusions')"
+                  >
+                    Add exclusion
+                  </button>
                 </div>
-                <button
-                  class="button secondary compact"
-                  type="button"
-                  [disabled]="!editable()"
-                  (click)="addElectricalSafety()"
-                >
-                  Add reference
-                </button>
-              </div>
-              <div class="card-body reference-list">
-                @for (item of currentDraft.supportingInformation.electricalSafety; track $index) {
+                @for (item of currentDraft.scope.exclusions; track $index) {
                   <div class="editable-row">
                     <span>{{ $index + 1 }}</span
                     ><input
                       [value]="item"
                       [disabled]="!editable()"
-                      placeholder="Electrical safety reference"
-                      (input)="updateElectricalSafety($index, $any($event.target).value)"
+                      (input)="updateScopeItem('exclusions', $index, $any($event.target).value)"
                     /><button
                       class="icon-button"
                       type="button"
                       [disabled]="!editable()"
-                      (click)="removeElectricalSafety($index)"
+                      (click)="removeScopeItem('exclusions', $index)"
+                      aria-label="Remove exclusion"
                     >
                       Remove
                     </button>
                   </div>
                 } @empty {
-                  <p class="empty-copy">No electrical safety references recorded.</p>
+                  <p class="empty-copy">No exclusions recorded.</p>
+                }
+              </section>
+              <section class="list-editor full">
+                <div class="subsection-heading">
+                  <div>
+                    <h3>Responsibilities <small>(optional)</small></h3>
+                    <small>Identify accountable people and their duties when needed.</small>
+                  </div>
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="addResponsibility()"
+                  >
+                    Add person
+                  </button>
+                </div>
+                @for (item of currentDraft.scope.responsibilities; track item.id) {
+                  <div class="structured-row responsibility-row">
+                    <input
+                      [value]="item.name"
+                      [disabled]="!editable()"
+                      placeholder="Name"
+                      (input)="updateResponsibility($index, 'name', $any($event.target).value)"
+                    />
+                    <input
+                      [value]="item.role"
+                      [disabled]="!editable()"
+                      placeholder="Role"
+                      (input)="updateResponsibility($index, 'role', $any($event.target).value)"
+                    />
+                    <input
+                      [value]="item.organisation"
+                      [disabled]="!editable()"
+                      placeholder="Organisation"
+                      (input)="
+                        updateResponsibility($index, 'organisation', $any($event.target).value)
+                      "
+                    />
+                    <input
+                      [value]="item.contact"
+                      [disabled]="!editable()"
+                      placeholder="Contact"
+                      (input)="updateResponsibility($index, 'contact', $any($event.target).value)"
+                    />
+                    <textarea
+                      rows="2"
+                      [value]="item.responsibility"
+                      [disabled]="!editable()"
+                      placeholder="Responsibility"
+                      (input)="
+                        updateResponsibility($index, 'responsibility', $any($event.target).value)
+                      "
+                    ></textarea>
+                    <button
+                      class="icon-button"
+                      type="button"
+                      [disabled]="!editable()"
+                      (click)="removeResponsibility($index)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                } @empty {
+                  <p class="empty-copy">No responsibilities.</p>
+                }
+              </section>
+              <section class="list-editor">
+                <div class="subsection-heading">
+                  <div>
+                    <h3>Engineer briefing</h3>
+                    <small>Instructions that must be covered before work starts.</small>
+                  </div>
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="addScopeItem('engineerBriefing')"
+                  >
+                    Add point
+                  </button>
+                </div>
+                @for (item of currentDraft.scope.engineerBriefing; track $index) {
+                  <div class="editable-row">
+                    <span>{{ $index + 1 }}</span
+                    ><input
+                      [value]="item"
+                      [disabled]="!editable()"
+                      (input)="
+                        updateScopeItem('engineerBriefing', $index, $any($event.target).value)
+                      "
+                    /><button
+                      class="icon-button"
+                      type="button"
+                      [disabled]="!editable()"
+                      (click)="removeScopeItem('engineerBriefing', $index)"
+                      aria-label="Remove briefing point"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                } @empty {
+                  <p class="empty-copy">No engineer briefing points recorded.</p>
+                }
+              </section>
+            </div>
+          </article>
+        }
+
+        @if (activeTab() === 'method') {
+          <article class="card reusable-content-panel method-library-panel">
+            <div class="reusable-panel-copy">
+              <p class="eyebrow">Method library</p>
+              <h2>Add a saved method statement</h2>
+              <small
+                >Append a sequence or replace the current steps. A RAMS supports up to 200
+                steps.</small
+              >
+            </div>
+            <div class="reusable-picker method-picker">
+              <input
+                type="search"
+                placeholder="Search method groups"
+                [value]="methodGroupQuery()"
+                [disabled]="!editable()"
+                (input)="methodGroupQuery.set($any($event.target).value)"
+                aria-label="Search method statement groups"
+              />
+              <select
+                [value]="selectedMethodGroupId()"
+                [disabled]="!editable()"
+                (change)="selectedMethodGroupId.set($any($event.target).value)"
+                aria-label="Method statement group"
+              >
+                <option value="">Choose a method group</option>
+                @for (group of filteredMethodGroups(); track group.id) {
+                  <option [value]="group.id">
+                    {{ group.name }} ({{ group.steps.length }} steps)
+                  </option>
+                }
+              </select>
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="!editable() || !selectedMethodGroupId()"
+                (click)="applyMethodGroup('APPEND')"
+              >
+                Append
+              </button>
+              <button
+                class="button ghost compact"
+                type="button"
+                [disabled]="!editable() || !selectedMethodGroupId()"
+                (click)="applyMethodGroup('REPLACE')"
+              >
+                Replace
+              </button>
+            </div>
+          </article>
+          <article class="card section-card">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Section 3</p>
+                <h2>Method statement</h2>
+                <small>Put the safe work sequence in the order it will be carried out.</small>
+              </div>
+              <button
+                class="button primary compact"
+                type="button"
+                [disabled]="!editable()"
+                (click)="addMethodStep()"
+              >
+                Add step
+              </button>
+            </div>
+            <div class="card-body method-list">
+              @for (step of currentDraft.methodStatement.steps; track step.id) {
+                <div class="method-row">
+                  <span class="step-number">{{ $index + 1 }}</span>
+                  <div class="method-fields">
+                    <input
+                      [value]="step.title"
+                      [disabled]="!editable()"
+                      placeholder="Step title *"
+                      (input)="updateMethodStep($index, 'title', $any($event.target).value)"
+                    />
+                    <textarea
+                      rows="3"
+                      [value]="step.detail"
+                      [disabled]="!editable()"
+                      placeholder="Detailed safe method *"
+                      (input)="updateMethodStep($index, 'detail', $any($event.target).value)"
+                    ></textarea>
+                  </div>
+                  <div class="row-actions">
+                    <button
+                      type="button"
+                      [disabled]="!editable() || $first"
+                      (click)="moveMethodStep($index, -1)"
+                      aria-label="Move up"
+                    >
+                      Up</button
+                    ><button
+                      type="button"
+                      [disabled]="!editable() || $last"
+                      (click)="moveMethodStep($index, 1)"
+                      aria-label="Move down"
+                    >
+                      Down</button
+                    ><button
+                      type="button"
+                      [disabled]="!editable()"
+                      (click)="removeMethodStep($index)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              } @empty {
+                <div class="empty-state">
+                  <h3>No method steps</h3>
+                  <p>Add each task in the order it must be completed.</p>
+                  <button
+                    class="button primary"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="addMethodStep()"
+                  >
+                    Add first step
+                  </button>
+                </div>
+              }
+            </div>
+          </article>
+        }
+
+        @if (activeTab() === 'risk') {
+          <article class="card hazard-import-panel">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Hazard library</p>
+                <h2>Import reusable hazards</h2>
+                <small>Select one or more hazards to append. Exact duplicates are skipped.</small>
+              </div>
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="!editable() || !selectedHazardIds().length"
+                (click)="importSelectedHazards()"
+              >
+                Import selected ({{ selectedHazardIds().length }})
+              </button>
+            </div>
+            <div class="card-body hazard-import-body">
+              <input
+                type="search"
+                placeholder="Search hazard library"
+                [value]="hazardQuery()"
+                [disabled]="!editable()"
+                (input)="hazardQuery.set($any($event.target).value)"
+              />
+              <div class="hazard-import-options">
+                @for (item of filteredHazards(); track item.id) {
+                  <label>
+                    <input
+                      type="checkbox"
+                      [checked]="selectedHazardIds().includes(item.id)"
+                      [disabled]="!editable()"
+                      (change)="toggleHazardSelection(item.id)"
+                    />
+                    <span
+                      ><strong>{{ item.name }}</strong
+                      ><small>{{ item.data.hazard }}</small></span
+                    >
+                  </label>
+                } @empty {
+                  <p class="empty-copy">No matching library hazards.</p>
+                }
+              </div>
+            </div>
+          </article>
+          <article class="card section-card risk-section">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Section 4</p>
+                <h2>Risk assessment</h2>
+                <small
+                  >Score the hazard before and after controls using likelihood x severity.</small
+                >
+              </div>
+              <button
+                class="button primary compact"
+                type="button"
+                [disabled]="!editable()"
+                (click)="addHazard()"
+              >
+                Add hazard
+              </button>
+            </div>
+            <div class="risk-table-wrap">
+              <table class="risk-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Hazard</th>
+                    <th>Who may be harmed</th>
+                    <th>How they may be harmed</th>
+                    <th>Initial risk</th>
+                    <th>Controls</th>
+                    <th>Residual risk</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (hazard of currentDraft.riskAssessment.hazards; track hazard.id) {
+                    <tr>
+                      <td>{{ $index + 1 }}</td>
+                      <td>
+                        <textarea
+                          rows="3"
+                          [value]="hazard.hazard"
+                          [disabled]="!editable()"
+                          placeholder="Hazard"
+                          (input)="updateHazard($index, 'hazard', $any($event.target).value)"
+                        ></textarea>
+                      </td>
+                      <td>
+                        <textarea
+                          rows="3"
+                          [value]="hazard.peopleAtRisk"
+                          [disabled]="!editable()"
+                          placeholder="People at risk"
+                          (input)="updateHazard($index, 'peopleAtRisk', $any($event.target).value)"
+                        ></textarea>
+                      </td>
+                      <td>
+                        <textarea
+                          rows="3"
+                          [value]="hazard.howHarmed"
+                          [disabled]="!editable()"
+                          placeholder="Injury or harm *"
+                          (input)="updateHazard($index, 'howHarmed', $any($event.target).value)"
+                        ></textarea>
+                      </td>
+                      <td>
+                        <div class="score-inputs">
+                          <label
+                            >L<select
+                              [value]="hazard.initialLikelihood"
+                              [disabled]="!editable()"
+                              (change)="
+                                updateHazard($index, 'initialLikelihood', $any($event.target).value)
+                              "
+                            >
+                              @for (value of severities; track value) {
+                                <option
+                                  [value]="value"
+                                  [selected]="hazard.initialLikelihood === value"
+                                >
+                                  {{ value }}
+                                </option>
+                              }
+                            </select></label
+                          ><label
+                            >S<select
+                              [value]="hazard.initialSeverity"
+                              [disabled]="!editable()"
+                              (change)="
+                                updateHazard($index, 'initialSeverity', $any($event.target).value)
+                              "
+                            >
+                              @for (value of severities; track value) {
+                                <option
+                                  [value]="value"
+                                  [selected]="hazard.initialSeverity === value"
+                                >
+                                  {{ value }}
+                                </option>
+                              }
+                            </select></label
+                          ><strong
+                            class="risk-score"
+                            [class]="
+                              riskClass(riskScore(hazard.initialLikelihood, hazard.initialSeverity))
+                            "
+                            >{{
+                              riskScore(hazard.initialLikelihood, hazard.initialSeverity)
+                            }}</strong
+                          >
+                        </div>
+                      </td>
+                      <td>
+                        <textarea
+                          rows="4"
+                          [value]="hazard.controls"
+                          [disabled]="!editable()"
+                          placeholder="Control measures"
+                          (input)="updateHazard($index, 'controls', $any($event.target).value)"
+                        ></textarea>
+                      </td>
+                      <td>
+                        <div class="score-inputs">
+                          <label
+                            >L<select
+                              [value]="hazard.residualLikelihood"
+                              [disabled]="!editable()"
+                              (change)="
+                                updateHazard(
+                                  $index,
+                                  'residualLikelihood',
+                                  $any($event.target).value
+                                )
+                              "
+                            >
+                              @for (value of likelihoods; track value) {
+                                <option
+                                  [value]="value"
+                                  [selected]="hazard.residualLikelihood === value"
+                                >
+                                  {{ value }}
+                                </option>
+                              }
+                            </select></label
+                          ><label
+                            >S<select
+                              [value]="hazard.residualSeverity"
+                              [disabled]="!editable()"
+                              (change)="
+                                updateHazard($index, 'residualSeverity', $any($event.target).value)
+                              "
+                            >
+                              @for (value of likelihoods; track value) {
+                                <option
+                                  [value]="value"
+                                  [selected]="hazard.residualSeverity === value"
+                                >
+                                  {{ value }}
+                                </option>
+                              }
+                            </select></label
+                          ><strong
+                            class="risk-score"
+                            [class]="
+                              riskClass(
+                                riskScore(hazard.residualLikelihood, hazard.residualSeverity)
+                              )
+                            "
+                            >{{
+                              riskScore(hazard.residualLikelihood, hazard.residualSeverity)
+                            }}</strong
+                          >
+                        </div>
+                      </td>
+                      <td>
+                        <button
+                          class="icon-button"
+                          type="button"
+                          [disabled]="!editable()"
+                          (click)="removeHazard($index)"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                    <tr class="action-row">
+                      <td></td>
+                      <td colspan="3">
+                        <label class="field"
+                          >Further actions<textarea
+                            rows="2"
+                            [value]="hazard.furtherActions"
+                            [disabled]="!editable()"
+                            placeholder="Any additional controls or follow-up"
+                            (input)="
+                              updateHazard($index, 'furtherActions', $any($event.target).value)
+                            "
+                          ></textarea>
+                        </label>
+                      </td>
+                      <td colspan="2">
+                        <div class="action-fields">
+                          <label class="field"
+                            >Action owner<input
+                              [value]="hazard.actionOwner"
+                              [disabled]="!editable()"
+                              (input)="
+                                updateHazard($index, 'actionOwner', $any($event.target).value)
+                              " /></label
+                          ><label class="field"
+                            >Due date<input
+                              type="date"
+                              [value]="hazard.actionDueDate"
+                              [disabled]="!editable()"
+                              (input)="
+                                updateHazard($index, 'actionDueDate', $any($event.target).value)
+                              "
+                          /></label>
+                        </div>
+                      </td>
+                      <td colspan="2">
+                        <label class="field"
+                          >Status<select
+                            [value]="hazard.actionStatus"
+                            [disabled]="!editable()"
+                            (change)="
+                              updateHazard($index, 'actionStatus', $any($event.target).value)
+                            "
+                          >
+                            <option value="OPEN">Open</option>
+                            <option value="CONTROLLED">Controlled</option>
+                          </select></label
+                        >
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+              @if (currentDraft.riskAssessment.hazards.length === 0) {
+                <div class="empty-state">
+                  <h3>No hazards added</h3>
+                  <p>Add a hazard, identify who could be harmed, and record controls.</p>
+                </div>
+              }
+            </div>
+            <div class="risk-legend">
+              <span><i class="low"></i>1-4 Low</span><span><i class="medium"></i>5-9 Medium</span
+              ><span><i class="high"></i>10-15 High</span
+              ><span><i class="very-high"></i>16-25 Very high</span>
+            </div>
+            @if (highResidualHazards().length) {
+              <div class="high-risk-summary" role="alert">
+                <strong
+                  >{{ highResidualHazards().length }} high residual risk{{
+                    highResidualHazards().length === 1 ? '' : 's'
+                  }}</strong
+                ><span>Review controls and further actions before requesting approval.</span>
+              </div>
+            }
+          </article>
+        }
+
+        @if (activeTab() === 'requirements') {
+          <div class="requirements-grid">
+            <article class="card requirement-card">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">PPE</p>
+                  <h2>PPE requirements *</h2>
+                </div>
+                <span class="count-pill">{{ currentDraft.requirements.ppe.length }}</span>
+              </div>
+              <div class="card-body option-grid">
+                @for (option of ppeOptions; track option) {
+                  <button
+                    type="button"
+                    class="option-chip"
+                    [class.selected]="hasRequirement('ppe', option)"
+                    [disabled]="!editable()"
+                    (click)="toggleRequirement('ppe', option)"
+                  >
+                    <span>{{ hasRequirement('ppe', option) ? 'OK' : '+' }}</span
+                    >{{ option }}
+                  </button>
+                }
+              </div>
+              <div class="custom-list">
+                @for (item of currentDraft.requirements.ppe; track $index) {
+                  @if (!ppeOptions.includes(item) || !item) {
+                    <div class="editable-row">
+                      <input
+                        [value]="item"
+                        [disabled]="!editable()"
+                        placeholder="Custom PPE"
+                        (input)="updateRequirement('ppe', $index, $any($event.target).value)"
+                      /><button
+                        class="icon-button"
+                        type="button"
+                        [disabled]="!editable()"
+                        (click)="removeRequirement('ppe', $index)"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  }
+                }
+                <button
+                  class="button ghost compact"
+                  type="button"
+                  [disabled]="!editable()"
+                  (click)="addCustomRequirement('ppe')"
+                >
+                  Add custom PPE
+                </button>
+              </div>
+            </article>
+            <article class="card requirement-card">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">Equipment</p>
+                  <h2>Tools &amp; equipment</h2>
+                </div>
+                <span class="count-pill">{{ currentDraft.requirements.tools.length }}</span>
+              </div>
+              <div class="card-body option-grid">
+                @for (option of toolOptions; track option) {
+                  <button
+                    type="button"
+                    class="option-chip"
+                    [class.selected]="hasRequirement('tools', option)"
+                    [disabled]="!editable()"
+                    (click)="toggleRequirement('tools', option)"
+                  >
+                    <span>{{ hasRequirement('tools', option) ? 'OK' : '+' }}</span
+                    >{{ option }}
+                  </button>
+                }
+              </div>
+              <div class="custom-list">
+                @for (item of currentDraft.requirements.tools; track $index) {
+                  @if (!toolOptions.includes(item) || !item) {
+                    <div class="editable-row">
+                      <input
+                        [value]="item"
+                        [disabled]="!editable()"
+                        placeholder="Custom tool or equipment"
+                        (input)="updateRequirement('tools', $index, $any($event.target).value)"
+                      /><button
+                        class="icon-button"
+                        type="button"
+                        [disabled]="!editable()"
+                        (click)="removeRequirement('tools', $index)"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  }
+                }
+                <button
+                  class="button ghost compact"
+                  type="button"
+                  [disabled]="!editable()"
+                  (click)="addCustomRequirement('tools')"
+                >
+                  Add custom equipment
+                </button>
+              </div>
+            </article>
+            <article class="card requirement-card">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">People</p>
+                  <h2>Competencies</h2>
+                </div>
+                <span class="count-pill">{{ currentDraft.requirements.competencies.length }}</span>
+              </div>
+              <div class="card-body option-grid">
+                @for (option of competencyOptions; track option) {
+                  <button
+                    type="button"
+                    class="option-chip"
+                    [class.selected]="hasRequirement('competencies', option)"
+                    [disabled]="!editable()"
+                    (click)="toggleRequirement('competencies', option)"
+                  >
+                    <span>{{ hasRequirement('competencies', option) ? 'OK' : '+' }}</span
+                    >{{ option }}
+                  </button>
+                }
+              </div>
+              <div class="custom-list">
+                <button
+                  class="button ghost compact"
+                  type="button"
+                  [disabled]="!editable()"
+                  (click)="addCustomRequirement('competencies')"
+                >
+                  Add custom competency
+                </button>
+                @for (item of currentDraft.requirements.competencies; track $index) {
+                  @if (!competencyOptions.includes(item) || !item) {
+                    <div class="editable-row">
+                      <input
+                        [value]="item"
+                        [disabled]="!editable()"
+                        placeholder="Custom competency"
+                        (input)="
+                          updateRequirement('competencies', $index, $any($event.target).value)
+                        "
+                      /><button
+                        class="icon-button"
+                        type="button"
+                        [disabled]="!editable()"
+                        (click)="removeRequirement('competencies', $index)"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  }
+                }
+              </div>
+            </article>
+            <article class="card requirement-card">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">Emergency</p>
+                  <h2>Emergency arrangements *</h2>
+                </div>
+                <span class="count-pill">{{
+                  currentDraft.requirements.emergencyArrangements.length
+                }}</span>
+              </div>
+              <div class="card-body option-grid">
+                @for (option of emergencyOptions; track option) {
+                  <button
+                    type="button"
+                    class="option-chip"
+                    [class.selected]="hasRequirement('emergencyArrangements', option)"
+                    [disabled]="!editable()"
+                    (click)="toggleRequirement('emergencyArrangements', option)"
+                  >
+                    <span>{{ hasRequirement('emergencyArrangements', option) ? 'OK' : '+' }}</span
+                    >{{ option }}
+                  </button>
+                }
+              </div>
+              <div class="custom-list">
+                <button
+                  class="button ghost compact"
+                  type="button"
+                  [disabled]="!editable()"
+                  (click)="addCustomRequirement('emergencyArrangements')"
+                >
+                  Add arrangement
+                </button>
+                @for (item of currentDraft.requirements.emergencyArrangements; track $index) {
+                  @if (!emergencyOptions.includes(item) || !item) {
+                    <div class="editable-row">
+                      <input
+                        [value]="item"
+                        [disabled]="!editable()"
+                        placeholder="Emergency arrangement"
+                        (input)="
+                          updateRequirement(
+                            'emergencyArrangements',
+                            $index,
+                            $any($event.target).value
+                          )
+                        "
+                      /><button
+                        class="icon-button"
+                        type="button"
+                        [disabled]="!editable()"
+                        (click)="removeRequirement('emergencyArrangements', $index)"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  }
+                }
+              </div>
+            </article>
+            @for (card of requirementCards; track card.key) {
+              <article class="card requirement-card">
+                <div class="card-header">
+                  <div>
+                    <p class="eyebrow">{{ card.eyebrow }}</p>
+                    <h2>{{ card.label }}</h2>
+                  </div>
+                  <span class="count-pill">{{ currentDraft.requirements[card.key].length }}</span>
+                </div>
+                <div class="custom-list standalone-list">
+                  @for (item of currentDraft.requirements[card.key]; track $index) {
+                    <div class="editable-row">
+                      <span>{{ $index + 1 }}</span
+                      ><input
+                        [value]="item"
+                        [disabled]="!editable()"
+                        [placeholder]="card.label + ' item'"
+                        (input)="updateRequirement(card.key, $index, $any($event.target).value)"
+                      /><button
+                        class="icon-button"
+                        type="button"
+                        [disabled]="!editable()"
+                        (click)="removeRequirement(card.key, $index)"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  } @empty {
+                    <p class="empty-copy">None recorded.</p>
+                  }
+                  <button
+                    class="button ghost compact"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="addCustomRequirement(card.key)"
+                  >
+                    Add item
+                  </button>
+                </div>
+              </article>
+            }
+            <article class="card requirement-card emergency-details-card">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">Emergency</p>
+                  <h2>Emergency details *</h2>
+                </div>
+              </div>
+              <div class="card-body emergency-grid">
+                <label class="field"
+                  >Contact name *<input
+                    [value]="currentDraft.requirements.emergencyDetails.contactName"
+                    [disabled]="!editable()"
+                    (input)="updateEmergencyDetail('contactName', $any($event.target).value)"
+                /></label>
+                <label class="field"
+                  >Contact number *<input
+                    type="tel"
+                    [value]="currentDraft.requirements.emergencyDetails.contactNumber"
+                    [disabled]="!editable()"
+                    (input)="updateEmergencyDetail('contactNumber', $any($event.target).value)"
+                /></label>
+                <label class="field"
+                  >Nearest hospital<input
+                    [value]="currentDraft.requirements.emergencyDetails.nearestHospital"
+                    [disabled]="!editable()"
+                    (input)="updateEmergencyDetail('nearestHospital', $any($event.target).value)"
+                /></label>
+                <label class="field"
+                  >Hospital address<input
+                    [value]="currentDraft.requirements.emergencyDetails.hospitalAddress"
+                    [disabled]="!editable()"
+                    (input)="updateEmergencyDetail('hospitalAddress', $any($event.target).value)"
+                /></label>
+                <label class="field full"
+                  >Assembly point *<input
+                    [value]="currentDraft.requirements.emergencyDetails.assemblyPoint"
+                    [disabled]="!editable()"
+                    (input)="updateEmergencyDetail('assemblyPoint', $any($event.target).value)"
+                /></label>
+                <label class="field full"
+                  >Additional information<textarea
+                    rows="3"
+                    [value]="currentDraft.requirements.emergencyDetails.additionalInfo"
+                    [disabled]="!editable()"
+                    (input)="updateEmergencyDetail('additionalInfo', $any($event.target).value)"
+                  ></textarea>
+                </label>
+              </div>
+            </article>
+          </div>
+        }
+
+        @if (activeTab() === 'supporting') {
+          <article class="card section-card">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Section 6</p>
+                <h2>Supporting information</h2>
+                <small
+                  >Record site controls and link the documents needed to carry out the work.</small
+                >
+              </div>
+            </div>
+            <div class="card-body supporting-grid">
+              <label class="field"
+                >Site access &amp; parking<textarea
+                  rows="6"
+                  [value]="currentDraft.supportingInformation.siteAccess"
+                  [disabled]="!editable()"
+                  (input)="updateSupporting('siteAccess', $any($event.target).value)"
+                ></textarea>
+              </label>
+              <label class="field"
+                >Permits &amp; induction<textarea
+                  rows="6"
+                  [value]="currentDraft.supportingInformation.permits"
+                  [disabled]="!editable()"
+                  (input)="updateSupporting('permits', $any($event.target).value)"
+                ></textarea>
+              </label>
+              <label class="field"
+                >Welfare arrangements<textarea
+                  rows="6"
+                  [value]="currentDraft.supportingInformation.welfare"
+                  [disabled]="!editable()"
+                  (input)="updateSupporting('welfare', $any($event.target).value)"
+                ></textarea>
+              </label>
+              <label class="field"
+                >Environmental controls<textarea
+                  rows="6"
+                  [value]="currentDraft.supportingInformation.environmental"
+                  [disabled]="!editable()"
+                  (input)="updateSupporting('environmental', $any($event.target).value)"
+                ></textarea>
+              </label>
+            </div>
+          </article>
+          <article class="card section-card references-card">
+            <div class="card-header">
+              <div>
+                <h2>Reference documents</h2>
+                <small>Link drawings, manuals, permits or specifications used by this RAMS.</small>
+              </div>
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="!editable()"
+                (click)="addReference()"
+              >
+                Add reference
+              </button>
+            </div>
+            <div class="card-body reference-list">
+              @for (
+                reference of currentDraft.supportingInformation.references;
+                track reference.id
+              ) {
+                <div class="reference-row">
+                  <input
+                    [value]="reference.title"
+                    [disabled]="!editable()"
+                    placeholder="Document title"
+                    (input)="updateReference($index, 'title', $any($event.target).value)"
+                  /><input
+                    [value]="reference.url"
+                    [disabled]="!editable()"
+                    placeholder="Document URL or reference"
+                    (input)="updateReference($index, 'url', $any($event.target).value)"
+                  /><button
+                    class="icon-button"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="removeReference($index)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              } @empty {
+                <p class="empty-copy">No supporting references have been linked.</p>
+              }
+            </div>
+          </article>
+          @for (
+            group of [
+              { key: 'permitReferences', title: 'Permit references' },
+              { key: 'coshhReferences', title: 'COSHH references' },
+              { key: 'workingAtHeightReferences', title: 'Working at height references' },
+              { key: 'legislationReferences', title: 'Legislation references' },
+            ];
+            track group.key
+          ) {
+            <article class="card section-card references-card">
+              <div class="card-header">
+                <h2>{{ group.title }}</h2>
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  [disabled]="!editable()"
+                  (click)="addStructuredReference($any(group.key))"
+                >
+                  Add reference
+                </button>
+              </div>
+              <div class="card-body reference-list">
+                @for (
+                  reference of structuredReferences(currentDraft, $any(group.key));
+                  track reference.id
+                ) {
+                  <div class="reference-row">
+                    <input
+                      [value]="reference.name"
+                      [disabled]="!editable()"
+                      placeholder="Name"
+                      (input)="
+                        updateStructuredReference(
+                          $any(group.key),
+                          $index,
+                          'name',
+                          $any($event.target).value
+                        )
+                      "
+                    /><input
+                      [value]="reference.reference"
+                      [disabled]="!editable()"
+                      placeholder="Reference number or URL"
+                      (input)="
+                        updateStructuredReference(
+                          $any(group.key),
+                          $index,
+                          'reference',
+                          $any($event.target).value
+                        )
+                      "
+                    /><button
+                      class="icon-button"
+                      type="button"
+                      [disabled]="!editable()"
+                      (click)="removeStructuredReference($any(group.key), $index)"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                } @empty {
+                  <p class="empty-copy">No references recorded.</p>
                 }
               </div>
             </article>
           }
-
-          @if (activeTab() === 'review') {
-            <article class="card section-card review-section">
-              <div class="card-header">
-                <div>
-                  <p class="eyebrow">Section 7</p>
-                  <h2>Review &amp; issue</h2>
-                  <small>Check readiness, select the approval approach and submit the RAMS.</small>
-                </div>
+          <article class="card section-card references-card">
+            <div class="card-header">
+              <div>
+                <h2>Controlled documents</h2>
+                <small>Record document metadata only; no file upload is needed.</small>
               </div>
-              <div class="card-body review-grid">
-                <section class="review-settings">
-                  <h3>Approval settings</h3>
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="!editable()"
+                (click)="addDocument()"
+              >
+                Add document
+              </button>
+            </div>
+            <div class="card-body reference-list">
+              @for (document of currentDraft.supportingInformation.documents; track document.id) {
+                <div class="document-row">
+                  <input
+                    [value]="document.name"
+                    [disabled]="!editable()"
+                    placeholder="Document name"
+                    (input)="updateDocument($index, 'name', $any($event.target).value)"
+                  /><input
+                    [value]="document.type"
+                    [disabled]="!editable()"
+                    placeholder="Type"
+                    (input)="updateDocument($index, 'type', $any($event.target).value)"
+                  /><input
+                    [value]="document.reference"
+                    [disabled]="!editable()"
+                    placeholder="Reference"
+                    (input)="updateDocument($index, 'reference', $any($event.target).value)"
+                  /><input
+                    [value]="document.status"
+                    [disabled]="!editable()"
+                    placeholder="Status"
+                    (input)="updateDocument($index, 'status', $any($event.target).value)"
+                  /><button
+                    class="icon-button"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="removeDocument($index)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              } @empty {
+                <p class="empty-copy">No controlled documents recorded.</p>
+              }
+            </div>
+          </article>
+          <article class="card section-card references-card">
+            <div class="card-header">
+              <div>
+                <h2>Electrical safety references</h2>
+                <small>Record isolation points, permits, drawings or safe systems of work.</small>
+              </div>
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="!editable()"
+                (click)="addElectricalSafety()"
+              >
+                Add reference
+              </button>
+            </div>
+            <div class="card-body reference-list">
+              @for (item of currentDraft.supportingInformation.electricalSafety; track $index) {
+                <div class="editable-row">
+                  <span>{{ $index + 1 }}</span
+                  ><input
+                    [value]="item"
+                    [disabled]="!editable()"
+                    placeholder="Electrical safety reference"
+                    (input)="updateElectricalSafety($index, $any($event.target).value)"
+                  /><button
+                    class="icon-button"
+                    type="button"
+                    [disabled]="!editable()"
+                    (click)="removeElectricalSafety($index)"
+                  >
+                    Remove
+                  </button>
+                </div>
+              } @empty {
+                <p class="empty-copy">No electrical safety references recorded.</p>
+              }
+            </div>
+          </article>
+        }
+
+        @if (activeTab() === 'review') {
+          <article class="card section-card review-section">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Section 7</p>
+                <h2>Review &amp; issue</h2>
+                <small>Check readiness, select the approval approach and submit the RAMS.</small>
+              </div>
+            </div>
+            <div class="card-body review-grid">
+              <section class="review-settings">
+                <h3>Approval settings</h3>
+                @if (!templateMode()) {
                   <label class="field"
                     >Prepared by<input [value]="personName(currentRams.preparedBy)" disabled
                   /></label>
-                  <label class="field"
-                    >Approval mode<select
-                      [value]="currentDraft.review.approvalMode"
-                      [disabled]="!editable()"
-                      (change)="updateApprovalMode($any($event.target).value)"
-                    >
-                      <option value="REVIEWER">Independent reviewer approval</option>
-                      <option value="AUTHOR">Approval by author</option>
-                    </select></label
+                }
+                <label class="field"
+                  >Approval mode<select
+                    [value]="currentDraft.review.approvalMode"
+                    [disabled]="!editable()"
+                    (change)="updateApprovalMode($any($event.target).value)"
                   >
-                  <label class="switch-row"
-                    ><span
-                      ><strong>Engineer re-acknowledgement</strong
-                      ><small
-                        >Require acknowledgement whenever a new revision is issued.</small
-                      ></span
-                    ><input
-                      type="checkbox"
-                      [checked]="currentDraft.review.requireEngineerAcknowledgement"
-                      [disabled]="!editable()"
-                      (change)="toggleAcknowledgement()"
-                  /></label>
-                  <label class="field"
-                    >Change impact<select
-                      [value]="currentDraft.review.changeImpact"
-                      [disabled]="!editable()"
-                      (change)="updateChangeImpact($any($event.target).value)"
-                    >
-                      <option value="LOW">Low</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="HIGH">High</option>
-                    </select></label
+                    <option value="REVIEWER">Independent reviewer approval</option>
+                    <option value="AUTHOR">Approval by author</option>
+                  </select></label
+                >
+                <label class="switch-row"
+                  ><span
+                    ><strong>Engineer re-acknowledgement</strong
+                    ><small>Require acknowledgement whenever a new revision is issued.</small></span
+                  ><input
+                    type="checkbox"
+                    [checked]="currentDraft.review.requireEngineerAcknowledgement"
+                    [disabled]="!editable()"
+                    (change)="toggleAcknowledgement()"
+                /></label>
+                <label class="field"
+                  >Change impact<select
+                    [value]="currentDraft.review.changeImpact"
+                    [disabled]="!editable()"
+                    (change)="updateChangeImpact($any($event.target).value)"
                   >
-                  <label class="field"
-                    >Revision reason<textarea
-                      rows="3"
-                      [value]="currentDraft.review.revisionReason"
-                      [disabled]="!editable()"
-                      placeholder="Why this revision is being issued"
-                      (input)="updateReview('revisionReason', $any($event.target).value)"
-                    ></textarea>
-                  </label>
-                  <label class="field"
-                    >Change summary<textarea
-                      rows="3"
-                      [value]="currentDraft.review.changeSummary"
-                      [disabled]="!editable()"
-                      placeholder="Describe changes since the previous issue"
-                      (input)="updateReview('changeSummary', $any($event.target).value)"
-                    ></textarea>
-                  </label>
-                  <label class="field"
-                    >Internal notes<textarea
-                      rows="4"
-                      [value]="currentDraft.review.internalNotes"
-                      [disabled]="!editable()"
-                      placeholder="Notes for the internal review team"
-                      (input)="updateReview('internalNotes', $any($event.target).value)"
-                    ></textarea>
-                  </label>
-                </section>
-                <section class="readiness-detail">
-                  <div class="readiness-heading">
-                    <span class="readiness-ring">{{ readiness() }}%</span>
-                    <div>
-                      <h3>{{ readiness() === 100 ? 'Ready for review' : 'Needs attention' }}</h3>
-                      <p>Complete each core section before requesting review.</p>
-                    </div>
-                  </div>
-                  @for (tab of tabs.slice(0, 5); track tab.key) {
-                    <button type="button" class="check-row" (click)="switchTab(tab.key)">
-                      <span [class.done]="sectionCompletion()[tab.key]">{{
-                        sectionCompletion()[tab.key] ? 'OK' : '!'
-                      }}</span
-                      >{{ tab.label
-                      }}<b>{{ sectionCompletion()[tab.key] ? 'Complete' : 'Review' }}</b>
-                    </button>
-                  }
-                  <button
-                    type="button"
-                    class="check-row optional-row"
-                    (click)="switchTab('supporting')"
-                  >
-                    <span [class.done]="sectionCompletion().supporting">{{
-                      sectionCompletion().supporting ? 'OK' : '-'
-                    }}</span
-                    >Supporting Information<b>Optional</b>
-                  </button>
-                </section>
-              </div>
-            </article>
-            @if (currentRams.status === 'UNDER_REVIEW' && (canReview() || canApprove())) {
-              <article class="card review-action-card">
-                <div>
-                  <h2>Reviewer decision</h2>
-                  <p>
-                    Approval locks this revision. Returning it requires a reason and allows the
-                    author to create the next revision.
-                  </p>
-                </div>
-                <label class="field full"
-                  >Review comments<textarea
-                    rows="4"
-                    [value]="reviewComment()"
-                    (input)="reviewComment.set($any($event.target).value)"
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                  </select></label
+                >
+                <label class="field"
+                  >Revision reason<textarea
+                    rows="3"
+                    [value]="currentDraft.review.revisionReason"
+                    [disabled]="!editable()"
+                    placeholder="Why this revision is being issued"
+                    (input)="updateReview('revisionReason', $any($event.target).value)"
                   ></textarea>
                 </label>
-                <div class="review-actions">
-                  @if (canReview()) {
-                    <button
-                      class="button secondary"
-                      type="button"
-                      [disabled]="busy() || !reviewComment().trim()"
-                      (click)="review('RETURN')"
-                    >
-                      Return for changes
-                    </button>
-                  }
-                  @if (canApprove()) {
-                    <button
-                      class="button primary"
-                      type="button"
-                      [disabled]="busy()"
-                      (click)="review('APPROVE')"
-                    >
-                      Approve RAMS
-                    </button>
-                  }
+                <label class="field"
+                  >Change summary<textarea
+                    rows="3"
+                    [value]="currentDraft.review.changeSummary"
+                    [disabled]="!editable()"
+                    placeholder="Describe changes since the previous issue"
+                    (input)="updateReview('changeSummary', $any($event.target).value)"
+                  ></textarea>
+                </label>
+                <label class="field"
+                  >Internal notes<textarea
+                    rows="4"
+                    [value]="currentDraft.review.internalNotes"
+                    [disabled]="!editable()"
+                    placeholder="Notes for the internal review team"
+                    (input)="updateReview('internalNotes', $any($event.target).value)"
+                  ></textarea>
+                </label>
+              </section>
+              <section class="readiness-detail">
+                <div class="readiness-heading">
+                  <span class="readiness-ring">{{ readiness() }}%</span>
+                  <div>
+                    <h3>{{ readiness() === 100 ? 'Ready for review' : 'Needs attention' }}</h3>
+                    <p>Complete each core section before requesting review.</p>
+                  </div>
                 </div>
-              </article>
-            }
+                @for (tab of tabs.slice(0, 5); track tab.key) {
+                  <button type="button" class="check-row" (click)="switchTab(tab.key)">
+                    <span [class.done]="sectionCompletion()[tab.key]">{{
+                      sectionCompletion()[tab.key] ? 'OK' : '!'
+                    }}</span
+                    >{{ tab.label
+                    }}<b>{{ sectionCompletion()[tab.key] ? 'Complete' : 'Review' }}</b>
+                  </button>
+                }
+                <button
+                  type="button"
+                  class="check-row optional-row"
+                  (click)="switchTab('supporting')"
+                >
+                  <span [class.done]="sectionCompletion().supporting">{{
+                    sectionCompletion().supporting ? 'OK' : '-'
+                  }}</span
+                  >Supporting Information<b>Optional</b>
+                </button>
+              </section>
+            </div>
+          </article>
+          @if (
+            !templateMode() &&
+            currentRams.status === 'UNDER_REVIEW' &&
+            (canReview() || canApprove())
+          ) {
+            <article class="card review-action-card">
+              <div>
+                <h2>Reviewer decision</h2>
+                <p>
+                  Approval locks this revision. Returning it requires a reason and allows the author
+                  to create the next revision.
+                </p>
+              </div>
+              <label class="field full"
+                >Review comments<textarea
+                  rows="4"
+                  [value]="reviewComment()"
+                  (input)="reviewComment.set($any($event.target).value)"
+                ></textarea>
+              </label>
+              <div class="review-actions">
+                @if (canReview()) {
+                  <button
+                    class="button secondary"
+                    type="button"
+                    [disabled]="busy() || !reviewComment().trim()"
+                    (click)="review('RETURN')"
+                  >
+                    Return for changes
+                  </button>
+                }
+                @if (canApprove()) {
+                  <button
+                    class="button primary"
+                    type="button"
+                    [disabled]="busy()"
+                    (click)="review('APPROVE')"
+                  >
+                    Approve RAMS
+                  </button>
+                }
+              </div>
+            </article>
+          }
+          @if (!templateMode()) {
             <article class="card section-card">
               <div class="card-header"><h2>Revision history</h2></div>
               <div class="card-body revision-list">
@@ -1771,50 +1836,56 @@
               </div>
             </article>
           }
+        }
 
-          <footer class="section-pager">
-            <button
-              class="button secondary"
-              type="button"
-              [disabled]="activeTab() === 'overview'"
-              (click)="goRelative(-1)"
-            >
-              Previous
+        <footer class="section-pager">
+          <button
+            class="button secondary"
+            type="button"
+            [disabled]="activeTab() === 'overview'"
+            (click)="goRelative(-1)"
+          >
+            Previous
+          </button>
+          <div>
+            @if (savedAt()) {
+              <small
+                >Saved
+                {{
+                  savedAt()!.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                }}</small
+              >
+            }
+          </div>
+          @if (templateMode()) {
+            <button class="button primary" type="button" [disabled]="busy()" (click)="save()">
+              Save template
             </button>
-            <div>
-              @if (savedAt()) {
-                <small
-                  >Saved
-                  {{
-                    savedAt()!.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-                  }}</small
-                >
-              }
-            </div>
-            @if (activeTab() === 'review') {
-              @if (editable()) {
-                <button
-                  class="button primary"
-                  type="button"
-                  [disabled]="busy() || !sectionCompletion().review"
-                  (click)="requestReview()"
-                >
-                  Request review
-                </button>
-              }
-            } @else {
+          } @else if (activeTab() === 'review') {
+            @if (editable()) {
               <button
                 class="button primary"
                 type="button"
-                [disabled]="busy()"
-                (click)="saveAndContinue()"
+                [disabled]="busy() || !sectionCompletion().review"
+                (click)="requestReview()"
               >
-                Save &amp; continue
+                Request review
               </button>
             }
-          </footer>
-        </section>
+          } @else {
+            <button
+              class="button primary"
+              type="button"
+              [disabled]="busy()"
+              (click)="saveAndContinue()"
+            >
+              Save &amp; continue
+            </button>
+          }
+        </footer>
+      </section>
 
+      @if (!templateMode()) {
         <aside class="workspace-aside">
           <article class="card aside-card">
             <div class="card-header"><h2>Review &amp; approval</h2></div>
@@ -1872,8 +1943,8 @@
             <oa-risk-matrix [compact]="true" />
           </article>
         </aside>
-      </div>
-    }
+      }
+    </div>
   } @else if (!busy() && !error()) {
     <div class="empty-state card"><h2>RAMS unavailable</h2></div>
   }

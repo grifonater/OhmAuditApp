@@ -6,6 +6,11 @@ import {
   type RamsHazard,
   type RamsMethodStep,
 } from './rams.service';
+import {
+  baselineRamsRequirementDefaults,
+  normalizeRamsRequirementDefaults,
+  type RamsRequirementDefaultsValue,
+} from './rams-requirement-defaults';
 
 export interface RamsTemplateInput {
   name: string;
@@ -75,6 +80,43 @@ function normalizeTemplateData(value: RamsDraft): RamsDraft {
 
 export class RamsLibraryService {
   constructor(private readonly prisma: PrismaClient) {}
+
+  async getRequirementDefaults(organisationId: string): Promise<RamsRequirementDefaultsValue> {
+    const defaults = await this.prisma.ramsRequirementDefaults.findUnique({
+      where: { organisationId },
+    });
+    return defaults === null
+      ? baselineRamsRequirementDefaults()
+      : normalizeRamsRequirementDefaults(defaults);
+  }
+
+  async updateRequirementDefaults(
+    organisationId: string,
+    actorUserId: string,
+    correlationId: string,
+    input: RamsRequirementDefaultsValue,
+  ): Promise<RamsRequirementDefaultsValue> {
+    const defaults = normalizeRamsRequirementDefaults(input);
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.ramsRequirementDefaults.upsert({
+        where: { organisationId },
+        create: { organisationId, ...defaults },
+        update: defaults,
+      });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'RamsRequirementDefaultsUpdated',
+          entityType: 'RamsRequirementDefaults',
+          entityId: organisationId,
+          data: defaults as unknown as Prisma.InputJsonValue,
+        },
+      });
+    });
+    return defaults;
+  }
 
   async listTemplates(organisationId: string, includeArchived = false) {
     const templates = await this.prisma.ramsTemplate.findMany({

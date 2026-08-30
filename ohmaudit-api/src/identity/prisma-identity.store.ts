@@ -9,6 +9,7 @@ import type {
   OrganisationSummary,
 } from './identity.types';
 import { moduleCatalogue } from '../entitlements/module-catalogue';
+import { baselineRamsRequirementDefaults } from '../rams/rams-requirement-defaults';
 
 function slugify(name: string): string {
   return name
@@ -85,6 +86,9 @@ export class PrismaIdentityStore implements IdentityStore {
       );
       const organisation = await transaction.organisation.create({
         data: { name: input.name, slug },
+      });
+      await transaction.ramsRequirementDefaults.create({
+        data: { organisationId: organisation.id, ...baselineRamsRequirementDefaults() },
       });
       for (const [displayOrder, definition] of moduleCatalogue.entries()) {
         const module = await transaction.moduleDefinition.upsert({

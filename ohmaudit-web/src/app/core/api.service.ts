@@ -623,6 +623,9 @@ export interface RamsLibraryHazardInput {
   isDefault: boolean;
   data: RamsHazard;
 }
+export type RamsRequirementDefaultCategory =
+  'ppe' | 'tools' | 'competencies' | 'emergencyArrangements' | 'welfare' | 'plant';
+export type RamsRequirementDefaults = Record<RamsRequirementDefaultCategory, string[]>;
 export interface RamsDetail extends RamsSummary {
   draftData: RamsDraft;
   visits: RamsVisit[];
@@ -1495,6 +1498,17 @@ export class ApiService {
   listRamsHazards(organisationId: string) {
     return this.request<{ hazards: RamsLibraryHazard[] }>(
       `/organisations/${encodeURIComponent(organisationId)}/rams-hazards`,
+    );
+  }
+  getRamsRequirementDefaults(organisationId: string) {
+    return this.request<{ defaults: RamsRequirementDefaults }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-requirement-defaults`,
+    );
+  }
+  updateRamsRequirementDefaults(organisationId: string, defaults: RamsRequirementDefaults) {
+    return this.request<{ defaults: RamsRequirementDefaults }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-requirement-defaults`,
+      { method: 'PUT', body: JSON.stringify({ defaults }) },
     );
   }
   createRamsHazard(organisationId: string, input: RamsLibraryHazardInput) {
