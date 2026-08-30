@@ -157,7 +157,14 @@ export interface RamsRenderPayload {
   approvedAt: string | null;
   reviewComment: string | null;
   generatedAt: string;
-  organisation: { name: string; addressLines: string[] };
+  organisation: {
+    name: string;
+    addressLines: string[];
+    logoImage?: {
+      base64: string;
+      mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+    };
+  };
   job: RamsRenderJob;
   customer: { name: string };
   site: { name: string; addressLines: string[] };
@@ -368,6 +375,13 @@ function revisionRows(items: RamsRevisionHistoryItem[]): string {
     .join('');
 }
 
+function organisationBrand(payload: RamsRenderPayload): string {
+  const logo = payload.organisation.logoImage;
+  if (logo === undefined) return '<div class="brand-mark">Ω <span>OHMAUDIT</span></div>';
+  const source = `data:${logo.mimeType};base64,${logo.base64.replaceAll(/\s/gu, '')}`;
+  return `<div class="organisation-logo-wrap"><img class="organisation-logo" src="${escapeHtml(source)}" alt="${escapeHtml(payload.organisation.name)} logo"></div>`;
+}
+
 /** Returns a self-contained, print-safe A4 RAMS document with no executable or external content. */
 export function renderRamsReportHtml(payload: RamsRenderPayload): string {
   const data = payload.data;
@@ -394,6 +408,8 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
     .brand { padding: 5mm; background: #071b34; color: #fff; }
     .brand-mark { display: flex; align-items: center; gap: 3mm; color: #ffb000; font-size: 22pt; font-weight: 800; }
     .brand-mark span { color: #fff; font-size: 16pt; letter-spacing: .04em; }
+    .organisation-logo-wrap { display: flex; width: fit-content; max-width: 100%; height: 18mm; align-items: center; padding: 1.5mm 2mm; border-radius: 1mm; background: #fff; }
+    .organisation-logo { display: block; max-width: 55mm; max-height: 15mm; object-fit: contain; object-position: left center; }
     .brand p { margin: 2mm 0 0; color: #bac7d8; font-size: 7pt; }
     .control { display: grid; grid-template-columns: 1fr 1fr; margin: 0; }
     .control .field { padding: 2.5mm 3mm; border-bottom: 1px solid #d4dce7; border-left: 1px solid #d4dce7; }
@@ -429,10 +445,10 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
     th { background: #071b34; color: #fff; font-size: 6.5pt; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
     th, td { padding: 2mm; border: 1px solid #bfc9d6; vertical-align: top; overflow-wrap: anywhere; }
     td { font-size: 7.5pt; white-space: pre-line; }
-    .number { width: 7mm; text-align: center; font-weight: 800; }
+    .number { width: 9mm; min-width: 9mm; padding-right: 1mm; padding-left: 1mm; overflow-wrap: normal; text-align: center; font-weight: 800; white-space: nowrap; word-break: normal; }
     .subcopy { margin-top: 1.5mm; color: #53647b; font-size: 6.5pt; }
     .risk-table { table-layout: fixed; }
-    .risk-table th:nth-child(1) { width: 5mm; }
+    .risk-table th:nth-child(1) { width: 9mm; }
     .risk-table th:nth-child(4), .risk-table th:nth-child(6) { width: 16mm; }
     .risk-table th:nth-child(8), .risk-table th:nth-child(9) { width: 18mm; }
     .risk { display: inline-block; min-width: 12mm; padding: 1mm; color: #071b34; text-align: center; font-weight: 800; }
@@ -465,7 +481,7 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
   <main class="document">
     ${watermark}
     <header class="masthead">
-      <div class="brand"><div class="brand-mark">Ω <span>OHMAUDIT</span></div><p>RISK ASSESSMENT &amp; METHOD STATEMENT</p></div>
+       <div class="brand">${organisationBrand(payload)}<p>RISK ASSESSMENT &amp; METHOD STATEMENT</p></div>
       <dl class="control">
         ${field('Document reference', payload.reference)}
         ${field('Revision', payload.revisionNumber === null ? 'Draft' : payload.revisionNumber)}
@@ -531,12 +547,12 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
 
     <section class="section">
       <h2 class="section-title"><span>4</span> Method statement</h2>
-      <table><thead><tr><th>#</th><th>Safe work sequence</th></tr></thead><tbody>${methodRows(data.methodStatement.steps)}</tbody></table>
+      <table><thead><tr><th class="number">#</th><th>Safe work sequence</th></tr></thead><tbody>${methodRows(data.methodStatement.steps)}</tbody></table>
     </section>
 
     <section class="section">
       <h2 class="section-title"><span>5</span> Risk assessment</h2>
-      <table class="risk-table"><thead><tr><th>#</th><th>Hazard / harm</th><th>People at risk</th><th>Initial</th><th>Control measures</th><th>Residual</th><th>Further actions</th><th>Owner / due</th><th>Status</th></tr></thead><tbody>${hazardRows(data.riskAssessment.hazards)}</tbody></table>
+      <table class="risk-table"><thead><tr><th class="number">#</th><th>Hazard / harm</th><th>People at risk</th><th>Initial</th><th>Control measures</th><th>Residual</th><th>Further actions</th><th>Owner / due</th><th>Status</th></tr></thead><tbody>${hazardRows(data.riskAssessment.hazards)}</tbody></table>
       <div class="risk-guide">
         ${riskMatrix()}
         <div><h3>Risk scoring guide</h3><p>Risk score = likelihood x severity. Work must not start where residual risk is unacceptable. Escalate high and very high residual risks for further control and approval.</p><div class="legend"><span class="low">1-4 Low</span><span class="medium">5-9 Medium</span><span class="high">10-15 High</span><span class="very-high">16-25 Very high</span></div></div>
@@ -597,7 +613,7 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
       <table><thead><tr><th>Revision</th><th>Date</th><th>Created by</th><th>Status</th><th>Summary</th></tr></thead><tbody>${revisionRows(payload.revisionHistory)}</tbody></table>
     </section>
 
-    <footer class="footer"><span>CONTROLLED DOCUMENT · VERIFY CURRENT REVISION BEFORE USE</span><span>${value(payload.reference)} · REV ${value(payload.revisionNumber, 'DRAFT')}</span><span>OHMAUDIT RAMS</span></footer>
+    <footer class="footer"><span>CONTROLLED DOCUMENT · VERIFY CURRENT REVISION BEFORE USE</span><span>${value(payload.reference)} · REV ${value(payload.revisionNumber, 'DRAFT')}</span><span>Powered by OhmAudit management platform</span></footer>
   </main>
 </body>
 </html>`;

@@ -301,21 +301,71 @@
             <p class="eyebrow">Health &amp; safety</p>
             <h2>RAMS</h2>
           </div>
-          @if (ramsRecords()[0]; as rams) {
-            <a
-              class="button primary compact"
-              [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', rams.id]"
-              >Open RAMS</a
-            >
-          } @else if (canManageRams()) {
-            <a
-              class="button primary compact"
-              [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', 'new']"
-              >Create RAMS</a
-            >
-          }
+          <div class="rams-header-actions">
+            @if (canManageRams()) {
+              <button class="button secondary compact" type="button" (click)="openRamsLinker()">
+                {{ showRamsLinker() ? 'Close linker' : 'Link existing RAMS' }}
+              </button>
+              <a
+                class="button primary compact"
+                [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', 'new']"
+                >{{ ramsRecords().length ? 'Create another RAMS' : 'Create RAMS' }}</a
+              >
+            }
+          </div>
         </div>
         <div class="card-body">
+          @if (showRamsLinker()) {
+            <section class="rams-link-picker" aria-label="Link existing RAMS">
+              <div class="rams-link-search">
+                <div>
+                  <strong>Link existing RAMS</strong>
+                  <small>RAMS already used at this site are shown first.</small>
+                </div>
+                <input
+                  type="search"
+                  [value]="ramsQuery()"
+                  (input)="searchRams($any($event.target).value)"
+                  placeholder="Search RAMS, job, customer, site or postcode"
+                />
+              </div>
+              @if (ramsSearchLoading()) {
+                <p class="muted">Searching RAMS…</p>
+              } @else {
+                <div class="rams-link-results">
+                  @for (item of ramsCandidates(); track item.id) {
+                    <article class="rams-link-result">
+                      <div class="rams-link-result-copy">
+                        <div>
+                          <strong>{{ item.title }}</strong>
+                          <small>{{ item.reference }} · {{ statusLabel(item.status) }}</small>
+                        </div>
+                        @if (isSameSiteRams(item)) {
+                          <span class="same-site-label">Same site</span>
+                        }
+                        @if (item.visits[0]; as sourceJob) {
+                          <small
+                            >{{ sourceJob.title }} · {{ sourceJob.customer.name }} ·
+                            {{ sourceJob.site.name }}</small
+                          >
+                        }
+                      </div>
+                      <button
+                        class="button secondary compact"
+                        type="button"
+                        [disabled]="busy()"
+                        (click)="linkExistingRams(item)"
+                      >
+                        Link to this job
+                      </button>
+                    </article>
+                  } @empty {
+                    <p class="muted">No unlinked RAMS match this search.</p>
+                  }
+                </div>
+              }
+            </section>
+          }
           @for (rams of ramsRecords(); track rams.id) {
             <article class="record-card rams-record">
               <div class="rams-record-main">

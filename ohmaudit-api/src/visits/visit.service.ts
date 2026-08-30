@@ -116,6 +116,7 @@ export class VisitService {
       guestEmail?: string | undefined;
       guestMobile?: string | undefined;
       engineerNotes?: string | undefined;
+      evDiscoveryEnabled?: boolean | undefined;
       tasks: Array<{ assetId?: string | undefined; moduleKey: string; title: string }>;
     },
   ) {
@@ -179,6 +180,7 @@ export class VisitService {
           ...(input.guestEmail === undefined ? {} : { guestEmail: input.guestEmail }),
           ...(input.guestMobile === undefined ? {} : { guestMobile: input.guestMobile }),
           ...(input.engineerNotes === undefined ? {} : { engineerNotes: input.engineerNotes }),
+          evDiscoveryEnabled: input.evDiscoveryEnabled ?? false,
           status: 'SCHEDULED',
           ...(input.tasks.length === 0
             ? {}
@@ -338,6 +340,12 @@ export class VisitService {
       include: { tasks: { select: { displayOrder: true } } },
     });
     if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    if (!visit.evDiscoveryEnabled)
+      throw new DomainError(
+        'EV_DISCOVERY_NOT_ENABLED',
+        'Adding chargers is not enabled for this job.',
+        403,
+      );
     try {
       return await this.prisma.$transaction(async (transaction) => {
         let assetModelId: string | undefined;

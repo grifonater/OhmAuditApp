@@ -194,18 +194,14 @@
                       Your drawn signature confirms you have read, understood and will follow this
                       RAMS.
                     </p>
-                    <label class="field"
-                      >Your full name<input
-                        [formControl]="ramsSignerName"
-                        autocomplete="name" /></label
-                    ><oa-signature-pad (signatureChange)="ramsSignature.set($event)" /><button
+                    <p class="signing-identity">
+                      Signing as <strong>{{ currentSignerName() }}</strong>
+                    </p>
+                    <oa-signature-pad (signatureChange)="ramsSignature.set($event)" /><button
                       class="button primary touch-button"
                       type="button"
                       [disabled]="
-                        !offline.online() ||
-                        ramsSignerName.invalid ||
-                        !ramsSignature() ||
-                        signingRamsId() === rams.id
+                        !offline.online() || !ramsSignature() || signingRamsId() === rams.id
                       "
                       (click)="signOn(rams)"
                     >
@@ -229,78 +225,80 @@
             }
           </div>
         </section>
-        <section class="engineer-add-asset card">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Asset missing?</p>
-              <h2>Add a charger found on site</h2>
-              <p>
-                Create the charger now, then record its supplies, connectors and tests normally.
-              </p>
-            </div>
-            <button
-              class="button secondary"
-              type="button"
-              (click)="addingCharger.set(!addingCharger())"
-              [disabled]="!offline.online()"
-            >
-              {{ addingCharger() ? 'Cancel' : '+ Add charger' }}
-            </button>
-          </div>
-          @if (!offline.online()) {
-            <p class="muted">
-              Reconnect before adding a new site asset. Existing tasks remain available offline.
-            </p>
-          }
-          @if (addingCharger()) {
-            <form
-              [formGroup]="newChargerForm"
-              (ngSubmit)="addCharger()"
-              class="form-grid engineer-add-form"
-            >
-              <label class="field"
-                >Site asset reference<input
-                  formControlName="assetReference"
-                  placeholder="e.g. EVCP 1"
-                  autocomplete="off"
-                /><small>Must be unique at this site.</small></label
-              >
-              <label class="field full"
-                >Charger name<input
-                  formControlName="displayName"
-                  placeholder="e.g. Car park charger 01"
-              /></label>
-              <label class="field">Make<input formControlName="manufacturer" /></label>
-              <label class="field">Model<input formControlName="model" /></label>
-              <label class="field">Serial number<input formControlName="serialNumber" /></label>
-              <label class="field"
-                >Power output (kW)<input
-                  type="number"
-                  inputmode="decimal"
-                  formControlName="maximumPowerKw"
-              /></label>
-              <label class="field full"
-                >DC protection<select formControlName="dcRcdType">
-                  <option value="TYPE_B">Type B RCD</option>
-                  <option value="RDC_DD">RDC-DD</option>
-                  <option value="NONE">None / confirm during inspection</option>
-                </select></label
-              >
-              <div class="form-actions full">
-                <button
-                  class="button primary touch-button"
-                  type="submit"
-                  [disabled]="busy() || newChargerForm.invalid"
-                >
-                  @if (busy()) {
-                    <span class="oa-spinner" aria-hidden="true"></span>
-                  }
-                  {{ busy() ? 'Adding charger…' : 'Add provisional charger &amp; inspect' }}
-                </button>
+        @if (currentVisit.evDiscoveryEnabled) {
+          <section class="engineer-add-asset card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Asset missing?</p>
+                <h2>Add a charger found on site</h2>
+                <p>
+                  Create the charger now, then record its supplies, connectors and tests normally.
+                </p>
               </div>
-            </form>
-          }
-        </section>
+              <button
+                class="button secondary"
+                type="button"
+                (click)="addingCharger.set(!addingCharger())"
+                [disabled]="!offline.online()"
+              >
+                {{ addingCharger() ? 'Cancel' : '+ Add charger' }}
+              </button>
+            </div>
+            @if (!offline.online()) {
+              <p class="muted">
+                Reconnect before adding a new site asset. Existing tasks remain available offline.
+              </p>
+            }
+            @if (addingCharger()) {
+              <form
+                [formGroup]="newChargerForm"
+                (ngSubmit)="addCharger()"
+                class="form-grid engineer-add-form"
+              >
+                <label class="field"
+                  >Site asset reference<input
+                    formControlName="assetReference"
+                    placeholder="e.g. EVCP 1"
+                    autocomplete="off"
+                  /><small>Must be unique at this site.</small></label
+                >
+                <label class="field full"
+                  >Charger name<input
+                    formControlName="displayName"
+                    placeholder="e.g. Car park charger 01"
+                /></label>
+                <label class="field">Make<input formControlName="manufacturer" /></label>
+                <label class="field">Model<input formControlName="model" /></label>
+                <label class="field">Serial number<input formControlName="serialNumber" /></label>
+                <label class="field"
+                  >Power output (kW)<input
+                    type="number"
+                    inputmode="decimal"
+                    formControlName="maximumPowerKw"
+                /></label>
+                <label class="field full"
+                  >DC protection<select formControlName="dcRcdType">
+                    <option value="TYPE_B">Type B RCD</option>
+                    <option value="RDC_DD">RDC-DD</option>
+                    <option value="NONE">None / confirm during inspection</option>
+                  </select></label
+                >
+                <div class="form-actions full">
+                  <button
+                    class="button primary touch-button"
+                    type="submit"
+                    [disabled]="busy() || newChargerForm.invalid"
+                  >
+                    @if (busy()) {
+                      <span class="oa-spinner" aria-hidden="true"></span>
+                    }
+                    {{ busy() ? 'Adding charger…' : 'Add provisional charger &amp; inspect' }}
+                  </button>
+                </div>
+              </form>
+            }
+          </section>
+        }
         <div class="record-list">
           @for (task of currentVisit.tasks; track task.id) {
             <article

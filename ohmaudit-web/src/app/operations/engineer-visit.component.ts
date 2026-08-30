@@ -67,6 +67,8 @@ export class EngineerVisitComponent {
   protected readonly guestToken = this.route.snapshot.paramMap.get('token') ?? '';
   protected readonly visit = signal<VisitSummary | undefined>(undefined);
   protected readonly linkedRams = signal<EngineerRamsRecord[]>([]);
+  protected readonly currentSignerName = signal('your account');
+  private readonly currentUserId = signal('');
   protected readonly viewedRams = signal<EngineerRamsRecord | undefined>(undefined);
   protected readonly viewedRevision = signal<RamsRevisionDetail | undefined>(undefined);
   protected readonly ramsSignature = signal('');
@@ -143,11 +145,6 @@ export class EngineerVisitComponent {
     nonNullable: true,
     validators: [Validators.required, Validators.maxLength(500)],
   });
-  protected readonly ramsSignerName = new FormControl('', {
-    nonNullable: true,
-    validators: [Validators.required, Validators.minLength(2)],
-  });
-
   constructor() {
     merge(
       this.form.valueChanges,
@@ -223,15 +220,8 @@ export class EngineerVisitComponent {
   }
 
   protected async signOn(rams: EngineerRamsRecord): Promise<void> {
-    const name = this.ramsSignerName.value.trim();
     const signatureData = this.ramsSignature();
-    if (
-      rams.status !== 'APPROVED' ||
-      rams.signedOn ||
-      !name ||
-      !signatureData ||
-      !this.offline.online()
-    )
+    if (rams.status !== 'APPROVED' || rams.signedOn || !signatureData || !this.offline.online())
       return;
     this.signingRamsId.set(rams.id);
     await this.run(async () => {
@@ -1109,9 +1099,20 @@ export class EngineerVisitComponent {
         );
       }
       try {
+        if (!this.guestToken) {
+          const account = await this.api.currentUser();
+          this.currentUserId.set(account.user.id);
+          this.currentSignerName.set(account.user.displayName || account.user.email);
+        }
         const result = this.guestToken
           ? await this.api.guestVisit(this.guestToken)
           : await this.api.getVisit(this.organisationId, this.visitId);
+        if (this.guestToken)
+          this.currentSignerName.set(
+            result.visit.guestEngineerName ||
+              result.visit.guestEmail ||
+              'the assigned guest engineer',
+          );
         this.visit.set(await this.applyPendingTaskStatuses(result.visit));
         await this.loadLinkedRams(result.visit);
       } catch (error) {
@@ -1144,7 +1145,9 @@ export class EngineerVisitComponent {
           this.api.getRams(this.organisationId, summary.id),
           this.api.listRamsAcknowledgements(this.organisationId, summary.id, visit.id),
         ]);
-        const acknowledgement = acknowledgementResult.acknowledgements[0];
+        const acknowledgement = acknowledgementResult.acknowledgements.find(
+          (item) => item.signerSubject === `user:${this.currentUserId()}`,
+        );
         return {
           ...detail.rams,
           signedOn: acknowledgement !== undefined,

@@ -535,7 +535,7 @@ export class RamsService {
 
   async listOrganisation(
     organisationId: string,
-    options: { search?: string; limit?: number } = {},
+    options: { search?: string; limit?: number; siteId?: string } = {},
   ) {
     const search = options.search?.trim();
     const items = await this.prisma.rams.findMany({
@@ -546,9 +546,31 @@ export class RamsService {
               OR: [
                 { reference: { contains: search, mode: 'insensitive' as const } },
                 { title: { contains: search, mode: 'insensitive' as const } },
+                {
+                  visits: {
+                    some: {
+                      visit: {
+                        OR: [
+                          { reference: { contains: search, mode: 'insensitive' as const } },
+                          { title: { contains: search, mode: 'insensitive' as const } },
+                          {
+                            customer: { name: { contains: search, mode: 'insensitive' as const } },
+                          },
+                          { site: { name: { contains: search, mode: 'insensitive' as const } } },
+                          {
+                            site: { postcode: { contains: search, mode: 'insensitive' as const } },
+                          },
+                        ],
+                      },
+                    },
+                  },
+                },
               ],
             }
           : {}),
+        ...(options.siteId === undefined
+          ? {}
+          : { visits: { some: { visit: { siteId: options.siteId } } } }),
       },
       select: {
         id: true,
@@ -571,7 +593,7 @@ export class RamsService {
                 title: true,
                 scheduledStart: true,
                 customer: { select: { id: true, name: true } },
-                site: { select: { id: true, name: true } },
+                site: { select: { id: true, name: true, postcode: true } },
               },
             },
           },
@@ -1011,13 +1033,19 @@ export class RamsService {
     };
   }
 
-  async listAcknowledgements(organisationId: string, ramsId: string, visitId: string) {
+  async listAcknowledgements(
+    organisationId: string,
+    ramsId: string,
+    visitId: string,
+    signerSubject?: string,
+  ) {
     const rams = await this.requireRamsAndVisit(organisationId, ramsId, visitId);
     if (rams.currentRevisionNumber === 0) return [];
     return this.prisma.ramsAcknowledgement.findMany({
       where: {
         organisationId,
         visitId,
+        ...(signerSubject === undefined ? {} : { signerSubject }),
         revision: { ramsId, revisionNumber: rams.currentRevisionNumber },
       },
       orderBy: { signedAt: 'asc' },

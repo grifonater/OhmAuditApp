@@ -1315,6 +1315,12 @@ function isRamsRenderPayload(value: unknown): value is RamsRenderPayload {
     isString(value['generatedAt']) &&
     isString(organisation['name']) &&
     isStringArray(organisation['addressLines']) &&
+    (organisation['logoImage'] === undefined ||
+      (isRecord(organisation['logoImage']) &&
+        isString(organisation['logoImage']['base64']) &&
+        ['image/jpeg', 'image/png', 'image/webp'].includes(
+          String(organisation['logoImage']['mimeType']),
+        ))) &&
     isRamsJob(job) &&
     isRamsCustomer(customer) &&
     isRamsSite(site) &&

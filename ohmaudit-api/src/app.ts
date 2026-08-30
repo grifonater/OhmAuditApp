@@ -350,6 +350,7 @@ const visitInput = z.object({
   guestEmail: optionalEmail,
   guestMobile: optionalTrimmed(40),
   engineerNotes: z.string().max(5000).optional(),
+  evDiscoveryEnabled: z.boolean().optional().default(false),
   tasks: z.array(visitTaskInput).max(1000),
 });
 const nullableJobText = (maximum: number) =>
@@ -867,6 +868,7 @@ async function mediaImageForReport(
   prisma: ReturnType<typeof prismaFor>,
   organisationId: string,
   mediaId: string | null | undefined,
+  maximumBytes?: number,
 ): Promise<ReportMediaImage | undefined> {
   if (mediaId === null || mediaId === undefined || environment.MEDIA_BUCKET === undefined)
     return undefined;
@@ -882,7 +884,9 @@ async function mediaImageForReport(
     if (media === null) return undefined;
     const object = await environment.MEDIA_BUCKET.get(media.storageKey);
     if (object === null) return undefined;
+    if (maximumBytes !== undefined && object.size > maximumBytes) return undefined;
     const bytes = new Uint8Array(await object.arrayBuffer());
+    if (maximumBytes !== undefined && bytes.byteLength > maximumBytes) return undefined;
     let binary = '';
     for (let offset = 0; offset < bytes.length; offset += 8192)
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
@@ -2637,6 +2641,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       .max(100)
       .optional()
       .parse(context.req.query('limit'));
+    const siteId = z.uuid().optional().parse(context.req.query('siteId'));
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       organisationId,
@@ -2646,6 +2651,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       rams: await new RamsService(prismaFor(environment)).listOrganisation(organisationId, {
         ...(search === undefined ? {} : { search }),
         ...(limit === undefined ? {} : { limit }),
+        ...(siteId === undefined ? {} : { siteId }),
       }),
     });
   });
@@ -2964,6 +2970,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   const respondWithRamsPdf = async (
     context: Context<AppEnvironment>,
     environment: ReturnType<typeof parseEnvironment>,
+    organisationId: string,
     payload: Awaited<ReturnType<RamsService['renderSource']>>,
   ) => {
     if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
@@ -2972,13 +2979,34 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         'PDF rendering is not configured for this environment.',
         503,
       );
+    const prisma = prismaFor(environment);
+    const brand = await prisma.organisationBrandProfile.findUnique({ where: { organisationId } });
+    const logoImage = await mediaImageForReport(
+      environment,
+      prisma,
+      organisationId,
+      brand?.logoMediaId,
+      400_000,
+    );
+    const brandedPayload = {
+      ...payload,
+      organisation: {
+        ...payload.organisation,
+        ...reportLogoFields(logoImage),
+      },
+    };
+    const brandedBody = JSON.stringify(brandedPayload);
+    const body =
+      new TextEncoder().encode(brandedBody).byteLength <= 1024 * 1024
+        ? brandedBody
+        : JSON.stringify(payload);
     const rendered = await requestPdfRender(environment, '/render/rams-a4-v1', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'x-correlation-id': context.get('correlationId'),
       },
-      body: JSON.stringify(payload),
+      body,
     });
     const filenameReference = payload.reference
       .normalize('NFKD')
@@ -3020,7 +3048,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       visitId,
       revisionNumber,
     );
-    return respondWithRamsPdf(context, environment, payload);
+    return respondWithRamsPdf(context, environment, organisationId, payload);
   };
   app.get('/api/v1/rams/:ramsId/report.pdf', renderRamsPdf);
   app.get('/api/v1/rams/:ramsId/pdf', renderRamsPdf);
@@ -3306,7 +3334,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       summaries.map(async (summary) => {
         const [detail, acknowledgements] = await Promise.all([
           service.detail(visit.organisationId, summary.id),
-          service.listAcknowledgements(visit.organisationId, summary.id, visit.id),
+          service.listAcknowledgements(
+            visit.organisationId,
+            summary.id,
+            visit.id,
+            `guest-visit:${visit.id}`,
+          ),
         ]);
         const acknowledgement = acknowledgements[0];
         return {
@@ -3364,7 +3397,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         visit.id,
         revisionNumber,
       );
-      return respondWithRamsPdf(context, environment, payload);
+      return respondWithRamsPdf(context, environment, visit.organisationId, payload);
     },
   );
   app.get('/api/v1/guest/visits/:token/rams/:ramsId/acknowledgements', async (context) => {

@@ -442,4 +442,38 @@ describe('RAMS workflow', () => {
       ),
     ).rejects.toMatchObject({ code: 'RAMS_ACKNOWLEDGEMENT_NOT_ALLOWED', status: 409 });
   });
+
+  it('scopes guest acknowledgement status to the guest signer subject', async () => {
+    let acknowledgementQuery: unknown;
+    const prisma = {
+      rams: {
+        findFirst: () =>
+          Promise.resolve({ id: 'rams-a', status: 'APPROVED', currentRevisionNumber: 3 }),
+      },
+      visit: { findFirst: () => Promise.resolve({ id: 'visit-a' }) },
+      ramsVisit: { findUnique: () => Promise.resolve({ ramsId: 'rams-a' }) },
+      ramsAcknowledgement: {
+        findMany: (input: unknown) => {
+          acknowledgementQuery = input;
+          return Promise.resolve([]);
+        },
+      },
+    } as unknown as PrismaClient;
+
+    await new RamsService(prisma).listAcknowledgements(
+      'organisation-a',
+      'rams-a',
+      'visit-a',
+      'guest-visit:visit-a',
+    );
+
+    expect(acknowledgementQuery).toMatchObject({
+      where: {
+        organisationId: 'organisation-a',
+        visitId: 'visit-a',
+        signerSubject: 'guest-visit:visit-a',
+        revision: { ramsId: 'rams-a', revisionNumber: 3 },
+      },
+    });
+  });
 });

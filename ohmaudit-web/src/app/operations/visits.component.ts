@@ -233,6 +233,8 @@ export class VisitsComponent {
           : {}),
         ...(!value.assignedUserId && value.guestEmail ? { guestEmail: value.guestEmail } : {}),
         engineerNotes: value.engineerNotes,
+        evDiscoveryEnabled:
+          this.addInspection() && value.moduleKey === 'ev-charging' && this.allowDiscovery(),
         tasks: !this.addInspection()
           ? []
           : isThermal

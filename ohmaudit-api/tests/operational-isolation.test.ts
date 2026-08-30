@@ -49,6 +49,7 @@ describe('operational tenant isolation', () => {
           id: 'visit-a',
           customerId: 'customer-a',
           siteId: 'site-a',
+          evDiscoveryEnabled: true,
           tasks: [],
         }),
       },
@@ -76,5 +77,33 @@ describe('operational tenant isolation', () => {
         status: 'PROPOSED',
       },
     });
+  });
+
+  it('rejects charger discovery when it is not enabled for the job', async () => {
+    const prisma = {
+      visit: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'visit-a',
+          customerId: 'customer-a',
+          siteId: 'site-a',
+          evDiscoveryEnabled: false,
+          tasks: [],
+        }),
+      },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).addEvAsset(
+        'organisation-a',
+        'visit-a',
+        'engineer-a',
+        'correlation',
+        {
+          assetReference: 'EVCP 1',
+          displayName: 'Front car park charger',
+          dcRcdType: 'NONE',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'EV_DISCOVERY_NOT_ENABLED', status: 403 });
   });
 });

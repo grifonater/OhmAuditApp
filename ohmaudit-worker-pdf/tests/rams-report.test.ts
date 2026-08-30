@@ -228,11 +228,48 @@ describe('RAMS A4 renderer', () => {
     expect(html).not.toContain('Mandatory');
     expect(html).toContain('Revision history');
     expect(html).toContain('CONTROLLED DOCUMENT');
+    expect(html).toContain('Powered by OhmAudit management platform');
+    expect(html).toContain('white-space: nowrap');
+    expect(html).toContain('.risk-table th:nth-child(1) { width: 9mm; }');
+    expect(html).toContain('<th class="number">#</th>');
     expect(html).toContain('Replace &lt;main&gt; distribution board');
     expect(html).toContain('A &lt;Author&gt;');
     expect(html).toContain('https://malicious.test/&lt;script&gt;');
     expect(html).not.toContain('<script');
     expect(html).not.toMatch(/(?:src|href)=["']https?:/u);
+  });
+
+  it('renders the organisation logo in the masthead', () => {
+    const input = payload();
+    input.organisation.logoImage = {
+      mimeType: 'image/png',
+      base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+    };
+
+    const html = renderRamsReportHtml(input);
+
+    expect(html).toContain('class="organisation-logo"');
+    expect(html).toContain('src="data:image/png;base64,iVBORw0KGgo');
+    expect(html).toContain('alt="OhmAudit Electrical Ltd logo"');
+  });
+
+  it('keeps two-digit method and hazard row numbers in fixed number cells', () => {
+    const input = payload();
+    input.data.methodStatement.steps = Array.from({ length: 12 }, (_, index) => ({
+      id: `step-${index + 1}`,
+      title: `Step ${index + 1}`,
+      detail: 'Work safely.',
+    }));
+    input.data.riskAssessment.hazards = Array.from({ length: 12 }, (_, index) => ({
+      ...input.data.riskAssessment.hazards[0]!,
+      id: `hazard-${index + 1}`,
+      hazard: `Hazard ${index + 1}`,
+    }));
+
+    const html = renderRamsReportHtml(input);
+
+    expect(html.match(/<td class="number">10<\/td>/gu)).toHaveLength(2);
+    expect(html.match(/<td class="number">12<\/td>/gu)).toHaveLength(2);
   });
 
   it('keeps blank acknowledgement rows when no electronic sign-ons exist', () => {

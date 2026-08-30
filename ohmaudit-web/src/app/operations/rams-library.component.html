@@ -532,9 +532,12 @@
                 [value]="newHazard().name"
                 (input)="updateNewHazard('name', $any($event.target).value)" /></label
             ><label class="field"
-              >Description<input
+              >Library summary (optional)<input
                 [value]="newHazard().description"
-                (input)="updateNewHazard('description', $any($event.target).value)" /></label
+                (input)="updateNewHazard('description', $any($event.target).value)"
+              /><small class="field-hint"
+                >Used to describe and find this library entry. It is not added to the RAMS.</small
+              ></label
             ><label class="field check-field"
               ><input
                 type="checkbox"
@@ -555,11 +558,15 @@
               />
             </div>
             <label class="field full"
-              >Hazard description *<textarea
+              >Hazard or hazardous situation *<textarea
                 rows="2"
                 [value]="newHazard().hazard"
                 (input)="updateNewHazard('hazard', $any($event.target).value)"
-              ></textarea>
+              ></textarea
+              ><small class="field-hint"
+                >Describe the source of harm or situation that could cause harm. This text is added
+                to the RAMS risk assessment.</small
+              >
             </label>
             <label class="field"
               >People at risk<input
@@ -654,11 +661,15 @@
                         updateHazardEdit(hazard.id, 'name', $any($event.target).value)
                       " /></label
                   ><label class="field"
-                    >Description<input
+                    >Library summary (optional)<input
                       [value]="edit.description"
                       (input)="
                         updateHazardEdit(hazard.id, 'description', $any($event.target).value)
-                      " /></label
+                      "
+                    /><small class="field-hint"
+                      >Used to describe and find this library entry. It is not added to the
+                      RAMS.</small
+                    ></label
                   ><label class="field check-field"
                     ><input
                       type="checkbox"
@@ -678,11 +689,15 @@
                     />
                   </div>
                   <label class="field full"
-                    >Hazard description *<textarea
+                    >Hazard or hazardous situation *<textarea
                       rows="2"
                       [value]="edit.hazard"
                       (input)="updateHazardEdit(hazard.id, 'hazard', $any($event.target).value)"
-                    ></textarea>
+                    ></textarea
+                    ><small class="field-hint"
+                      >Describe the source of harm or situation that could cause harm. This text is
+                      added to the RAMS risk assessment.</small
+                    >
                   </label>
                   <label class="field"
                     >People at risk<input

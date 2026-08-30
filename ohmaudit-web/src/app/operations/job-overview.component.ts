@@ -5,6 +5,7 @@ import {
   ApiService,
   type AssetSummary,
   type JobCategory,
+  type OrganisationRamsSummary,
   type RamsSummary,
   type TimelineEvent,
   type VisitDocument,
@@ -59,6 +60,11 @@ export class JobOverviewComponent {
   protected readonly timelineEvents = signal<TimelineEvent[]>([]);
   protected readonly documents = signal<VisitDocument[]>([]);
   protected readonly ramsRecords = signal<RamsSummary[]>([]);
+  protected readonly showRamsLinker = signal(false);
+  protected readonly ramsQuery = signal('');
+  protected readonly availableRams = signal<OrganisationRamsSummary[]>([]);
+  protected readonly ramsSearchLoading = signal(false);
+  private ramsSearchTimer?: ReturnType<typeof setTimeout>;
   protected readonly progressLoaded = signal(false);
   protected readonly documentsLoaded = signal(false);
   protected readonly progressLoading = signal(false);
@@ -78,6 +84,17 @@ export class JobOverviewComponent {
   protected readonly canGenerate = computed(() =>
     this.capabilities().includes('certificates.generate'),
   );
+  protected readonly ramsCandidates = computed(() => {
+    const linkedIds = new Set(this.ramsRecords().map(({ id }) => id));
+    const siteId = this.job()?.site.id;
+    return this.availableRams()
+      .filter(({ id }) => !linkedIds.has(id))
+      .sort(
+        (left, right) =>
+          Number(right.visits.some((visit) => visit.site.id === siteId)) -
+          Number(left.visits.some((visit) => visit.site.id === siteId)),
+      );
+  });
   protected readonly linkedAssets = computed(() => {
     const assets = new Map<string, AssetSummary>();
     for (const task of this.job()?.tasks ?? []) {
@@ -220,6 +237,37 @@ export class JobOverviewComponent {
     });
   }
 
+  protected async openRamsLinker(): Promise<void> {
+    this.showRamsLinker.set(!this.showRamsLinker());
+    if (!this.showRamsLinker() || this.availableRams().length > 0) return;
+    await this.loadRamsCandidates('', this.job()?.site.id);
+  }
+
+  protected searchRams(value: string): void {
+    this.ramsQuery.set(value);
+    if (this.ramsSearchTimer) clearTimeout(this.ramsSearchTimer);
+    this.ramsSearchTimer = setTimeout(
+      () =>
+        void this.loadRamsCandidates(value.trim(), value.trim() ? undefined : this.job()?.site.id),
+      250,
+    );
+  }
+
+  protected isSameSiteRams(item: OrganisationRamsSummary): boolean {
+    const siteId = this.job()?.site.id;
+    return siteId !== undefined && item.visits.some((visit) => visit.site.id === siteId);
+  }
+
+  protected async linkExistingRams(item: OrganisationRamsSummary): Promise<void> {
+    if (!this.canManageRams()) return;
+    await this.run(async () => {
+      await this.api.linkRamsVisit(this.organisationId, item.id, this.visitId);
+      await this.reloadRams();
+      this.availableRams.update((items) => items.filter(({ id }) => id !== item.id));
+      this.notice.set('RAMS linked to this job.');
+    });
+  }
+
   protected async downloadDocument(document: VisitDocument): Promise<void> {
     if (!this.canGenerate()) return;
     await this.run(async () => {
@@ -326,6 +374,29 @@ export class JobOverviewComponent {
 
   private async loadJob(): Promise<void> {
     this.job.set((await this.api.getVisit(this.organisationId, this.visitId)).visit);
+  }
+
+  private async reloadRams(): Promise<void> {
+    this.ramsRecords.set((await this.api.listVisitRams(this.organisationId, this.visitId)).rams);
+  }
+
+  private async loadRamsCandidates(search: string, siteId?: string): Promise<void> {
+    this.ramsSearchLoading.set(true);
+    try {
+      this.availableRams.set(
+        (
+          await this.api.listRams(this.organisationId, {
+            ...(search ? { search } : {}),
+            ...(siteId === undefined ? {} : { siteId }),
+            limit: 30,
+          })
+        ).rams,
+      );
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to search RAMS.');
+    } finally {
+      this.ramsSearchLoading.set(false);
+    }
   }
 
   protected async loadTimeline(): Promise<void> {

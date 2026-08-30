@@ -371,6 +371,7 @@ export interface VisitSummary {
   guestEmail?: string;
   guestMobile?: string;
   engineerNotes?: string;
+  evDiscoveryEnabled: boolean;
   submittedAt?: string;
   completedAt?: string;
   createdAt?: string;
@@ -647,6 +648,7 @@ export interface EngineerRamsRecord extends RamsSummary {
 }
 export interface RamsAcknowledgement {
   id: string;
+  signerSubject: string;
   signerName: string;
   signerEmail?: string | null;
   signerRole: string;
@@ -1420,10 +1422,14 @@ export class ApiService {
       `/visits/${encodeURIComponent(visitId)}/rams?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
-  listRams(organisationId: string, options: { search?: string; limit?: number } = {}) {
+  listRams(
+    organisationId: string,
+    options: { search?: string; limit?: number; siteId?: string } = {},
+  ) {
     const query = new URLSearchParams({ organisationId });
     if (options.search?.trim()) query.set('search', options.search.trim());
     if (options.limit !== undefined) query.set('limit', String(options.limit));
+    if (options.siteId !== undefined) query.set('siteId', options.siteId);
     return this.request<{ rams: OrganisationRamsSummary[] }>(`/rams?${query.toString()}`);
   }
   listRamsTemplates(organisationId: string) {
@@ -1782,6 +1788,7 @@ export class ApiService {
       guestEmail?: string;
       guestMobile?: string;
       engineerNotes?: string;
+      evDiscoveryEnabled?: boolean;
       tasks: Array<{ assetId?: string; moduleKey: string; title: string }>;
     },
   ) {
