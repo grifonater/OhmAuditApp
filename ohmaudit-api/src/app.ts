@@ -1310,6 +1310,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     'calendar',
     'notifications',
     'visits',
+    'rams',
     'inspections',
     'proposed-asset-changes',
     'modules',
