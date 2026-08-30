@@ -50,7 +50,7 @@
         <div class="rams-mark" aria-hidden="true">RA</div>
         <div class="rams-identity">
           <div class="reference-line">
-            <strong>{{ currentRams.visit.reference || 'No job reference' }}</strong>
+            <strong>{{ currentRams.visits[0]?.reference || 'No job reference' }}</strong>
             <span
               class="badge"
               [class.success]="currentRams.status === 'APPROVED'"
@@ -59,22 +59,22 @@
               {{ statusLabel(currentRams.status) }}
             </span>
           </div>
-          <h1>{{ currentRams.visit.title }}</h1>
+          <h1>{{ currentRams.visits[0]?.title || currentRams.title }}</h1>
           <div class="job-meta">
-            <span>{{ currentRams.visit.customer.name }}</span>
-            <span>{{ currentRams.visit.site.name }}</span>
-            <span>{{ formatDate(currentRams.visit.scheduledStart) }}</span>
-            <span>{{ personName(currentRams.visit.assignedUser) }}</span>
+            <span>{{ currentRams.visits[0]?.customer?.name || 'No client' }}</span>
+            <span>{{ currentRams.visits[0]?.site?.name || 'No site' }}</span>
+            <span>{{ formatDate(currentRams.visits[0]?.scheduledStart) }}</span>
+            <span>{{ personName(currentRams.visits[0]?.assignedUser) }}</span>
           </div>
         </div>
         <dl class="hero-facts">
           <div>
             <dt>Category</dt>
-            <dd>{{ currentRams.visit.jobCategory?.name || 'Not set' }}</dd>
+            <dd>{{ currentRams.visits[0]?.jobCategory?.name || 'Not set' }}</dd>
           </div>
           <div>
             <dt>Job type</dt>
-            <dd>{{ currentRams.visit.jobType || 'Not set' }}</dd>
+            <dd>{{ currentRams.visits[0]?.jobType || 'Not set' }}</dd>
           </div>
           <div>
             <dt>RAMS reference</dt>
@@ -124,6 +124,62 @@
       <div class="workspace-layout">
         <section class="workspace-main">
           @if (activeTab() === 'overview') {
+            <article class="card linked-jobs-panel">
+              <div class="card-header">
+                <div>
+                  <p class="eyebrow">Job links</p>
+                  <h2>Linked jobs</h2>
+                  <small>This RAMS applies to every linked job.</small>
+                </div>
+                <span class="count-pill">{{ currentRams.visits.length }}</span>
+              </div>
+              <div class="card-body linked-jobs-list">
+                @for (visit of currentRams.visits; track visit.id) {
+                  <div class="linked-job-row">
+                    <a [routerLink]="['/app/org', organisationId, 'visits', visit.id, 'overview']"
+                      ><strong>{{ visit.reference || visit.title }}</strong
+                      ><span>{{ visit.customer.name }} / {{ visit.site.name }}</span></a
+                    >
+                    @if (canManage()) {
+                      <button
+                        type="button"
+                        class="button ghost compact"
+                        [disabled]="busy() || currentRams.visits.length <= 1"
+                        (click)="unlinkJob(visit.id)"
+                      >
+                        Unlink
+                      </button>
+                    }
+                  </div>
+                }
+                @if (canManage()) {
+                  <div class="job-search">
+                    <input
+                      type="search"
+                      autocomplete="off"
+                      placeholder="Search jobs to link"
+                      [value]="jobQuery()"
+                      (input)="searchJobs($any($event.target).value)"
+                      aria-label="Search jobs to link"
+                    />
+                    @if (jobChoices().length) {
+                      <div class="job-results" role="listbox">
+                        @for (visit of jobChoices(); track visit.id) {
+                          <button
+                            type="button"
+                            [disabled]="isLinkedJob(visit.id)"
+                            (click)="linkJob(visit)"
+                          >
+                            <strong>{{ visit.reference || visit.title }}</strong
+                            ><span>{{ visit.customer.name }} / {{ visit.site.name }}</span>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </article>
             <article class="card reusable-content-panel">
               <div class="reusable-panel-copy">
                 <p class="eyebrow">Reusable content</p>
@@ -171,7 +227,7 @@
                   <h2>RAMS overview</h2>
                 </div>
                 <span class="section-status" [class.done]="sectionCompletion().overview">{{
-                  sectionCompletion().overview ? 'Complete' : 'Required'
+                  sectionCompletion().overview ? 'Complete' : 'In progress'
                 }}</span>
               </div>
               <div class="card-body overview-form">
@@ -188,7 +244,7 @@
                   <a
                     class="linked-job"
                     [routerLink]="['/app/org', organisationId, 'visits', visitId, 'overview']"
-                    >{{ currentRams.visit.reference || currentRams.visit.title }}</a
+                    >{{ currentRams.visits[0]?.reference || currentRams.visits[0]?.title }}</a
                   >
                 </div>
                 <label class="field"
@@ -245,15 +301,17 @@
                 <div class="context-panel full">
                   <div>
                     <span>Job context</span
-                    ><strong>{{ currentRams.visit.description || 'No job description' }}</strong>
+                    ><strong>{{
+                      currentRams.visits[0]?.description || 'No job description'
+                    }}</strong>
                   </div>
                   <div>
                     <span>Site context</span
                     ><strong
-                      >{{ currentRams.visit.site.name
+                      >{{ currentRams.visits[0]?.site?.name
                       }}{{
-                        currentRams.visit.site.postcode
-                          ? ', ' + currentRams.visit.site.postcode
+                        currentRams.visits[0]?.site?.postcode
+                          ? ', ' + currentRams.visits[0].site.postcode
                           : ''
                       }}</strong
                     >
@@ -261,8 +319,8 @@
                   <div>
                     <span>Scheduled window</span
                     ><strong
-                      >{{ formatDate(currentRams.visit.scheduledStart) }} to
-                      {{ formatDate(currentRams.visit.scheduledEnd) }}</strong
+                      >{{ formatDate(currentRams.visits[0]?.scheduledStart) }} to
+                      {{ formatDate(currentRams.visits[0]?.scheduledEnd) }}</strong
                     >
                   </div>
                 </div>
@@ -629,15 +687,6 @@
                         (input)="updateMethodStep($index, 'detail', $any($event.target).value)"
                       ></textarea>
                     </div>
-                    <label class="required-toggle"
-                      ><input
-                        type="checkbox"
-                        [checked]="step.required"
-                        [disabled]="!editable()"
-                        (change)="updateMethodStep($index, 'required', $any($event.target).checked)"
-                      />
-                      Required</label
-                    >
                     <div class="row-actions">
                       <button
                         type="button"
@@ -1412,7 +1461,7 @@
               <div class="card-header">
                 <div>
                   <h2>Controlled documents</h2>
-                  <small>Record document metadata only; no upload is required.</small>
+                  <small>Record document metadata only; no file upload is needed.</small>
                 </div>
                 <button
                   class="button secondary compact"
@@ -1580,8 +1629,8 @@
                   <div class="readiness-heading">
                     <span class="readiness-ring">{{ readiness() }}%</span>
                     <div>
-                      <h3>{{ readiness() === 100 ? 'Ready for review' : 'Action required' }}</h3>
-                      <p>Complete all required sections before requesting review.</p>
+                      <h3>{{ readiness() === 100 ? 'Ready for review' : 'Needs attention' }}</h3>
+                      <p>Complete each core section before requesting review.</p>
                     </div>
                   </div>
                   @for (tab of tabs.slice(0, 5); track tab.key) {
@@ -1659,6 +1708,14 @@
                         {{ personName(revision.createdBy) }}</small
                       ></span
                     >
+                    <button
+                      class="button secondary compact"
+                      type="button"
+                      [disabled]="revisionLoading()"
+                      (click)="openRevision(revision.revisionNumber)"
+                    >
+                      View revision
+                    </button>
                   </div>
                 } @empty {
                   <p class="empty-copy">
@@ -1770,7 +1827,7 @@
               <span class="readiness-ring large">{{ readiness() }}%</span>
               <div>
                 <strong>{{ readiness() === 100 ? 'Ready to submit' : 'Almost ready' }}</strong
-                ><small>Complete the required sections before review.</small>
+                ><small>Complete each core section before review.</small>
               </div>
             </div>
             <div class="mini-checks">
@@ -1792,26 +1849,7 @@
           </article>
           <article class="card aside-card matrix-card">
             <div class="card-header"><h2>Risk matrix</h2></div>
-            <div class="matrix-layout">
-              <div class="matrix">
-                <span class="axis-y">Severity</span>
-                @for (severity of severities; track severity) {
-                  @for (likelihood of likelihoods; track likelihood) {
-                    <span
-                      [class]="riskClass(riskScore(likelihood, severity))"
-                      [title]="'Likelihood ' + likelihood + ', severity ' + severity"
-                      >{{ riskScore(likelihood, severity) }}</span
-                    >
-                  }
-                }
-              </div>
-              <span class="axis-x">Likelihood</span>
-            </div>
-            <div class="matrix-legend">
-              <span><i class="very-high"></i>16-25 Very high</span
-              ><span><i class="high"></i>10-15 High</span
-              ><span><i class="medium"></i>5-9 Medium</span><span><i class="low"></i>1-4 Low</span>
-            </div>
+            <oa-risk-matrix [compact]="true" />
           </article>
         </aside>
       </div>
@@ -1825,5 +1863,14 @@
   }
   @if (error()) {
     <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+  @if (selectedRevision(); as revision) {
+    <oa-rams-read-only
+      [title]="'RAMS revision ' + revision.revisionNumber"
+      [draft]="revision.data"
+      [revision]="revision"
+      (closed)="selectedRevision.set(undefined)"
+      (pdfRequested)="downloadRevisionPdf($event)"
+    />
   }
 </main>

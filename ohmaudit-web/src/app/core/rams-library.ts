@@ -2,8 +2,81 @@ import type { RamsDraft, RamsMethodStep } from './api.service';
 
 export type IdFactory = () => string;
 
+export type RamsRiskBand = 'Low' | 'Medium' | 'High' | 'Very high';
+
+export function ramsRiskScore(likelihood: number, severity: number): number {
+  return likelihood * severity;
+}
+
+export function ramsRiskBand(score: number): RamsRiskBand {
+  return score <= 4 ? 'Low' : score <= 9 ? 'Medium' : score <= 15 ? 'High' : 'Very high';
+}
+
+export function ramsRiskClass(score: number): string {
+  return ramsRiskBand(score).toLocaleLowerCase('en-GB').replace(' ', '-');
+}
+
+export function blankRamsDraft(): RamsDraft {
+  return {
+    schemaVersion: 2,
+    overview: { title: '', category: '', effectiveFrom: '', reviewBy: '', revisionSummary: '' },
+    scope: {
+      scopeOfWorks: '',
+      exclusions: [],
+      engineerBriefing: [],
+      keyActivities: [],
+      assumptions: [],
+      workAreas: [],
+      workBoundaries: '',
+      responsibilities: [],
+    },
+    methodStatement: { steps: [] },
+    riskAssessment: { hazards: [] },
+    requirements: {
+      ppe: [],
+      tools: [],
+      competencies: [],
+      emergencyArrangements: [],
+      plant: [],
+      materials: [],
+      training: [],
+      substances: [],
+      welfare: [],
+      emergencyDetails: {
+        contactName: '',
+        contactNumber: '',
+        nearestHospital: '',
+        hospitalAddress: '',
+        assemblyPoint: '',
+        additionalInfo: '',
+      },
+    },
+    supportingInformation: {
+      siteAccess: '',
+      permits: '',
+      welfare: '',
+      environmental: '',
+      references: [],
+      permitReferences: [],
+      coshhReferences: [],
+      workingAtHeightReferences: [],
+      legislationReferences: [],
+      documents: [],
+      electricalSafety: [],
+    },
+    review: {
+      approvalMode: 'REVIEWER',
+      requireEngineerAcknowledgement: true,
+      internalNotes: '',
+      changeImpact: 'LOW',
+      revisionReason: '',
+      changeSummary: '',
+    },
+  };
+}
+
 export function cloneMethodSteps(steps: RamsMethodStep[], createId: IdFactory): RamsMethodStep[] {
-  return steps.map((step) => ({ ...structuredClone(step), id: createId() }));
+  return steps.map((step) => ({ id: createId(), title: step.title, detail: step.detail }));
 }
 
 export function cloneRamsDraft(source: RamsDraft, createId: IdFactory): RamsDraft {

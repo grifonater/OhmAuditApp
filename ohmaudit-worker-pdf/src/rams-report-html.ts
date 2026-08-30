@@ -9,8 +9,35 @@ export interface RamsRenderPerson {
 export interface RamsMethodStep {
   id: string;
   title: string;
-  required: boolean;
   detail?: string;
+}
+
+export interface RamsRenderJob {
+  id: string;
+  reference: string | null;
+  externalReference: string | null;
+  title: string;
+  category: string | null;
+  jobType: string | null;
+  plannedStart: string | null;
+  targetCompletion: string | null;
+}
+
+export interface RamsSelectedJobContext {
+  job: RamsRenderJob;
+  customer: { name: string };
+  site: { name: string; addressLines: string[] };
+  assignedEngineer?: RamsRenderPerson;
+}
+
+export interface RamsAcknowledgement {
+  id: string;
+  signerName: string;
+  signerEmail: string | null;
+  signerRole: string;
+  signatureData: string;
+  statement: string;
+  signedAt: string;
 }
 
 export interface RamsHazard {
@@ -50,9 +77,9 @@ export interface RamsDraftData {
       id: string;
       name: string;
       role: string;
-      organisation: string;
+      organisation?: string;
       responsibility: string;
-      contact: string;
+      contact?: string;
     }>;
   };
   methodStatement: { steps: RamsMethodStep[] };
@@ -131,18 +158,10 @@ export interface RamsRenderPayload {
   reviewComment: string | null;
   generatedAt: string;
   organisation: { name: string; addressLines: string[] };
-  job: {
-    id: string;
-    reference: string | null;
-    externalReference: string | null;
-    title: string;
-    category: string | null;
-    jobType: string | null;
-    plannedStart: string | null;
-    targetCompletion: string | null;
-  };
+  job: RamsRenderJob;
   customer: { name: string };
   site: { name: string; addressLines: string[] };
+  jobs: RamsSelectedJobContext[];
   people: {
     preparedBy: RamsRenderPerson;
     reviewedBy?: RamsRenderPerson | null;
@@ -151,6 +170,7 @@ export interface RamsRenderPayload {
   };
   data: RamsDraftData;
   revisionHistory: RamsRevisionHistoryItem[];
+  acknowledgements: RamsAcknowledgement[];
 }
 
 function escapeHtml(value: string | number): string {
@@ -220,16 +240,61 @@ function riskMatrix(): string {
 }
 
 function methodRows(steps: RamsMethodStep[]): string {
-  if (steps.length === 0) return '<tr><td colspan="3">No method steps recorded.</td></tr>';
+  if (steps.length === 0) return '<tr><td colspan="2">No method steps recorded.</td></tr>';
   return steps
     .map(
       (step, index) => `<tr>
         <td class="number">${index + 1}</td>
         <td><strong>${value(step.title)}</strong><div class="subcopy">${value(step.detail, 'No additional detail')}</div></td>
-        <td>${step.required ? 'Yes' : 'No'}</td>
       </tr>`,
     )
     .join('');
+}
+
+function selectedJobRows(payload: RamsRenderPayload): string {
+  const contexts = payload.jobs.length
+    ? payload.jobs
+    : [
+        {
+          job: payload.job,
+          customer: payload.customer,
+          site: payload.site,
+          assignedEngineer: payload.people.assignedEngineer ?? undefined,
+        },
+      ];
+  return contexts
+    .map(
+      ({ job, customer, site, assignedEngineer }) => `<tr>
+        <td><strong>${value(job.title)}</strong><div class="subcopy">${value(job.reference, 'No job reference')}</div></td>
+        <td>${value(customer.name)}</td>
+        <td><strong>${value(site.name)}</strong><div class="subcopy">${value(site.addressLines.join('\n'), 'No site address')}</div></td>
+        <td>${value(person(assignedEngineer))}</td>
+        <td>${value([job.category, job.jobType].filter(Boolean).join(' / '))}</td>
+        <td>${value(job.plannedStart)}</td>
+        <td>${value(job.targetCompletion)}</td>
+      </tr>`,
+    )
+    .join('');
+}
+
+function acknowledgementRows(payload: RamsRenderPayload): string {
+  if (payload.acknowledgements.length) {
+    return payload.acknowledgements
+      .map(
+        (item) => `<tr>
+          <td><strong>${value(item.signerName)}</strong><div class="subcopy">${value(item.signerRole)}</div></td>
+          <td class="signature"><img src="${escapeHtml(item.signatureData)}" alt="Signature of ${escapeHtml(item.signerName)}"></td>
+          <td>${value(item.signedAt)}</td>
+        </tr>`,
+      )
+      .join('');
+  }
+  const assignedEngineer = person(payload.people.assignedEngineer);
+  return Array.from({ length: 8 }, (_, index) => {
+    const name =
+      index === 0 && payload.people.assignedEngineer ? value(assignedEngineer) : '&nbsp;';
+    return `<tr><td>${name}</td><td></td><td></td></tr>`;
+  }).join('');
 }
 
 function hazardRows(hazards: RamsHazard[]): string {
@@ -311,12 +376,6 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
     payload.documentState === 'APPROVED'
       ? ''
       : `<div class="watermark">${escapeHtml(stateLabel)} - NOT APPROVED FOR USE</div>`;
-  const acknowledgementName = person(payload.people.assignedEngineer);
-  const acknowledgementRows = Array.from({ length: 8 }, (_, index) => {
-    const name =
-      index === 0 && payload.people.assignedEngineer ? value(acknowledgementName) : '&nbsp;';
-    return `<tr><td>${name}</td><td></td><td></td><td></td></tr>`;
-  }).join('');
 
   return `<!doctype html>
 <html lang="en-GB">
@@ -388,6 +447,8 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
     .legend span { padding: 2mm; font-size: 7pt; font-weight: 700; }
     .callout { padding: 3mm; border-left: 3px solid #ffb000; background: #fff8e5; white-space: pre-line; }
     .signature-table td { height: 10mm; }
+    .signature-table .signature { padding: 1mm 2mm; text-align: center; }
+    .signature-table .signature img { display: inline-block; max-width: 48mm; height: 9mm; object-fit: contain; }
     .footer { position: fixed; right: 12mm; bottom: 5mm; left: 12mm; display: flex; justify-content: space-between; padding-top: 2mm; border-top: 1px solid #9ba9ba; color: #53647b; font-size: 6pt; }
     .watermark { position: fixed; z-index: 0; top: 128mm; left: 22mm; width: 166mm; transform: rotate(-32deg); color: rgba(166, 44, 55, .10); font-size: 52pt; font-weight: 900; letter-spacing: .08em; text-align: center; pointer-events: none; }
     .document > *:not(.watermark) { position: relative; z-index: 1; }
@@ -438,6 +499,7 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
         ${card('Overview', value(data.overview.title))}
         ${card('Revision summary', value(data.overview.revisionSummary, 'No revision summary recorded'))}
       </div>
+      <table style="margin-top:3mm"><thead><tr><th>Selected job</th><th>Customer</th><th>Site</th><th>Assigned engineer</th><th>Category / type</th><th>Planned start</th><th>Target completion</th></tr></thead><tbody>${selectedJobRows(payload)}</tbody></table>
     </section>
 
     <section class="section">
@@ -469,7 +531,7 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
 
     <section class="section">
       <h2 class="section-title"><span>4</span> Method statement</h2>
-      <table><thead><tr><th>#</th><th>Safe work sequence</th><th>Mandatory</th></tr></thead><tbody>${methodRows(data.methodStatement.steps)}</tbody></table>
+      <table><thead><tr><th>#</th><th>Safe work sequence</th></tr></thead><tbody>${methodRows(data.methodStatement.steps)}</tbody></table>
     </section>
 
     <section class="section">
@@ -527,7 +589,7 @@ export function renderRamsReportHtml(payload: RamsRenderPayload): string {
     <section class="section">
       <h2 class="section-title"><span>9</span> Engineer acknowledgement</h2>
       <p class="callout">I confirm that I have read and understood this RAMS, received the required briefing, will follow the stated controls and method, and will stop work and report any change in conditions or scope. Re-acknowledgement required: ${data.review.requireEngineerAcknowledgement ? 'YES' : 'NO'}.</p>
-      <table class="signature-table" style="margin-top:3mm"><thead><tr><th>Print name</th><th>Signature</th><th>Date / time</th><th>Briefed by</th></tr></thead><tbody>${acknowledgementRows}</tbody></table>
+      <table class="signature-table" style="margin-top:3mm"><thead><tr><th>Print name / role</th><th>Signature</th><th>Signed date / time</th></tr></thead><tbody>${acknowledgementRows(payload)}</tbody></table>
     </section>
 
     <section class="section">

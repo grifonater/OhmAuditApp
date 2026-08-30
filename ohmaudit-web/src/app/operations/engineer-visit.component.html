@@ -13,16 +13,106 @@
       </div>
     </header>
     @if (!selectedTask()) {
-      <section>
-        <p class="eyebrow">Engineer job workspace</p>
-        <h1>{{ currentVisit.title }}</h1>
-        <p class="muted">
-          {{ currentVisit.customer.name }} › {{ currentVisit.site.name }} ·
-          {{ currentVisit.site.postcode || 'No postcode' }}
-        </p>
-        <div class="notice">
-          {{ currentVisit.engineerNotes || 'No special job instructions.' }}
+      <section class="job-landing">
+        <article class="job-landing-hero">
+          <p class="eyebrow">Engineer job workspace</p>
+          <div class="job-title-row">
+            <div>
+              <h1>{{ currentVisit.title }}</h1>
+              <p>
+                {{ currentVisit.reference || 'No job reference' }}
+                @if (currentVisit.externalReference) {
+                  / {{ currentVisit.externalReference }}
+                }
+              </p>
+            </div>
+            <span class="badge">{{ currentVisit.status }}</span>
+          </div>
+          <dl class="job-key-facts">
+            <div>
+              <dt>Scheduled</dt>
+              <dd>
+                {{ formatVisitDate(currentVisit.scheduledStart, true) }}
+                @if (currentVisit.scheduledEnd) {
+                  to {{ formatVisitDate(currentVisit.scheduledEnd, true) }}
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Assignment</dt>
+              <dd>
+                {{
+                  currentVisit.assignedUser?.displayName ||
+                    currentVisit.assignedUser?.email ||
+                    currentVisit.guestEngineerName ||
+                    'Not assigned'
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt>Job type</dt>
+              <dd>{{ currentVisit.jobCategory?.name || currentVisit.jobType || 'Not set' }}</dd>
+            </div>
+          </dl>
+        </article>
+        <div class="job-information-grid">
+          <article class="card job-info-card">
+            <p class="eyebrow">Client and site</p>
+            <h2>{{ currentVisit.customer.name }}</h2>
+            <strong>{{ currentVisit.site.name }}</strong>
+            <p>{{ currentVisit.site.postcode || 'No postcode recorded' }}</p>
+          </article>
+          <article class="card job-info-card">
+            <p class="eyebrow">Scope</p>
+            <h2>Work to complete</h2>
+            <p>{{ currentVisit.description || 'No scope has been recorded.' }}</p>
+            @if (currentVisit.exclusions) {
+              <strong>Exclusions</strong>
+              <p>{{ currentVisit.exclusions }}</p>
+            }
+          </article>
+          <article class="card job-info-card">
+            <p class="eyebrow">Access</p>
+            <h2>Arriving on site</h2>
+            <dl>
+              <div>
+                <dt>Instructions</dt>
+                <dd>{{ currentVisit.site.accessInstructions || 'None recorded' }}</dd>
+              </div>
+              <div>
+                <dt>Parking</dt>
+                <dd>{{ currentVisit.site.parkingInformation || 'None recorded' }}</dd>
+              </div>
+              <div>
+                <dt>Opening times</dt>
+                <dd>{{ currentVisit.site.openingTimes || 'Not recorded' }}</dd>
+              </div>
+            </dl>
+          </article>
+          <article class="card job-info-card">
+            <p class="eyebrow">Site safety</p>
+            <h2>Before work starts</h2>
+            <dl>
+              <div>
+                <dt>PPE</dt>
+                <dd>{{ currentVisit.site.ppeRequirements || 'No additional PPE recorded' }}</dd>
+              </div>
+              <div>
+                <dt>Induction</dt>
+                <dd>
+                  {{
+                    currentVisit.site.inductionInformation || 'No induction information recorded'
+                  }}
+                </dd>
+              </div>
+            </dl>
+          </article>
         </div>
+        <article class="card briefing-card">
+          <p class="eyebrow">Briefing</p>
+          <h2>Engineer instructions</h2>
+          <p>{{ currentVisit.engineerNotes || 'No special job instructions.' }}</p>
+        </article>
         <button
           class="button secondary touch-button"
           type="button"
@@ -38,6 +128,107 @@
           <strong>{{ currentVisit.tasks.length }}</strong
           ><span>inspection tasks</span>
         </div>
+        <section class="job-rams-section" aria-labelledby="job-rams-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Safe system of work</p>
+              <h2 id="job-rams-title">RAMS for this job</h2>
+              <p>Read the current approved issue and sign on before starting work.</p>
+            </div>
+            <span class="badge">{{ linkedRams().length }} linked</span>
+          </div>
+          <div class="job-rams-list">
+            @for (rams of linkedRams(); track rams.id) {
+              <article
+                class="card engineer-rams-card"
+                [class.approved]="rams.status === 'APPROVED'"
+              >
+                <div class="rams-card-heading">
+                  <div>
+                    <span class="badge" [class.success]="rams.status === 'APPROVED'">{{
+                      rams.status
+                    }}</span>
+                    <h3>{{ rams.title }}</h3>
+                    <p>
+                      {{ rams.reference }} / Revision {{ rams.currentRevisionNumber || 'draft' }}
+                    </p>
+                  </div>
+                  <div class="sign-status" [class.signed]="rams.signedOn">
+                    <strong>{{ rams.signedOn ? 'Signed on' : 'Not signed' }}</strong>
+                    @if (rams.signedAt) {
+                      <small
+                        >{{ formatVisitDate(rams.signedAt, true) }} by
+                        {{ personLabel(rams.signedBy) }}</small
+                      >
+                    }
+                  </div>
+                </div>
+                <div class="rams-actions">
+                  <button
+                    class="button secondary touch-button"
+                    type="button"
+                    [disabled]="!rams.draftData"
+                    (click)="viewedRams.set(rams)"
+                  >
+                    Read current RAMS
+                  </button>
+                </div>
+                @if (rams.revisions?.length) {
+                  <details class="rams-history">
+                    <summary>Revision history ({{ rams.revisions.length }})</summary>
+                    @for (revision of rams.revisions; track revision.id) {
+                      <button
+                        type="button"
+                        (click)="openRamsRevision(rams, revision.revisionNumber)"
+                      >
+                        <span>Revision {{ revision.revisionNumber }}</span
+                        ><small>{{ formatVisitDate(revision.createdAt, true) }}</small>
+                      </button>
+                    }
+                  </details>
+                }
+                @if (rams.status === 'APPROVED' && !rams.signedOn) {
+                  <div class="rams-sign-on">
+                    <h4>Sign onto revision {{ rams.currentRevisionNumber }}</h4>
+                    <p>
+                      Your drawn signature confirms you have read, understood and will follow this
+                      RAMS.
+                    </p>
+                    <label class="field"
+                      >Your full name<input
+                        [formControl]="ramsSignerName"
+                        autocomplete="name" /></label
+                    ><oa-signature-pad (signatureChange)="ramsSignature.set($event)" /><button
+                      class="button primary touch-button"
+                      type="button"
+                      [disabled]="
+                        !offline.online() ||
+                        ramsSignerName.invalid ||
+                        !ramsSignature() ||
+                        signingRamsId() === rams.id
+                      "
+                      (click)="signOn(rams)"
+                    >
+                      {{ signingRamsId() === rams.id ? 'Signing on…' : 'Confirm and sign on' }}
+                    </button>
+                    @if (!offline.online()) {
+                      <small>Reconnect to sign onto RAMS.</small>
+                    }
+                  </div>
+                } @else if (rams.status !== 'APPROVED') {
+                  <p class="rams-unavailable">
+                    Sign-on becomes available when the current issue is approved.
+                  </p>
+                }
+              </article>
+            } @empty {
+              <article class="card empty-state">
+                <h3>No RAMS linked</h3>
+                <p>Contact the office before starting if RAMS are expected for this job.</p>
+              </article>
+            }
+          </div>
+        </section>
         <section class="engineer-add-asset card">
           <div class="section-heading">
             <div>
@@ -1015,6 +1206,24 @@
   }
   @if (error() && visit()) {
     <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+  @if (viewedRevision(); as revision) {
+    <oa-rams-read-only
+      [title]="'RAMS revision ' + revision.revisionNumber"
+      [draft]="revision.data"
+      [revision]="revision"
+      (closed)="closeRamsViewer()"
+      (pdfRequested)="downloadHistoricalRams($event)"
+    />
+  }
+  @if (viewedRams(); as rams) {
+    @if (!viewedRevision() && rams.draftData) {
+      <oa-rams-read-only
+        [title]="rams.title + ' / revision ' + rams.currentRevisionNumber"
+        [draft]="rams.draftData"
+        (closed)="viewedRams.set(undefined)"
+      />
+    }
   }
 </main>
 

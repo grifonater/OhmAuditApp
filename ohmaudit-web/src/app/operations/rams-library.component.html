@@ -92,7 +92,7 @@
           <span class="document-mark">RA</span>
           <div class="library-copy">
             <div class="record-title">
-              <strong>{{ item.title || item.visit.title }}</strong
+              <strong>{{ item.title || item.visits[0]?.title }}</strong
               ><span
                 class="badge"
                 [class.success]="item.status === 'APPROVED'"
@@ -100,15 +100,27 @@
                 >{{ statusLabel(item.status) }}</span
               >
             </div>
-            <p>{{ item.visit.customer.name }} <span>/</span> {{ item.visit.site.name }}</p>
+            <p>
+              {{ item.visits[0]?.customer?.name || 'No client' }} <span>/</span>
+              {{ item.visits[0]?.site?.name || 'No site' }}
+            </p>
             <small
-              >{{ item.reference }} / {{ item.visit.reference || item.visit.title }} / Updated
-              {{ formatDate(item.updatedAt) }}</small
+              >{{ item.reference }} / {{ item.visits.length }} linked job{{
+                item.visits.length === 1 ? '' : 's'
+              }}
+              / Updated {{ formatDate(item.updatedAt) }}</small
             >
           </div>
           <a
             class="button secondary compact"
-            [routerLink]="['/app/org', organisationId, 'visits', item.visit.id, 'rams', item.id]"
+            [routerLink]="[
+              '/app/org',
+              organisationId,
+              'visits',
+              item.visits[0]?.id,
+              'rams',
+              item.id,
+            ]"
             >Open RAMS</a
           >
         </article>
@@ -130,7 +142,7 @@
         <div class="card-header">
           <div>
             <h2>Create RAMS template</h2>
-            <small>Copy content from an existing RAMS draft.</small>
+            <small>Start blank or optionally copy content from an existing RAMS draft.</small>
           </div>
           <button
             class="button ghost compact"
@@ -146,19 +158,33 @@
               [value]="templateName()"
               (input)="templateName.set($any($event.target).value)"
           /></label>
-          <label class="field"
-            >Source RAMS *<select
-              [value]="templateSourceRamsId()"
-              (change)="templateSourceRamsId.set($any($event.target).value)"
-            >
-              <option value="">Choose RAMS</option>
-              @for (item of rams(); track item.id) {
-                <option [value]="item.id">
-                  {{ item.reference }} / {{ item.title || item.visit.title }}
-                </option>
-              }
-            </select></label
-          >
+          <div class="field source-picker">
+            <label for="template-source">Source RAMS (optional)</label>
+            <input
+              id="template-source"
+              type="search"
+              autocomplete="off"
+              placeholder="Search by RAMS, job, client or site"
+              [value]="templateSourceQuery()"
+              (input)="searchTemplateSources($any($event.target).value)"
+            />
+            @if (templateSourceResults().length) {
+              <div class="search-results" role="listbox" aria-label="RAMS search results">
+                @for (item of templateSourceResults(); track item.id) {
+                  <button
+                    type="button"
+                    role="option"
+                    [attr.aria-selected]="templateSourceRamsId() === item.id"
+                    (click)="selectTemplateSource(item)"
+                  >
+                    <strong>{{ item.reference }}</strong
+                    ><span>{{ item.title || item.visits[0]?.title || 'Untitled RAMS' }}</span>
+                  </button>
+                }
+              </div>
+            }
+            <small>Leave blank for a clean reusable draft.</small>
+          </div>
           <label class="field full"
             >Description<textarea
               rows="3"
@@ -170,7 +196,7 @@
             <button
               class="button primary"
               type="button"
-              [disabled]="busy() || !templateName().trim() || !templateSourceRamsId()"
+              [disabled]="busy() || !templateName().trim()"
               (click)="createTemplate()"
             >
               Create template
@@ -208,21 +234,28 @@
                   ></textarea>
                 </label>
                 <div class="replace-row full">
-                  <label class="field"
-                    >Replace content from RAMS<select
-                      [value]="edit.sourceRamsId"
-                      (change)="
-                        updateTemplateEdit(template.id, 'sourceRamsId', $any($event.target).value)
-                      "
-                    >
-                      <option value="">Choose RAMS</option>
-                      @for (item of rams(); track item.id) {
-                        <option [value]="item.id">
-                          {{ item.reference }} / {{ item.title || item.visit.title }}
-                        </option>
-                      }
-                    </select></label
-                  ><button
+                  <div class="field source-picker">
+                    <label [for]="'replace-' + template.id">Replace content from RAMS</label
+                    ><input
+                      [id]="'replace-' + template.id"
+                      type="search"
+                      autocomplete="off"
+                      placeholder="Search RAMS"
+                      [value]="templateSourceQuery()"
+                      (input)="searchTemplateSources($any($event.target).value)"
+                    />
+                    @if (templateSourceResults().length) {
+                      <div class="search-results" role="listbox">
+                        @for (item of templateSourceResults(); track item.id) {
+                          <button type="button" (click)="selectTemplateSource(item, template.id)">
+                            <strong>{{ item.reference }}</strong
+                            ><span>{{ item.title || item.visits[0]?.title }}</span>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <button
                     class="button secondary compact"
                     type="button"
                     [disabled]="busy() || !edit.sourceRamsId"
@@ -323,15 +356,7 @@
                   placeholder="Detailed safe method *"
                   [value]="step.detail"
                   (input)="updateGroupStep($index, 'detail', $any($event.target).value)"
-                ></textarea
-                ><label class="check-field"
-                  ><input
-                    type="checkbox"
-                    [checked]="step.required"
-                    (change)="updateGroupStep($index, 'required', $any($event.target).checked)"
-                  />
-                  Required</label
-                >
+                ></textarea>
               </div>
               <div class="step-actions">
                 <button type="button" [disabled]="$first" (click)="moveGroupStep($index, -1)">
@@ -406,22 +431,7 @@
                         (input)="
                           updateGroupStep($index, 'detail', $any($event.target).value, group.id)
                         "
-                      ></textarea
-                      ><label class="check-field"
-                        ><input
-                          type="checkbox"
-                          [checked]="step.required"
-                          (change)="
-                            updateGroupStep(
-                              $index,
-                              'required',
-                              $any($event.target).checked,
-                              group.id
-                            )
-                          "
-                        />
-                        Required</label
-                      >
+                      ></textarea>
                     </div>
                     <div class="step-actions">
                       <button
@@ -536,6 +546,14 @@
                 >Automatically added to every new RAMS in this organisation.</small
               ></label
             >
+            <div class="full">
+              <oa-risk-matrix
+                [initialLikelihood]="newHazard().initialLikelihood"
+                [initialSeverity]="newHazard().initialSeverity"
+                [residualLikelihood]="newHazard().residualLikelihood"
+                [residualSeverity]="newHazard().residualSeverity"
+              />
+            </div>
             <label class="field full"
               >Hazard description *<textarea
                 rows="2"
@@ -651,6 +669,14 @@
                     />
                     Default hazard</label
                   >
+                  <div class="full">
+                    <oa-risk-matrix
+                      [initialLikelihood]="edit.initialLikelihood"
+                      [initialSeverity]="edit.initialSeverity"
+                      [residualLikelihood]="edit.residualLikelihood"
+                      [residualSeverity]="edit.residualSeverity"
+                    />
+                  </div>
                   <label class="field full"
                     >Hazard description *<textarea
                       rows="2"
@@ -780,6 +806,35 @@
                 @if (hazard.data.controls) {
                   <p class="hazard-controls">{{ hazard.data.controls }}</p>
                 }
+                <p class="risk-bands">
+                  <strong
+                    [class]="
+                      riskClass(
+                        riskScore(hazard.data.initialLikelihood, hazard.data.initialSeverity)
+                      )
+                    "
+                    >Initial
+                    {{ riskScore(hazard.data.initialLikelihood, hazard.data.initialSeverity) }}
+                    {{
+                      riskBand(
+                        riskScore(hazard.data.initialLikelihood, hazard.data.initialSeverity)
+                      )
+                    }}</strong
+                  ><strong
+                    [class]="
+                      riskClass(
+                        riskScore(hazard.data.residualLikelihood, hazard.data.residualSeverity)
+                      )
+                    "
+                    >Residual
+                    {{ riskScore(hazard.data.residualLikelihood, hazard.data.residualSeverity) }}
+                    {{
+                      riskBand(
+                        riskScore(hazard.data.residualLikelihood, hazard.data.residualSeverity)
+                      )
+                    }}</strong
+                  >
+                </p>
               </div>
               <div class="card-actions">
                 @if (canManage()) {

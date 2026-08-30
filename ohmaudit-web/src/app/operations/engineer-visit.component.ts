@@ -10,12 +10,16 @@ import {
   type EvChargePoint,
   type EvTestInstructionContent,
   type EvTestStep,
+  type EngineerRamsRecord,
   type InspectionSummary,
+  type RamsRevisionDetail,
   type VisitSummary,
   type VisitTask,
 } from '../core/api.service';
 import { compressImage, compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
+import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
+import { SignaturePadComponent } from '../shared/signature-pad.component';
 
 type ResultChoice = 'PASS' | 'FAIL' | 'NOT_TESTED';
 type SupplyTestGroup = FormGroup<{
@@ -47,7 +51,7 @@ type ConnectorTestGroup = FormGroup<{
 
 @Component({
   selector: 'oa-engineer-visit',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, RamsReadOnlyComponent, SignaturePadComponent],
   templateUrl: './engineer-visit.component.html',
   styleUrls: ['./operations.css', './engineer-visit.mobile.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -62,6 +66,11 @@ export class EngineerVisitComponent {
   protected readonly visitId = this.route.snapshot.paramMap.get('visitId') ?? '';
   protected readonly guestToken = this.route.snapshot.paramMap.get('token') ?? '';
   protected readonly visit = signal<VisitSummary | undefined>(undefined);
+  protected readonly linkedRams = signal<EngineerRamsRecord[]>([]);
+  protected readonly viewedRams = signal<EngineerRamsRecord | undefined>(undefined);
+  protected readonly viewedRevision = signal<RamsRevisionDetail | undefined>(undefined);
+  protected readonly ramsSignature = signal('');
+  protected readonly signingRamsId = signal('');
   protected readonly selectedTask = signal<VisitTask | undefined>(undefined);
   protected readonly inspection = signal<InspectionSummary | undefined>(undefined);
   protected readonly assetImageUrl = signal('');
@@ -134,6 +143,10 @@ export class EngineerVisitComponent {
     nonNullable: true,
     validators: [Validators.required, Validators.maxLength(500)],
   });
+  protected readonly ramsSignerName = new FormControl('', {
+    nonNullable: true,
+    validators: [Validators.required, Validators.minLength(2)],
+  });
 
   constructor() {
     merge(
@@ -192,6 +205,93 @@ export class EngineerVisitComponent {
         throw new Error('The job could not be verified for offline use on this device.');
       this.saved.set('Offline ready — job verified on this device');
     });
+  }
+
+  protected formatVisitDate(value: string | undefined, includeTime = false): string {
+    if (!value) return 'Not set';
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      ...(includeTime ? { hour: '2-digit', minute: '2-digit' } : {}),
+    }).format(new Date(value));
+  }
+
+  protected personLabel(person: EngineerRamsRecord['signedBy']): string {
+    return person?.displayName || person?.email || 'Engineer';
+  }
+
+  protected async signOn(rams: EngineerRamsRecord): Promise<void> {
+    const name = this.ramsSignerName.value.trim();
+    const signatureData = this.ramsSignature();
+    if (
+      rams.status !== 'APPROVED' ||
+      rams.signedOn ||
+      !name ||
+      !signatureData ||
+      !this.offline.online()
+    )
+      return;
+    this.signingRamsId.set(rams.id);
+    await this.run(async () => {
+      if (this.guestToken)
+        await this.api.signOnToGuestRams(this.guestToken, rams.id, {
+          signatureData,
+        });
+      else
+        await this.api.signOnToRams(this.organisationId, this.visitId, rams.id, {
+          signatureData,
+        });
+      await this.loadLinkedRams();
+      this.ramsSignature.set('');
+      this.saved.set(`Signed onto ${rams.reference}`);
+    });
+    this.signingRamsId.set('');
+  }
+
+  protected async openRamsRevision(
+    rams: EngineerRamsRecord,
+    revisionNumber: number,
+  ): Promise<void> {
+    this.viewedRams.set(rams);
+    await this.run(async () => {
+      const result = this.guestToken
+        ? await this.api.getGuestRamsRevision(this.guestToken, rams.id, revisionNumber)
+        : await this.api.getRamsRevision(this.organisationId, rams.id, revisionNumber);
+      this.viewedRevision.set(result.revision);
+    });
+  }
+
+  protected async downloadHistoricalRams(revision: RamsRevisionDetail): Promise<void> {
+    const rams =
+      this.viewedRams() ??
+      this.linkedRams().find((item) => item.revisions?.some(({ id }) => id === revision.id));
+    if (!rams) return;
+    await this.run(async () => {
+      const blob = this.guestToken
+        ? await this.api.downloadGuestRamsRevisionPdf(
+            this.guestToken,
+            rams.id,
+            revision.revisionNumber,
+          )
+        : await this.api.downloadRamsRevisionPdf(
+            this.organisationId,
+            rams.id,
+            revision.revisionNumber,
+          );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${rams.reference}-revision-${revision.revisionNumber}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  protected closeRamsViewer(): void {
+    this.viewedRevision.set(undefined);
+    this.viewedRams.set(undefined);
   }
 
   protected async openTask(task: VisitTask): Promise<void> {
@@ -1001,6 +1101,7 @@ export class EngineerVisitComponent {
       if (!this.offline.online()) {
         if (cached !== undefined) {
           this.visit.set(await this.applyPendingTaskStatuses(cached));
+          this.linkedRams.set(cached.rams ?? []);
           return;
         }
         throw new Error(
@@ -1012,11 +1113,57 @@ export class EngineerVisitComponent {
           ? await this.api.guestVisit(this.guestToken)
           : await this.api.getVisit(this.organisationId, this.visitId);
         this.visit.set(await this.applyPendingTaskStatuses(result.visit));
+        await this.loadLinkedRams(result.visit);
       } catch (error) {
-        if (cached !== undefined) this.visit.set(await this.applyPendingTaskStatuses(cached));
-        else throw error;
+        if (cached !== undefined) {
+          this.visit.set(await this.applyPendingTaskStatuses(cached));
+          this.linkedRams.set(cached.rams ?? []);
+        } else throw error;
       }
     });
+  }
+
+  private async loadLinkedRams(visit = this.visit()): Promise<void> {
+    if (!visit || !this.offline.online()) {
+      this.linkedRams.set(visit?.rams ?? []);
+      return;
+    }
+    if (this.guestToken) {
+      try {
+        this.linkedRams.set((await this.api.listGuestVisitRams(this.guestToken)).rams);
+      } catch {
+        // Guest RAMS may be absent from an older cached pack; inspections must remain available.
+        this.linkedRams.set(visit.rams ?? []);
+      }
+      return;
+    }
+    const summaries = (await this.api.listEngineerVisitRams(this.organisationId, visit.id)).rams;
+    const records = await Promise.all(
+      summaries.map(async (summary): Promise<EngineerRamsRecord> => {
+        const [detail, acknowledgementResult] = await Promise.all([
+          this.api.getRams(this.organisationId, summary.id),
+          this.api.listRamsAcknowledgements(this.organisationId, summary.id, visit.id),
+        ]);
+        const acknowledgement = acknowledgementResult.acknowledgements[0];
+        return {
+          ...detail.rams,
+          signedOn: acknowledgement !== undefined,
+          ...(acknowledgement === undefined
+            ? {}
+            : {
+                signedAt: acknowledgement.signedAt,
+                signedBy: {
+                  displayName: acknowledgement.signerName,
+                  ...(acknowledgement.signerEmail === null ||
+                  acknowledgement.signerEmail === undefined
+                    ? {}
+                    : { email: acknowledgement.signerEmail }),
+                },
+              }),
+        };
+      }),
+    );
+    this.linkedRams.set(records);
   }
 
   private async applyPendingTaskStatuses(visit: VisitSummary): Promise<VisitSummary> {

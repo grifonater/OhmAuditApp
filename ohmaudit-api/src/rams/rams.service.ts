@@ -1,10 +1,24 @@
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import { DomainError } from '../shared/domain-error';
 
+function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+}
+
+export const RAMS_ACKNOWLEDGEMENT_STATEMENT =
+  'I confirm that I have read, understood and will comply with this RAMS revision.';
+
+export interface RamsAcknowledgementSigner {
+  subject: string;
+  name: string;
+  email?: string;
+  role: string;
+  actorUserId?: string;
+}
+
 export interface RamsMethodStep {
   id: string;
   title: string;
-  required: boolean;
   detail: string;
 }
 
@@ -51,9 +65,9 @@ export interface RamsDraft {
       id: string;
       name: string;
       role: string;
-      organisation: string;
+      organisation?: string | undefined;
       responsibility: string;
-      contact: string;
+      contact?: string | undefined;
     }>;
   };
   methodStatement: { steps: RamsMethodStep[] };
@@ -104,6 +118,7 @@ type RamsPerson = { id: string; displayName: string | null; email: string };
 
 export interface RamsContextSnapshot {
   organisation: { name: string; addressLines: string[] };
+  jobs: RamsJobContext[];
   job: {
     id: string;
     reference: string | null;
@@ -122,6 +137,13 @@ export interface RamsContextSnapshot {
     approvedBy?: RamsPerson;
     assignedEngineer?: RamsPerson;
   };
+}
+
+export interface RamsJobContext {
+  job: RamsContextSnapshot['job'];
+  customer: RamsContextSnapshot['customer'];
+  site: RamsContextSnapshot['site'];
+  assignedEngineer?: RamsPerson;
 }
 
 export interface RamsRenderPayload extends RamsContextSnapshot {
@@ -143,11 +165,19 @@ export interface RamsRenderPayload extends RamsContextSnapshot {
     status: string;
     summary: string;
   }>;
+  acknowledgements: Array<{
+    id: string;
+    signerName: string;
+    signerEmail: string | null;
+    signerRole: string;
+    signatureData: string;
+    statement: string;
+    signedAt: string;
+  }>;
 }
 
 const personSelect = { id: true, displayName: true, email: true } as const;
 interface RamsSnapshotSource {
-  visitId: string;
   title: string;
   organisation?: {
     name: string;
@@ -162,27 +192,30 @@ interface RamsSnapshotSource {
       countryCode: string;
     } | null;
   } | null;
-  visit?: {
-    id: string;
-    reference: string | null;
-    externalReference: string | null;
-    title: string;
-    jobType: string | null;
-    scheduledStart: Date;
-    scheduledEnd: Date | null;
-    customer: { name: string };
-    site: {
-      name: string;
-      addressLine1: string | null;
-      addressLine2: string | null;
-      city: string | null;
-      county: string | null;
-      postcode: string | null;
-      countryCode: string;
+  visits?: Array<{
+    visitId: string;
+    visit?: {
+      id: string;
+      reference: string | null;
+      externalReference: string | null;
+      title: string;
+      jobType: string | null;
+      scheduledStart: Date;
+      scheduledEnd: Date | null;
+      customer: { name: string };
+      site: {
+        name: string;
+        addressLine1: string | null;
+        addressLine2: string | null;
+        city: string | null;
+        county: string | null;
+        postcode: string | null;
+        countryCode: string;
+      };
+      jobCategory: { name: string } | null;
+      assignedUser: RamsPerson | null;
     };
-    jobCategory: { name: string } | null;
-    assignedUser: RamsPerson | null;
-  } | null;
+  }>;
   preparedBy?: RamsPerson | null;
   reviewedBy?: RamsPerson | null;
   approvedBy?: RamsPerson | null;
@@ -217,7 +250,6 @@ type RamsJsonKey =
   | 'responsibility'
   | 'contact'
   | 'steps'
-  | 'required'
   | 'detail'
   | 'hazards'
   | 'hazard'
@@ -267,6 +299,7 @@ type RamsJsonKey =
   | 'revisionReason'
   | 'changeSummary'
   | 'job'
+  | 'jobs'
   | 'customer'
   | 'site'
   | 'people'
@@ -333,16 +366,15 @@ export function normalizeRamsDraft(value: unknown): RamsDraft {
         id: text(item.id),
         name: text(item.name),
         role: text(item.role),
-        organisation: text(item.organisation),
         responsibility: text(item.responsibility),
-        contact: text(item.contact),
+        ...(text(item.organisation) ? { organisation: text(item.organisation) } : {}),
+        ...(text(item.contact) ? { contact: text(item.contact) } : {}),
       })),
     },
     methodStatement: {
       steps: records(methodStatement.steps).map((item) => ({
         id: text(item.id),
         title: text(item.title),
-        required: typeof item.required === 'boolean' ? item.required : false,
         detail: text(item.detail),
       })),
     },
@@ -447,23 +479,48 @@ function normalizeSnapshot(value: unknown): RamsContextSnapshot {
   const reviewedBy = person(people.reviewedBy);
   const approvedBy = person(people.approvedBy);
   const assignedEngineer = person(people.assignedEngineer);
+  const normalizeJob = (input: unknown): RamsJobContext => {
+    const item = record(input);
+    const itemJob = record(item.job);
+    const itemCustomer = record(item.customer);
+    const itemSite = record(item.site);
+    const itemAssignedEngineer = person(item.assignedEngineer);
+    return {
+      job: {
+        id: text(itemJob.id),
+        reference: typeof itemJob.reference === 'string' ? itemJob.reference : null,
+        externalReference:
+          typeof itemJob.externalReference === 'string' ? itemJob.externalReference : null,
+        title: text(itemJob.title),
+        category: typeof itemJob.category === 'string' ? itemJob.category : null,
+        jobType: typeof itemJob.jobType === 'string' ? itemJob.jobType : null,
+        plannedStart: text(itemJob.plannedStart),
+        targetCompletion:
+          typeof itemJob.targetCompletion === 'string' ? itemJob.targetCompletion : null,
+      },
+      customer: { name: text(itemCustomer.name) },
+      site: { name: text(itemSite.name), addressLines: strings(itemSite.addressLines) },
+      ...(itemAssignedEngineer === undefined ? {} : { assignedEngineer: itemAssignedEngineer }),
+    };
+  };
+  const legacyJob = normalizeJob({
+    job,
+    customer,
+    site,
+    assignedEngineer: people.assignedEngineer,
+  });
+  const jobs = records(snapshot.jobs)
+    .map(normalizeJob)
+    .filter((item) => item.job.id);
   return {
     organisation: {
       name: text(organisation.name),
       addressLines: strings(organisation.addressLines),
     },
-    job: {
-      id: text(job.id),
-      reference: typeof job.reference === 'string' ? job.reference : null,
-      externalReference: typeof job.externalReference === 'string' ? job.externalReference : null,
-      title: text(job.title),
-      category: typeof job.category === 'string' ? job.category : null,
-      jobType: typeof job.jobType === 'string' ? job.jobType : null,
-      plannedStart: text(job.plannedStart),
-      targetCompletion: typeof job.targetCompletion === 'string' ? job.targetCompletion : null,
-    },
-    customer: { name: text(customer.name) },
-    site: { name: text(site.name), addressLines: strings(site.addressLines) },
+    jobs: jobs.length > 0 ? jobs : legacyJob.job.id ? [legacyJob] : [],
+    job: legacyJob.job,
+    customer: legacyJob.customer,
+    site: legacyJob.site,
     people: {
       preparedBy: person(people.preparedBy) ?? emptyPerson(),
       ...(reviewedBy === undefined ? {} : { reviewedBy }),
@@ -476,12 +533,25 @@ function normalizeSnapshot(value: unknown): RamsContextSnapshot {
 export class RamsService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  listOrganisation(organisationId: string) {
-    return this.prisma.rams.findMany({
-      where: { organisationId },
+  async listOrganisation(
+    organisationId: string,
+    options: { search?: string; limit?: number } = {},
+  ) {
+    const search = options.search?.trim();
+    const items = await this.prisma.rams.findMany({
+      where: {
+        organisationId,
+        ...(search
+          ? {
+              OR: [
+                { reference: { contains: search, mode: 'insensitive' as const } },
+                { title: { contains: search, mode: 'insensitive' as const } },
+              ],
+            }
+          : {}),
+      },
       select: {
         id: true,
-        visitId: true,
         reference: true,
         title: true,
         status: true,
@@ -492,14 +562,60 @@ export class RamsService {
         reviewComment: true,
         createdAt: true,
         updatedAt: true,
-        visit: {
+        visits: {
           select: {
-            id: true,
-            reference: true,
-            title: true,
-            scheduledStart: true,
-            customer: { select: { id: true, name: true } },
-            site: { select: { id: true, name: true } },
+            visit: {
+              select: {
+                id: true,
+                reference: true,
+                title: true,
+                scheduledStart: true,
+                customer: { select: { id: true, name: true } },
+                site: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        preparedBy: { select: personSelect },
+        reviewedBy: { select: personSelect },
+        approvedBy: { select: personSelect },
+      },
+      orderBy: { updatedAt: 'desc' },
+      ...(options.limit === undefined ? {} : { take: options.limit }),
+    });
+    return items.map(({ visits, ...rams }) => ({
+      ...rams,
+      visits: visits.map(({ visit }) => visit),
+    }));
+  }
+
+  async list(organisationId: string, visitId: string) {
+    const items = await this.prisma.rams.findMany({
+      where: { organisationId, visits: { some: { visitId } } },
+      select: {
+        id: true,
+        reference: true,
+        title: true,
+        status: true,
+        currentRevisionNumber: true,
+        effectiveFrom: true,
+        submittedAt: true,
+        approvedAt: true,
+        reviewComment: true,
+        createdAt: true,
+        updatedAt: true,
+        visits: {
+          select: {
+            visit: {
+              select: {
+                id: true,
+                reference: true,
+                title: true,
+                scheduledStart: true,
+                customer: { select: { id: true, name: true } },
+                site: { select: { id: true, name: true } },
+              },
+            },
           },
         },
         preparedBy: { select: personSelect },
@@ -508,53 +624,37 @@ export class RamsService {
       },
       orderBy: { updatedAt: 'desc' },
     });
-  }
-
-  list(organisationId: string, visitId: string) {
-    return this.prisma.rams.findMany({
-      where: { organisationId, visitId },
-      select: {
-        id: true,
-        visitId: true,
-        reference: true,
-        title: true,
-        status: true,
-        currentRevisionNumber: true,
-        effectiveFrom: true,
-        submittedAt: true,
-        approvedAt: true,
-        reviewComment: true,
-        createdAt: true,
-        updatedAt: true,
-        preparedBy: { select: personSelect },
-        reviewedBy: { select: personSelect },
-        approvedBy: { select: personSelect },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+    return items.map(({ visits, ...rams }) => ({
+      ...rams,
+      visits: visits.map(({ visit }) => visit),
+    }));
   }
 
   async detail(organisationId: string, ramsId: string) {
     const rams = await this.prisma.rams.findFirst({
       where: { id: ramsId, organisationId },
       include: {
-        visit: {
+        visits: {
           include: {
-            customer: { select: { id: true, name: true } },
-            site: {
-              select: {
-                id: true,
-                name: true,
-                addressLine1: true,
-                addressLine2: true,
-                city: true,
-                county: true,
-                postcode: true,
-                countryCode: true,
+            visit: {
+              include: {
+                customer: { select: { id: true, name: true } },
+                site: {
+                  select: {
+                    id: true,
+                    name: true,
+                    addressLine1: true,
+                    addressLine2: true,
+                    city: true,
+                    county: true,
+                    postcode: true,
+                    countryCode: true,
+                  },
+                },
+                jobCategory: { select: { id: true, name: true } },
+                assignedUser: { select: personSelect },
               },
             },
-            jobCategory: { select: { id: true, name: true } },
-            assignedUser: { select: personSelect },
           },
         },
         preparedBy: { select: personSelect },
@@ -573,7 +673,12 @@ export class RamsService {
     });
     if (rams === null)
       throw new DomainError('RAMS_NOT_FOUND', 'The RAMS record was not found.', 404);
-    return { ...rams, draftData: normalizeRamsDraft(rams.draftData) };
+    const { visits, ...record } = rams;
+    return {
+      ...record,
+      visits: visits.map(({ visit }) => visit),
+      draftData: normalizeRamsDraft(rams.draftData),
+    };
   }
 
   async create(
@@ -582,11 +687,6 @@ export class RamsService {
     actorUserId: string,
     correlationId: string,
   ) {
-    const existing = await this.prisma.rams.findFirst({
-      where: { organisationId, visitId },
-      select: { id: true },
-    });
-    if (existing !== null) return this.detail(organisationId, existing.id);
     const visit = await this.prisma.visit.findFirst({
       where: { id: visitId, organisationId },
       include: {
@@ -640,16 +740,20 @@ export class RamsService {
         id: crypto.randomUUID(),
       }));
     }
+    const referencePrefix = `RAMS-${referencePart}`;
     const created = await this.prisma.$transaction(async (transaction) => {
+      const existingCount = await transaction.rams.count({
+        where: { organisationId, reference: { startsWith: `${referencePrefix}-` } },
+      });
       const rams = await transaction.rams.create({
         data: {
           organisationId,
-          visitId,
-          reference: `RAMS-${referencePart}-1`,
+          reference: `${referencePrefix}-${existingCount + 1}`,
           title,
           effectiveFrom: visit.scheduledStart,
           draftData: draft as unknown as Prisma.InputJsonValue,
           preparedByUserId: actorUserId,
+          visits: { create: { visitId } },
         },
       });
       await transaction.auditEvent.create({
@@ -666,6 +770,73 @@ export class RamsService {
       return rams;
     });
     return this.detail(organisationId, created.id);
+  }
+
+  async linkVisit(
+    organisationId: string,
+    ramsId: string,
+    visitId: string,
+    actorUserId: string,
+    correlationId: string,
+  ) {
+    await Promise.all([
+      this.requireRams(organisationId, ramsId),
+      this.requireVisit(organisationId, visitId),
+    ]);
+    try {
+      await this.prisma.$transaction(async (transaction) => {
+        await transaction.ramsVisit.create({ data: { ramsId, visitId } });
+        await transaction.auditEvent.create({
+          data: {
+            organisationId,
+            actorUserId,
+            correlationId,
+            eventType: 'RamsVisitLinked',
+            entityType: 'Rams',
+            entityId: ramsId,
+            data: { visitId },
+          },
+        });
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error))
+        throw new DomainError(
+          'RAMS_VISIT_ALREADY_LINKED',
+          'The RAMS is already linked to this job.',
+          409,
+        );
+      throw error;
+    }
+    return this.detail(organisationId, ramsId);
+  }
+
+  async unlinkVisit(
+    organisationId: string,
+    ramsId: string,
+    visitId: string,
+    actorUserId: string,
+    correlationId: string,
+  ): Promise<void> {
+    await this.requireRamsAndVisit(organisationId, ramsId, visitId);
+    const link = await this.prisma.ramsVisit.findUnique({
+      where: { ramsId_visitId: { ramsId, visitId } },
+    });
+    if (link === null)
+      throw new DomainError('RAMS_VISIT_NOT_LINKED', 'The RAMS is not linked to this job.', 404);
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.ramsVisit.delete({ where: { ramsId_visitId: { ramsId, visitId } } });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'RamsVisitUnlinked',
+          entityType: 'Rams',
+          entityId: ramsId,
+          data: { visitId },
+        },
+      });
+    });
   }
 
   async update(
@@ -697,7 +868,7 @@ export class RamsService {
           eventType: 'RamsUpdated',
           entityType: 'Rams',
           entityId: ramsId,
-          data: { visitId: current.visitId },
+          data: { visitIds: current.visits.map(({ visitId }) => visitId) },
         },
       });
       return rams;
@@ -742,7 +913,7 @@ export class RamsService {
           eventType: 'RamsSubmitted',
           entityType: 'Rams',
           entityId: ramsId,
-          data: { visitId: current.visitId, revisionNumber },
+          data: { visitIds: current.visits.map(({ visitId }) => visitId), revisionNumber },
         },
       });
       return rams;
@@ -758,7 +929,12 @@ export class RamsService {
   ) {
     const current = await this.prisma.rams.findFirst({
       where: { id: ramsId, organisationId },
-      select: { id: true, visitId: true, status: true, currentRevisionNumber: true },
+      select: {
+        id: true,
+        status: true,
+        currentRevisionNumber: true,
+        visits: { select: { visitId: true } },
+      },
     });
     if (current === null)
       throw new DomainError('RAMS_NOT_FOUND', 'The RAMS record was not found.', 404);
@@ -793,7 +969,7 @@ export class RamsService {
           entityType: 'Rams',
           entityId: ramsId,
           data: {
-            visitId: current.visitId,
+            visitIds: current.visits.map(({ visitId }) => visitId),
             revisionNumber: current.currentRevisionNumber,
             ...(input.comment ? { comment: input.comment } : {}),
           },
@@ -803,40 +979,196 @@ export class RamsService {
     });
   }
 
-  async renderSource(organisationId: string, ramsId: string): Promise<RamsRenderPayload> {
+  async listRevisions(organisationId: string, ramsId: string) {
+    await this.requireRams(organisationId, ramsId);
+    return this.prisma.ramsRevision.findMany({
+      where: { organisationId, ramsId },
+      select: {
+        id: true,
+        revisionNumber: true,
+        createdAt: true,
+        createdBy: { select: personSelect },
+        _count: { select: { acknowledgements: true } },
+      },
+      orderBy: { revisionNumber: 'desc' },
+    });
+  }
+
+  async revisionDetail(organisationId: string, ramsId: string, revisionNumber: number) {
+    const revision = await this.prisma.ramsRevision.findFirst({
+      where: { organisationId, ramsId, revisionNumber },
+      include: {
+        createdBy: { select: personSelect },
+        acknowledgements: { orderBy: { signedAt: 'asc' } },
+      },
+    });
+    if (revision === null)
+      throw new DomainError('RAMS_REVISION_NOT_FOUND', 'The RAMS revision was not found.', 404);
+    return {
+      ...revision,
+      data: normalizeRamsDraft(revision.data),
+      contextSnapshot: normalizeSnapshot(revision.contextSnapshot),
+    };
+  }
+
+  async listAcknowledgements(organisationId: string, ramsId: string, visitId: string) {
+    const rams = await this.requireRamsAndVisit(organisationId, ramsId, visitId);
+    if (rams.currentRevisionNumber === 0) return [];
+    return this.prisma.ramsAcknowledgement.findMany({
+      where: {
+        organisationId,
+        visitId,
+        revision: { ramsId, revisionNumber: rams.currentRevisionNumber },
+      },
+      orderBy: { signedAt: 'asc' },
+    });
+  }
+
+  async signAcknowledgement(
+    organisationId: string,
+    ramsId: string,
+    visitId: string,
+    signer: RamsAcknowledgementSigner,
+    signatureData: string,
+    correlationId: string,
+  ) {
+    const rams = await this.requireRamsAndVisit(organisationId, ramsId, visitId);
+    if (rams.status !== 'APPROVED' || rams.currentRevisionNumber === 0)
+      throw new DomainError(
+        'RAMS_ACKNOWLEDGEMENT_NOT_ALLOWED',
+        'Only the current approved RAMS revision can be acknowledged.',
+        409,
+      );
+    const revision = await this.prisma.ramsRevision.findUnique({
+      where: {
+        ramsId_revisionNumber: { ramsId, revisionNumber: rams.currentRevisionNumber },
+      },
+      select: { id: true, revisionNumber: true },
+    });
+    if (revision === null)
+      throw new DomainError('RAMS_REVISION_NOT_FOUND', 'The RAMS revision was not found.', 404);
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const acknowledgement = await transaction.ramsAcknowledgement.create({
+          data: {
+            organisationId,
+            ramsRevisionId: revision.id,
+            visitId,
+            signerSubject: signer.subject,
+            signerName: signer.name,
+            ...(signer.email === undefined ? {} : { signerEmail: signer.email }),
+            signerRole: signer.role,
+            signatureData,
+            statement: RAMS_ACKNOWLEDGEMENT_STATEMENT,
+          },
+        });
+        await transaction.auditEvent.create({
+          data: {
+            organisationId,
+            ...(signer.actorUserId === undefined ? {} : { actorUserId: signer.actorUserId }),
+            correlationId,
+            eventType: 'RamsAcknowledged',
+            entityType: 'Rams',
+            entityId: ramsId,
+            data: {
+              acknowledgementId: acknowledgement.id,
+              revisionNumber: revision.revisionNumber,
+              visitId,
+              signerSubject: signer.subject,
+            },
+          },
+        });
+        return acknowledgement;
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error))
+        throw new DomainError(
+          'RAMS_ALREADY_ACKNOWLEDGED',
+          'This signer has already acknowledged this RAMS revision for this job.',
+          409,
+        );
+      throw error;
+    }
+  }
+
+  async renderSource(
+    organisationId: string,
+    ramsId: string,
+    visitId?: string,
+    revisionNumber?: number,
+  ): Promise<RamsRenderPayload> {
     const rams = await this.prisma.rams.findFirst({
       where: { id: ramsId, organisationId },
       include: {
         organisation: { include: { brandProfile: true } },
-        visit: { include: { customer: true, site: true, jobCategory: true, assignedUser: true } },
+        visits: {
+          include: {
+            visit: {
+              include: { customer: true, site: true, jobCategory: true, assignedUser: true },
+            },
+          },
+          orderBy: { linkedAt: 'asc' },
+        },
         preparedBy: { select: personSelect },
         reviewedBy: { select: personSelect },
         approvedBy: { select: personSelect },
         revisions: {
           orderBy: { revisionNumber: 'asc' },
-          include: { createdBy: { select: personSelect } },
+          include: {
+            createdBy: { select: personSelect },
+            acknowledgements: { orderBy: { signedAt: 'asc' } },
+          },
         },
       },
     });
     if (rams === null)
       throw new DomainError('RAMS_NOT_FOUND', 'The RAMS record was not found.', 404);
 
-    const mutable = rams.status === 'DRAFT' || rams.status === 'RETURNED';
+    const mutable =
+      revisionNumber === undefined && (rams.status === 'DRAFT' || rams.status === 'RETURNED');
     const revision = mutable
       ? undefined
-      : rams.revisions.find((item) => item.revisionNumber === rams.currentRevisionNumber);
+      : rams.revisions.find(
+          (item) => item.revisionNumber === (revisionNumber ?? rams.currentRevisionNumber),
+        );
     if (!mutable && revision === undefined)
       throw new DomainError(
         'RAMS_REVISION_NOT_FOUND',
-        'The current immutable RAMS revision could not be found.',
-        409,
+        'The immutable RAMS revision was not found.',
+        404,
+      );
+    const selectedVisitId = visitId ?? rams.visits[0]?.visitId;
+    if (
+      selectedVisitId === undefined ||
+      !rams.visits.some((link) => link.visitId === selectedVisitId)
+    )
+      throw new DomainError(
+        'RAMS_VISIT_NOT_LINKED',
+        'The RAMS is not linked to the selected job.',
+        404,
       );
     const liveSnapshot = this.snapshotFromRecord(rams);
     const storedSnapshot = normalizeSnapshot(revision?.contextSnapshot);
     const contextSnapshot =
-      mutable || !storedSnapshot.job.id || !storedSnapshot.organisation.name
+      mutable || storedSnapshot.jobs.length === 0 || !storedSnapshot.organisation.name
         ? liveSnapshot
         : storedSnapshot;
+    const selectedJob =
+      contextSnapshot.jobs.find((item) => item.job.id === selectedVisitId) ??
+      liveSnapshot.jobs.find((item) => item.job.id === selectedVisitId);
+    if (selectedJob === undefined)
+      throw new DomainError(
+        'RAMS_REVISION_VISIT_NOT_FOUND',
+        'The selected job is not present in this RAMS revision.',
+        404,
+      );
+    if (!contextSnapshot.jobs.some((item) => item.job.id === selectedJob.job.id))
+      contextSnapshot.jobs.push(selectedJob);
+    contextSnapshot.job = selectedJob.job;
+    contextSnapshot.customer = selectedJob.customer;
+    contextSnapshot.site = selectedJob.site;
+    if (selectedJob.assignedEngineer === undefined) delete contextSnapshot.people.assignedEngineer;
+    else contextSnapshot.people.assignedEngineer = selectedJob.assignedEngineer;
     if (!mutable) {
       if (rams.reviewedBy !== null) contextSnapshot.people.reviewedBy = rams.reviewedBy;
       if (rams.approvedBy !== null) contextSnapshot.people.approvedBy = rams.approvedBy;
@@ -866,12 +1198,78 @@ export class RamsService {
         status: item.revisionNumber === rams.currentRevisionNumber ? rams.status : 'SUPERSEDED',
         summary: normalizeRamsDraft(item.data).overview.revisionSummary,
       })),
+      acknowledgements: (revision?.acknowledgements ?? [])
+        .filter((item) => item.visitId === selectedVisitId)
+        .map((item) => ({
+          id: item.id,
+          signerName: item.signerName,
+          signerEmail: item.signerEmail,
+          signerRole: item.signerRole,
+          signatureData: item.signatureData,
+          statement: item.statement,
+          signedAt: item.signedAt.toISOString(),
+        })),
     };
   }
 
   private snapshotFromRecord(source: RamsSnapshotSource): RamsContextSnapshot {
     const brand = source.organisation?.brandProfile;
-    const visit = source.visit;
+    const jobs = (source.visits ?? []).map(({ visitId, visit }): RamsJobContext =>
+      visit === undefined
+        ? {
+            job: {
+              id: visitId,
+              reference: null,
+              externalReference: null,
+              title: source.title,
+              category: null,
+              jobType: null,
+              plannedStart: '',
+              targetCompletion: null,
+            },
+            customer: { name: '' },
+            site: { name: '', addressLines: [] },
+          }
+        : {
+            job: {
+              id: visit.id,
+              reference: visit.reference,
+              externalReference: visit.externalReference,
+              title: visit.title,
+              category: visit.jobCategory?.name ?? null,
+              jobType: visit.jobType,
+              plannedStart: iso(visit.scheduledStart) ?? '',
+              targetCompletion: iso(visit.scheduledEnd),
+            },
+            customer: { name: visit.customer.name },
+            site: {
+              name: visit.site.name,
+              addressLines: addressLines(
+                visit.site.addressLine1,
+                visit.site.addressLine2,
+                visit.site.city,
+                visit.site.county,
+                visit.site.postcode,
+                visit.site.countryCode,
+              ),
+            },
+            ...(visit.assignedUser === null ? {} : { assignedEngineer: visit.assignedUser }),
+          },
+    );
+    const selected = jobs[0] ?? {
+      job: {
+        id: '',
+        reference: null,
+        externalReference: null,
+        title: source.title,
+        category: null,
+        jobType: null,
+        plannedStart: '',
+        targetCompletion: null,
+      },
+      customer: { name: '' },
+      site: { name: '', addressLines: [] },
+    };
     return {
       organisation: {
         name: brand?.tradingName ?? brand?.registeredName ?? source.organisation?.name ?? '',
@@ -884,35 +1282,52 @@ export class RamsService {
           brand?.countryCode,
         ),
       },
-      job: {
-        id: visit?.id ?? source.visitId ?? '',
-        reference: visit?.reference ?? null,
-        externalReference: visit?.externalReference ?? null,
-        title: visit?.title ?? source.title ?? '',
-        category: visit?.jobCategory?.name ?? null,
-        jobType: visit?.jobType ?? null,
-        plannedStart: iso(visit?.scheduledStart) ?? '',
-        targetCompletion: iso(visit?.scheduledEnd),
-      },
-      customer: { name: visit?.customer?.name ?? '' },
-      site: {
-        name: visit?.site?.name ?? '',
-        addressLines: addressLines(
-          visit?.site?.addressLine1,
-          visit?.site?.addressLine2,
-          visit?.site?.city,
-          visit?.site?.county,
-          visit?.site?.postcode,
-          visit?.site?.countryCode,
-        ),
-      },
+      jobs,
+      job: selected.job,
+      customer: selected.customer,
+      site: selected.site,
       people: {
         preparedBy: source.preparedBy ?? emptyPerson(),
         ...(source.reviewedBy == null ? {} : { reviewedBy: source.reviewedBy }),
         ...(source.approvedBy == null ? {} : { approvedBy: source.approvedBy }),
-        ...(visit?.assignedUser == null ? {} : { assignedEngineer: visit.assignedUser }),
+        ...(selected.assignedEngineer === undefined
+          ? {}
+          : { assignedEngineer: selected.assignedEngineer }),
       },
     };
+  }
+
+  private async requireRams(organisationId: string, ramsId: string) {
+    const rams = await this.prisma.rams.findFirst({
+      where: { id: ramsId, organisationId },
+      select: { id: true, status: true, currentRevisionNumber: true },
+    });
+    if (rams === null)
+      throw new DomainError('RAMS_NOT_FOUND', 'The RAMS record was not found.', 404);
+    return rams;
+  }
+
+  private async requireRamsAndVisit(organisationId: string, ramsId: string, visitId: string) {
+    const [rams] = await Promise.all([
+      this.requireRams(organisationId, ramsId),
+      this.requireVisit(organisationId, visitId),
+    ]);
+    const link = await this.prisma.ramsVisit.findUnique({
+      where: { ramsId_visitId: { ramsId, visitId } },
+      select: { ramsId: true },
+    });
+    if (link === null)
+      throw new DomainError('RAMS_VISIT_NOT_LINKED', 'The RAMS is not linked to this job.', 404);
+    return rams;
+  }
+
+  private async requireVisit(organisationId: string, visitId: string) {
+    const visit = await this.prisma.visit.findFirst({
+      where: { id: visitId, organisationId },
+      select: { id: true },
+    });
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    return visit;
   }
 
   private async requireEditable(organisationId: string, ramsId: string) {
@@ -920,15 +1335,19 @@ export class RamsService {
       where: { id: ramsId, organisationId },
       select: {
         id: true,
-        visitId: true,
         title: true,
         status: true,
         currentRevisionNumber: true,
         draftData: true,
         preparedBy: { select: personSelect },
         organisation: { include: { brandProfile: true } },
-        visit: {
-          include: { customer: true, site: true, jobCategory: true, assignedUser: true },
+        visits: {
+          include: {
+            visit: {
+              include: { customer: true, site: true, jobCategory: true, assignedUser: true },
+            },
+          },
+          orderBy: { linkedAt: 'asc' },
         },
       },
     });
@@ -983,12 +1402,7 @@ export class RamsService {
     if (
       draft.scope.responsibilities.some(
         (item) =>
-          !item.id.trim() ||
-          !item.name.trim() ||
-          !item.role.trim() ||
-          !item.organisation.trim() ||
-          !item.responsibility.trim() ||
-          !item.contact.trim(),
+          !item.id.trim() || !item.name.trim() || !item.role.trim() || !item.responsibility.trim(),
       )
     )
       missing.push('complete responsibility rows');

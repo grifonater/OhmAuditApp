@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import pdfWorker, { renderRamsReportHtml, type RamsRenderPayload } from '../src/index';
 
+const signatureData =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAEAQH/69B6WQAAAABJRU5ErkJggg==';
+
 function payload(): RamsRenderPayload {
   return {
     templateVersion: 'rams-a4-v1',
@@ -64,7 +67,6 @@ function payload(): RamsRenderPayload {
           {
             id: 'step-1',
             title: 'Isolate supply',
-            required: true,
             detail: 'Lock off, label and prove dead.',
           },
         ],
@@ -156,6 +158,48 @@ function payload(): RamsRenderPayload {
         summary: 'Initial issue',
       },
     ],
+    jobs: [
+      {
+        job: {
+          id: 'job-1',
+          reference: 'JOB-001',
+          externalReference: 'PO-42',
+          title: 'Distribution board replacement',
+          category: 'Electrical installation',
+          jobType: 'Planned works',
+          plannedStart: '2026-09-01',
+          targetCompletion: '2026-09-02',
+        },
+        customer: { name: 'Apex & Co' },
+        site: { name: 'Apex House', addressLines: ['1 Victoria Street', 'Bristol'] },
+        assignedEngineer: { displayName: 'E Engineer', email: 'engineer@example.test' },
+      },
+      {
+        job: {
+          id: 'job-2',
+          reference: 'JOB-002',
+          externalReference: null,
+          title: 'Submain testing',
+          category: 'Electrical testing',
+          jobType: 'Planned works',
+          plannedStart: '2026-09-02',
+          targetCompletion: null,
+        },
+        customer: { name: 'Apex & Co' },
+        site: { name: 'Apex Annex', addressLines: ['2 Victoria Street', 'Bristol'] },
+      },
+    ],
+    acknowledgements: [
+      {
+        id: 'acknowledgement-1',
+        signerName: 'E <Engineer>',
+        signerEmail: 'engineer@example.test',
+        signerRole: 'Authorised electrician',
+        signatureData,
+        statement: 'I have read and understood this RAMS.',
+        signedAt: '2026-09-01T07:45:00Z',
+      },
+    ],
   };
 }
 
@@ -176,6 +220,12 @@ describe('RAMS A4 renderer', () => {
     expect(html).toContain('Risk assessment');
     expect(html).toContain('aria-label="Five by five risk matrix"');
     expect(html).toContain('Engineer acknowledgement');
+    expect(html).toContain('Submain testing');
+    expect(html).toContain('Apex Annex');
+    expect(html).toContain('E &lt;Engineer&gt;');
+    expect(html).toContain('Authorised electrician');
+    expect(html).toContain(`src="${signatureData}"`);
+    expect(html).not.toContain('Mandatory');
     expect(html).toContain('Revision history');
     expect(html).toContain('CONTROLLED DOCUMENT');
     expect(html).toContain('Replace &lt;main&gt; distribution board');
@@ -183,6 +233,37 @@ describe('RAMS A4 renderer', () => {
     expect(html).toContain('https://malicious.test/&lt;script&gt;');
     expect(html).not.toContain('<script');
     expect(html).not.toMatch(/(?:src|href)=["']https?:/u);
+  });
+
+  it('keeps blank acknowledgement rows when no electronic sign-ons exist', () => {
+    const input = payload();
+    input.acknowledgements = [];
+    const html = renderRamsReportHtml(input);
+
+    expect(html).not.toContain('<td class="signature"><img');
+    expect(
+      html.match(/<tr><td>(?:&nbsp;|E Engineer)<\/td><td><\/td><td><\/td><\/tr>/gu),
+    ).toHaveLength(8);
+  });
+
+  it.each([
+    'data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
+    'data:image/png;base64,not-valid-base64',
+    `data:image/png;base64,iVBORw0KGgo${'A'.repeat(349_524)}`,
+  ])('rejects invalid or oversized signature data URLs', async (invalidSignature) => {
+    const input = payload();
+    input.acknowledgements[0]!.signatureData = invalidSignature;
+    const response = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/rams-a4-v1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      }),
+      environment,
+    );
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: 'INVALID_RAMS_PAYLOAD' });
   });
 
   it('uses Browser Run for A4 printing with JavaScript disabled', async () => {

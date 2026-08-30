@@ -12,6 +12,7 @@ describe('Job activity', () => {
           Promise.resolve({
             inspections: [{ id: 'inspection-a' }],
             tasks: [{ assetId: 'asset-a' }, { assetId: null }],
+            rams: [],
           }),
       },
       auditEvent: {

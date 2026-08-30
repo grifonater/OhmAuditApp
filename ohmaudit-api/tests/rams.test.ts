@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Prisma, PrismaClient } from '../src/generated/prisma/client';
-import { normalizeRamsDraft, RamsService, type RamsDraft } from '../src/rams/rams.service';
+import {
+  normalizeRamsDraft,
+  RAMS_ACKNOWLEDGEMENT_STATEMENT,
+  RamsService,
+  type RamsDraft,
+} from '../src/rams/rams.service';
 
 const readyDraft: RamsDraft = normalizeRamsDraft({
   overview: {
@@ -20,9 +25,7 @@ const readyDraft: RamsDraft = normalizeRamsDraft({
         id: 'responsibility-a',
         name: 'Lead engineer',
         role: 'Authorised electrician',
-        organisation: 'OhmAudit',
         responsibility: 'Control the safe system of work.',
-        contact: '07000 000001',
       },
     ],
   },
@@ -31,7 +34,6 @@ const readyDraft: RamsDraft = normalizeRamsDraft({
       {
         id: 'step-a',
         title: 'Confirm isolation.',
-        required: true,
         detail: 'Prove the voltage indicator before and after isolation.',
       },
     ],
@@ -76,6 +78,64 @@ const readyDraft: RamsDraft = normalizeRamsDraft({
 });
 
 describe('RAMS workflow', () => {
+  it('creates a new RAMS and join row for every visit-scoped create', async () => {
+    let createInput: unknown;
+    const create = vi.fn((input: unknown) => {
+      createInput = input;
+      return Promise.resolve({
+        id: 'rams-new',
+        reference: 'RAMS-JOB-1',
+        title: 'RAMS - Board replacement',
+      });
+    });
+    const transaction = {
+      rams: { create, count: () => Promise.resolve(0) },
+      auditEvent: { create: () => Promise.resolve({ id: 'audit-a' }) },
+    } as unknown as Prisma.TransactionClient;
+    const prisma = {
+      visit: {
+        findFirst: () =>
+          Promise.resolve({
+            id: 'visit-a',
+            reference: 'JOB',
+            title: 'Board replacement',
+            description: null,
+            exclusions: null,
+            engineerNotes: null,
+            scheduledStart: new Date('2026-09-01T09:00:00.000Z'),
+            site: {
+              accessInstructions: null,
+              parkingInformation: null,
+              ppeRequirements: null,
+              inductionInformation: null,
+            },
+            jobCategory: null,
+          }),
+      },
+      ramsHazardLibraryItem: { findMany: () => Promise.resolve([]) },
+      rams: {
+        findFirst: () =>
+          Promise.resolve({
+            id: 'rams-new',
+            draftData: {},
+            visits: [],
+            revisions: [],
+          }),
+      },
+      $transaction: (operation: (client: Prisma.TransactionClient) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await new RamsService(prisma).create('organisation-a', 'visit-a', 'user-a', 'correlation-a');
+
+    expect(createInput).toMatchObject({
+      data: {
+        organisationId: 'organisation-a',
+        visits: { create: { visitId: 'visit-a' } },
+      },
+    });
+  });
+
   it('creates an immutable revision and audit event when a ready draft is submitted', async () => {
     let revisionInput: unknown;
     let updateInput: unknown;
@@ -102,7 +162,7 @@ describe('RAMS workflow', () => {
         findFirst: () =>
           Promise.resolve({
             id: 'rams-a',
-            visitId: 'visit-a',
+            visits: [{ visitId: 'visit-a' }],
             status: 'DRAFT',
             currentRevisionNumber: 0,
             draftData: readyDraft,
@@ -146,7 +206,7 @@ describe('RAMS workflow', () => {
         findFirst: () =>
           Promise.resolve({
             id: 'rams-a',
-            visitId: 'visit-a',
+            visits: [{ visitId: 'visit-a' }],
             status: 'DRAFT',
             currentRevisionNumber: 0,
             draftData: { ...readyDraft, methodStatement: { steps: [] } },
@@ -159,13 +219,49 @@ describe('RAMS workflow', () => {
     ).rejects.toMatchObject({ code: 'RAMS_NOT_READY', status: 422 });
   });
 
+  it('returns immutable revision data and upgrades a legacy singular context snapshot', async () => {
+    const prisma = {
+      ramsRevision: {
+        findFirst: () =>
+          Promise.resolve({
+            id: 'revision-a',
+            organisationId: 'organisation-a',
+            ramsId: 'rams-a',
+            revisionNumber: 1,
+            data: readyDraft,
+            contextSnapshot: {
+              organisation: { name: 'OhmAudit', addressLines: [] },
+              job: {
+                id: 'visit-a',
+                title: 'Board replacement',
+                plannedStart: '2026-09-01T09:00:00.000Z',
+              },
+              customer: { name: 'Customer' },
+              site: { name: 'Site', addressLines: [] },
+              people: {},
+            },
+            createdBy: { id: 'user-a', displayName: 'Alex', email: 'alex@example.com' },
+            acknowledgements: [],
+          }),
+      },
+    } as unknown as PrismaClient;
+
+    const revision = await new RamsService(prisma).revisionDetail('organisation-a', 'rams-a', 1);
+
+    expect(revision.data).toEqual(readyDraft);
+    expect(revision.contextSnapshot).toMatchObject({
+      job: { id: 'visit-a' },
+      jobs: [{ job: { id: 'visit-a' }, customer: { name: 'Customer' } }],
+    });
+  });
+
   it('locks submitted RAMS against draft updates', async () => {
     const prisma = {
       rams: {
         findFirst: () =>
           Promise.resolve({
             id: 'rams-a',
-            visitId: 'visit-a',
+            visits: [{ visitId: 'visit-a' }],
             status: 'UNDER_REVIEW',
             currentRevisionNumber: 1,
             draftData: readyDraft,
@@ -190,7 +286,7 @@ describe('RAMS workflow', () => {
         findFirst: () =>
           Promise.resolve({
             id: 'rams-a',
-            visitId: 'visit-a',
+            visits: [{ visitId: 'visit-a' }],
             status: 'UNDER_REVIEW',
             currentRevisionNumber: 1,
           }),
@@ -224,7 +320,7 @@ describe('RAMS workflow', () => {
         findFirst: () =>
           Promise.resolve({
             id: 'rams-a',
-            visitId: 'visit-a',
+            visits: [{ visitId: 'visit-a' }],
             status: 'UNDER_REVIEW',
             currentRevisionNumber: 2,
           }),
@@ -253,8 +349,97 @@ describe('RAMS workflow', () => {
     expect(auditInput).toMatchObject({
       data: {
         eventType: 'RamsApproved',
-        data: { visitId: 'visit-a', revisionNumber: 2 },
+        data: { visitIds: ['visit-a'], revisionNumber: 2 },
       },
     });
+  });
+
+  it('signs the current approved revision with immutable signer and statement snapshots', async () => {
+    let acknowledgementInput: unknown;
+    let auditInput: unknown;
+    const transaction = {
+      ramsAcknowledgement: {
+        create: (input: unknown) => {
+          acknowledgementInput = input;
+          return Promise.resolve({ id: 'ack-a' });
+        },
+      },
+      auditEvent: {
+        create: (input: unknown) => {
+          auditInput = input;
+          return Promise.resolve({ id: 'audit-a' });
+        },
+      },
+    } as unknown as Prisma.TransactionClient;
+    const prisma = {
+      rams: {
+        findFirst: () =>
+          Promise.resolve({ id: 'rams-a', status: 'APPROVED', currentRevisionNumber: 3 }),
+      },
+      visit: { findFirst: () => Promise.resolve({ id: 'visit-a' }) },
+      ramsVisit: { findUnique: () => Promise.resolve({ ramsId: 'rams-a' }) },
+      ramsRevision: {
+        findUnique: () => Promise.resolve({ id: 'revision-a', revisionNumber: 3 }),
+      },
+      $transaction: (operation: (client: Prisma.TransactionClient) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await new RamsService(prisma).signAcknowledgement(
+      'organisation-a',
+      'rams-a',
+      'visit-a',
+      {
+        subject: 'user:user-a',
+        name: 'Alex Engineer',
+        email: 'alex@example.com',
+        role: 'Engineer',
+        actorUserId: 'user-a',
+      },
+      'data:image/png;base64,AAAA',
+      'correlation-a',
+    );
+
+    expect(acknowledgementInput).toMatchObject({
+      data: {
+        organisationId: 'organisation-a',
+        ramsRevisionId: 'revision-a',
+        visitId: 'visit-a',
+        signerSubject: 'user:user-a',
+        signerName: 'Alex Engineer',
+        signerEmail: 'alex@example.com',
+        signerRole: 'Engineer',
+        statement: RAMS_ACKNOWLEDGEMENT_STATEMENT,
+      },
+    });
+    expect(auditInput).toMatchObject({
+      data: {
+        actorUserId: 'user-a',
+        eventType: 'RamsAcknowledged',
+        data: { acknowledgementId: 'ack-a', revisionNumber: 3, visitId: 'visit-a' },
+      },
+    });
+  });
+
+  it('rejects acknowledgement unless the linked revision is current and approved', async () => {
+    const prisma = {
+      rams: {
+        findFirst: () =>
+          Promise.resolve({ id: 'rams-a', status: 'UNDER_REVIEW', currentRevisionNumber: 3 }),
+      },
+      visit: { findFirst: () => Promise.resolve({ id: 'visit-a' }) },
+      ramsVisit: { findUnique: () => Promise.resolve({ ramsId: 'rams-a' }) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new RamsService(prisma).signAcknowledgement(
+        'organisation-a',
+        'rams-a',
+        'visit-a',
+        { subject: 'user:user-a', name: 'Alex', role: 'Engineer' },
+        'data:image/png;base64,AAAA',
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ code: 'RAMS_ACKNOWLEDGEMENT_NOT_ALLOWED', status: 409 });
   });
 });

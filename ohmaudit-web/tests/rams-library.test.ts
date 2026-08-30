@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { RamsDraft } from '../src/app/core/api.service';
 import {
   applyRamsTemplate,
+  blankRamsDraft,
   cloneMethodSteps,
   hasReplaceableRamsWork,
+  ramsRiskBand,
+  ramsRiskScore,
 } from '../src/app/core/rams-library';
 
 function draft(title: string): RamsDraft {
@@ -88,12 +91,28 @@ describe('RAMS reusable content', () => {
           id: 'old',
           title: 'Isolate',
           detail: 'Lock off',
-          required: true,
         },
       ],
       () => 'new',
     );
     expect(steps[0]).toMatchObject({ id: 'new', title: 'Isolate' });
+    expect(steps[0]).not.toHaveProperty('required');
+  });
+
+  it('creates independent normalized blank template data', () => {
+    const first = blankRamsDraft();
+    const second = blankRamsDraft();
+    first.scope.keyActivities.push('Test');
+    expect(second.scope.keyActivities).toEqual([]);
+    expect(first.schemaVersion).toBe(2);
+  });
+
+  it('uses the shared risk score bands', () => {
+    expect(ramsRiskScore(3, 4)).toBe(12);
+    expect(ramsRiskBand(4)).toBe('Low');
+    expect(ramsRiskBand(9)).toBe('Medium');
+    expect(ramsRiskBand(15)).toBe('High');
+    expect(ramsRiskBand(16)).toBe('Very high');
   });
 
   it('preserves job and review data while applying template content', () => {
@@ -104,7 +123,6 @@ describe('RAMS reusable content', () => {
       id: 'step-old',
       title: 'Test',
       detail: 'Test safely',
-      required: true,
     });
     let id = 0;
     const result = applyRamsTemplate(current, template, () => `new-${++id}`);

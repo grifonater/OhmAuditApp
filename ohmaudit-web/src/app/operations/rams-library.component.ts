@@ -9,6 +9,8 @@ import {
   type RamsMethodStep,
   type RamsTemplate,
 } from '../core/api.service';
+import { blankRamsDraft, ramsRiskBand, ramsRiskClass, ramsRiskScore } from '../core/rams-library';
+import { RiskMatrixComponent } from '../shared/risk-matrix.component';
 
 type LibraryTab = 'all' | 'templates' | 'methods' | 'hazards';
 type TemplateEdit = { name: string; description: string; sourceRamsId: string };
@@ -31,7 +33,7 @@ type HazardEdit = { name: string; description: string; isDefault: boolean } & Ha
 
 @Component({
   selector: 'oa-rams-library',
-  imports: [RouterLink],
+  imports: [RouterLink, RiskMatrixComponent],
   templateUrl: './rams-library.component.html',
   styleUrls: ['./operations.css', './rams-library.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -56,6 +58,8 @@ export class RamsLibraryComponent {
   protected readonly templateName = signal('');
   protected readonly templateDescription = signal('');
   protected readonly templateSourceRamsId = signal('');
+  protected readonly templateSourceQuery = signal('');
+  protected readonly templateSourceResults = signal<OrganisationRamsSummary[]>([]);
   protected readonly templateEdits = signal<Record<string, TemplateEdit>>({});
   protected readonly editingTemplateId = signal('');
   protected readonly showGroupCreate = signal(false);
@@ -68,6 +72,10 @@ export class RamsLibraryComponent {
   protected readonly editingHazardId = signal('');
   protected readonly likelihoods = [1, 2, 3, 4, 5];
   protected readonly severities = [5, 4, 3, 2, 1];
+  protected readonly riskScore = ramsRiskScore;
+  protected readonly riskBand = ramsRiskBand;
+  protected readonly riskClass = ramsRiskClass;
+  private sourceSearchTimer?: ReturnType<typeof setTimeout>;
   protected readonly canManage = computed(() => this.capabilities().includes('rams.manage'));
   protected readonly filteredRams = computed(() => {
     const query = this.query().trim().toLocaleLowerCase('en-GB');
@@ -78,10 +86,12 @@ export class RamsLibraryComponent {
           [
             item.reference,
             item.title,
-            item.visit.reference,
-            item.visit.title,
-            item.visit.customer.name,
-            item.visit.site.name,
+            ...item.visits.flatMap((visit) => [
+              visit.reference,
+              visit.title,
+              visit.customer.name,
+              visit.site.name,
+            ]),
           ].some((value) => value?.toLocaleLowerCase('en-GB').includes(query))),
     );
   });
@@ -153,21 +163,56 @@ export class RamsLibraryComponent {
   protected async createTemplate(): Promise<void> {
     const name = this.templateName().trim();
     const sourceId = this.templateSourceRamsId();
-    if (!name || !sourceId || !this.canManage()) return;
+    if (!name || !this.canManage()) return;
     await this.run(async () => {
-      const { rams } = await this.api.getRams(this.organisationId, sourceId);
+      const data = sourceId
+        ? structuredClone((await this.api.getRams(this.organisationId, sourceId)).rams.draftData)
+        : blankRamsDraft();
       await this.api.createRamsTemplate(this.organisationId, {
         name,
         description: this.templateDescription().trim(),
-        data: structuredClone(rams.draftData),
+        data,
       });
       this.showTemplateCreate.set(false);
       this.templateName.set('');
       this.templateDescription.set('');
       this.templateSourceRamsId.set('');
+      this.templateSourceQuery.set('');
       await this.reloadTemplates();
       this.notice.set('RAMS template created.');
     });
+  }
+
+  protected searchTemplateSources(value: string): void {
+    this.templateSourceQuery.set(value);
+    this.templateSourceRamsId.set('');
+    if (this.sourceSearchTimer) clearTimeout(this.sourceSearchTimer);
+    const query = value.trim();
+    if (query.length < 2) {
+      this.templateSourceResults.set(query ? [] : this.rams().slice(0, 10));
+      return;
+    }
+    this.sourceSearchTimer = setTimeout(() => {
+      void this.api
+        .listRams(this.organisationId, { search: query, limit: 20 })
+        .then(({ rams }) => this.templateSourceResults.set(rams))
+        .catch(() => {
+          const normalized = query.toLocaleLowerCase('en-GB');
+          this.templateSourceResults.set(
+            this.rams()
+              .filter((item) => this.ramsSearchText(item).includes(normalized))
+              .slice(0, 20),
+          );
+        });
+    }, 250);
+  }
+
+  protected selectTemplateSource(item: OrganisationRamsSummary, templateId?: string): void {
+    const label = `${item.reference} / ${item.title || item.visits[0]?.title || 'Untitled RAMS'}`;
+    if (templateId) this.updateTemplateEdit(templateId, 'sourceRamsId', item.id);
+    else this.templateSourceRamsId.set(item.id);
+    this.templateSourceQuery.set(label);
+    this.templateSourceResults.set([]);
   }
 
   protected async saveTemplate(template: RamsTemplate, replaceContent: boolean): Promise<void> {
@@ -231,14 +276,13 @@ export class RamsLibraryComponent {
   protected updateGroupStep(
     index: number,
     field: Exclude<keyof RamsMethodStep, 'id'>,
-    value: string | boolean,
+    value: string,
     id?: string,
   ): void {
     this.changeGroupSteps(id, (steps) => {
       const step = steps[index];
       if (!step) return;
-      if (field === 'required') step.required = Boolean(value);
-      else step[field] = String(value);
+      step[field] = value;
     });
   }
 
@@ -385,7 +429,7 @@ export class RamsLibraryComponent {
     await this.run(async () => {
       const [account, rams, templates, groups, hazards] = await Promise.all([
         this.api.currentUser(),
-        this.api.listRams(this.organisationId),
+        this.api.listRams(this.organisationId, { limit: 50 }),
         this.api.listRamsTemplates(this.organisationId),
         this.api.listRamsMethodGroups(this.organisationId),
         this.api.listRamsHazards(this.organisationId),
@@ -395,6 +439,7 @@ export class RamsLibraryComponent {
           ?.role.capabilities ?? [],
       );
       this.rams.set(rams.rams);
+      this.templateSourceResults.set(rams.rams.slice(0, 10));
       this.templates.set(templates.templates);
       this.groups.set(groups.groups);
       this.hazards.set(hazards.hazards);
@@ -459,8 +504,23 @@ export class RamsLibraryComponent {
       id: crypto.randomUUID(),
       title: '',
       detail: '',
-      required: true,
     };
+  }
+
+  private ramsSearchText(item: OrganisationRamsSummary): string {
+    return [
+      item.reference,
+      item.title,
+      ...item.visits.flatMap((visit) => [
+        visit.reference,
+        visit.title,
+        visit.customer.name,
+        visit.site.name,
+      ]),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase('en-GB');
   }
 
   private blankHazard(): HazardEdit {

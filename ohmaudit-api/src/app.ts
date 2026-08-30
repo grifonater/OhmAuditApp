@@ -381,7 +381,6 @@ const ramsNamedReferenceInput = z.object({
 const ramsMethodStepInput = z.object({
   id: ramsDraftRowText(100),
   title: ramsDraftRowText(2000),
-  required: z.boolean(),
   detail: z.string().max(10000).optional().default(''),
 });
 const ramsDraftInput = z.object({
@@ -407,9 +406,9 @@ const ramsDraftInput = z.object({
           id: ramsDraftRowText(100),
           name: ramsDraftRowText(500),
           role: ramsDraftRowText(500),
-          organisation: ramsDraftRowText(500),
+          organisation: ramsDraftRowText(500).optional(),
           responsibility: ramsDraftRowText(5000),
-          contact: ramsDraftRowText(500),
+          contact: ramsDraftRowText(500).optional(),
         }),
       )
       .max(100)
@@ -559,6 +558,12 @@ const ramsHazardInput = z.object({
 const ramsReviewInput = z.object({
   action: z.enum(['APPROVE', 'RETURN']),
   comment: z.string().trim().max(5000).optional(),
+});
+const ramsAcknowledgementInput = z.object({
+  signatureData: z
+    .string()
+    .max(250_000)
+    .regex(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/u),
 });
 const syncInput = z.object({
   clientMutationId: z.string().uuid(),
@@ -2624,13 +2629,24 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   app.get('/api/v1/rams', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const search = z.string().trim().max(200).optional().parse(context.req.query('search'));
+    const limit = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .parse(context.req.query('limit'));
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       organisationId,
       'rams.read',
     );
     return context.json({
-      rams: await new RamsService(prismaFor(environment)).listOrganisation(organisationId),
+      rams: await new RamsService(prismaFor(environment)).listOrganisation(organisationId, {
+        ...(search === undefined ? {} : { search }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
     });
   });
   app.get('/api/v1/organisations/:organisationId/rams-templates', async (context) => {
@@ -2865,7 +2881,49 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       rams: await new RamsService(prismaFor(environment)).detail(organisationId, ramsId),
     });
   });
-  const renderRamsPdf = async (context: Context<AppEnvironment>) => {
+  app.post('/api/v1/rams/:ramsId/visits/:visitId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json(
+      {
+        rams: await new RamsService(prismaFor(environment)).linkVisit(
+          organisationId,
+          ramsId,
+          visitId,
+          user.id,
+          context.get('correlationId'),
+        ),
+      },
+      201,
+    );
+  });
+  app.delete('/api/v1/rams/:ramsId/visits/:visitId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    await new RamsService(prismaFor(environment)).unlinkVisit(
+      organisationId,
+      ramsId,
+      visitId,
+      user.id,
+      context.get('correlationId'),
+    );
+    return context.body(null, 204);
+  });
+  app.get('/api/v1/rams/:ramsId/revisions', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
     const ramsId = z.uuid().parse(context.req.param('ramsId'));
@@ -2874,16 +2932,46 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'rams.read',
     );
+    return context.json({
+      revisions: await new RamsService(prismaFor(environment)).listRevisions(
+        organisationId,
+        ramsId,
+      ),
+    });
+  });
+  app.get('/api/v1/rams/:ramsId/revisions/:revisionNumber', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const revisionNumber = z.coerce
+      .number()
+      .int()
+      .positive()
+      .parse(context.req.param('revisionNumber'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      revision: await new RamsService(prismaFor(environment)).revisionDetail(
+        organisationId,
+        ramsId,
+        revisionNumber,
+      ),
+    });
+  });
+  const respondWithRamsPdf = async (
+    context: Context<AppEnvironment>,
+    environment: ReturnType<typeof parseEnvironment>,
+    payload: Awaited<ReturnType<RamsService['renderSource']>>,
+  ) => {
     if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
       throw new DomainError(
         'PDF_RENDERER_UNAVAILABLE',
         'PDF rendering is not configured for this environment.',
         503,
       );
-    const payload = await new RamsService(prismaFor(environment)).renderSource(
-      organisationId,
-      ramsId,
-    );
     const rendered = await requestPdfRender(environment, '/render/rams-a4-v1', {
       method: 'POST',
       headers: {
@@ -2910,8 +2998,33 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       headers,
     });
   };
+  const renderRamsPdf = async (context: Context<AppEnvironment>) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const visitId = z.uuid().optional().parse(context.req.query('visitId'));
+    const revisionNumber = z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .parse(context.req.param('revisionNumber'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    const payload = await new RamsService(prismaFor(environment)).renderSource(
+      organisationId,
+      ramsId,
+      visitId,
+      revisionNumber,
+    );
+    return respondWithRamsPdf(context, environment, payload);
+  };
   app.get('/api/v1/rams/:ramsId/report.pdf', renderRamsPdf);
   app.get('/api/v1/rams/:ramsId/pdf', renderRamsPdf);
+  app.get('/api/v1/rams/:ramsId/revisions/:revisionNumber/report.pdf', renderRamsPdf);
   app.patch('/api/v1/rams/:ramsId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
@@ -2969,6 +3082,55 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         input,
       ),
     });
+  });
+  app.get('/api/v1/rams/:ramsId/visits/:visitId/acknowledgements', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      acknowledgements: await new RamsService(prismaFor(environment)).listAcknowledgements(
+        organisationId,
+        ramsId,
+        visitId,
+      ),
+    });
+  });
+  app.post('/api/v1/rams/:ramsId/visits/:visitId/acknowledgements', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const input = ramsAcknowledgementInput.parse(await context.req.json());
+    const { user, membership } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json(
+      {
+        acknowledgement: await new RamsService(prismaFor(environment)).signAcknowledgement(
+          organisationId,
+          ramsId,
+          visitId,
+          {
+            subject: `user:${user.id}`,
+            name: user.displayName ?? user.email,
+            email: user.email,
+            role: membership.role.name,
+            actorUserId: user.id,
+          },
+          input.signatureData,
+          context.get('correlationId'),
+        ),
+      },
+      201,
+    );
   });
   app.post('/api/v1/visits/:visitId/ev-assets', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -3133,6 +3295,120 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     return context.json({
       visit,
     });
+  });
+  app.get('/api/v1/guest/visits/:token/rams', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+    const service = new RamsService(prisma);
+    const summaries = await service.list(visit.organisationId, visit.id);
+    const rams = await Promise.all(
+      summaries.map(async (summary) => {
+        const [detail, acknowledgements] = await Promise.all([
+          service.detail(visit.organisationId, summary.id),
+          service.listAcknowledgements(visit.organisationId, summary.id, visit.id),
+        ]);
+        const acknowledgement = acknowledgements[0];
+        return {
+          ...detail,
+          signedOn: acknowledgement !== undefined,
+          ...(acknowledgement === undefined
+            ? {}
+            : {
+                signedAt: acknowledgement.signedAt,
+                signedBy: {
+                  displayName: acknowledgement.signerName,
+                  email: acknowledgement.signerEmail,
+                },
+              }),
+        };
+      }),
+    );
+    return context.json({ rams });
+  });
+  app.get('/api/v1/guest/visits/:token/rams/:ramsId/revisions/:revisionNumber', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const revisionNumber = z.coerce
+      .number()
+      .int()
+      .positive()
+      .parse(context.req.param('revisionNumber'));
+    const service = new RamsService(prisma);
+    const linked = (await service.list(visit.organisationId, visit.id)).some(
+      (item) => item.id === ramsId,
+    );
+    if (!linked)
+      throw new DomainError('RAMS_NOT_FOUND', 'The RAMS is not linked to this job.', 404);
+    return context.json({
+      revision: await service.revisionDetail(visit.organisationId, ramsId, revisionNumber),
+    });
+  });
+  app.get(
+    '/api/v1/guest/visits/:token/rams/:ramsId/revisions/:revisionNumber/report.pdf',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const prisma = prismaFor(environment);
+      const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+      const ramsId = z.uuid().parse(context.req.param('ramsId'));
+      const revisionNumber = z.coerce
+        .number()
+        .int()
+        .positive()
+        .parse(context.req.param('revisionNumber'));
+      const payload = await new RamsService(prisma).renderSource(
+        visit.organisationId,
+        ramsId,
+        visit.id,
+        revisionNumber,
+      );
+      return respondWithRamsPdf(context, environment, payload);
+    },
+  );
+  app.get('/api/v1/guest/visits/:token/rams/:ramsId/acknowledgements', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+    return context.json({
+      acknowledgements: await new RamsService(prisma).listAcknowledgements(
+        visit.organisationId,
+        z.uuid().parse(context.req.param('ramsId')),
+        visit.id,
+      ),
+    });
+  });
+  app.post('/api/v1/guest/visits/:token/rams/:ramsId/acknowledgements', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+    const input = ramsAcknowledgementInput.parse(await context.req.json());
+    const signerName = visit.guestEngineerName?.trim() || visit.guestEmail?.trim();
+    if (!signerName)
+      throw new DomainError(
+        'GUEST_IDENTITY_INCOMPLETE',
+        'This guest job does not have an engineer identity configured.',
+        422,
+      );
+    return context.json(
+      {
+        acknowledgement: await new RamsService(prisma).signAcknowledgement(
+          visit.organisationId,
+          z.uuid().parse(context.req.param('ramsId')),
+          visit.id,
+          {
+            subject: `guest-visit:${visit.id}`,
+            name: signerName,
+            ...(visit.guestEmail === null ? {} : { email: visit.guestEmail }),
+            role: 'Guest engineer',
+          },
+          input.signatureData,
+          context.get('correlationId'),
+        ),
+      },
+      201,
+    );
   });
   app.get('/api/v1/guest/visits/:token/inspections/:inspectionId', async (context) => {
     const environment = parseEnvironment(context.env);

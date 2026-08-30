@@ -13,9 +13,7 @@ const draft = normalizeRamsDraft({
         id: 'person-a',
         name: 'Site engineer',
         role: 'Engineer',
-        organisation: 'OhmAudit',
         responsibility: 'Control the work area',
-        contact: '07000 000000',
       },
     ],
   },
@@ -28,7 +26,7 @@ const draft = normalizeRamsDraft({
     permits: 'Complete the site induction',
   },
   methodStatement: {
-    steps: [{ id: 'step-a', title: 'Isolate', required: true }],
+    steps: [{ id: 'step-a', title: 'Isolate' }],
   },
 });
 
@@ -106,7 +104,6 @@ describe('RAMS library', () => {
           {
             id: 'step-a',
             title: 'Isolate',
-            required: true,
             detail: '',
           },
         ],
@@ -149,7 +146,6 @@ describe('RAMS library', () => {
           {
             id: 'step-a',
             title: 'Isolate',
-            required: true,
             detail: undefined as unknown as string,
           },
         ],
@@ -162,7 +158,6 @@ describe('RAMS library', () => {
           {
             id: 'step-a',
             title: 'Isolate',
-            required: true,
             detail: '',
           },
         ],
@@ -275,10 +270,14 @@ describe('RAMS library', () => {
     expect(query).toMatchObject({
       where: { organisationId: 'organisation-a' },
       select: {
-        visit: {
+        visits: {
           select: {
-            customer: { select: { id: true, name: true } },
-            site: { select: { id: true, name: true } },
+            visit: {
+              select: {
+                customer: { select: { id: true, name: true } },
+                site: { select: { id: true, name: true } },
+              },
+            },
           },
         },
         preparedBy: { select: { id: true, displayName: true, email: true } },

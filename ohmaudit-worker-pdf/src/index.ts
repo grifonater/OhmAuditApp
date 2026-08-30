@@ -1050,6 +1050,7 @@ function isVisitReportPayload(value: unknown): value is VisitReportPayload {
 }
 
 const RAMS_MAX_REQUEST_BYTES = 1024 * 1024;
+const RAMS_MAX_SIGNATURE_BYTES = 256 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1095,11 +1096,66 @@ function isRamsPerson(value: unknown): boolean {
 
 function isRamsMethodStep(value: unknown): boolean {
   if (!isRecord(value)) return false;
+  return isString(value['id']) && isString(value['title']) && isOptionalString(value['detail']);
+}
+
+function isRamsJob(value: unknown): boolean {
+  if (!isRecord(value)) return false;
   return (
     isString(value['id']) &&
+    isNullableString(value['reference']) &&
+    isNullableString(value['externalReference']) &&
     isString(value['title']) &&
-    typeof value['required'] === 'boolean' &&
-    isOptionalString(value['detail'])
+    isNullableString(value['category']) &&
+    isNullableString(value['jobType']) &&
+    isNullableString(value['plannedStart']) &&
+    isNullableString(value['targetCompletion'])
+  );
+}
+
+function isRamsCustomer(value: unknown): boolean {
+  return isRecord(value) && isString(value['name']);
+}
+
+function isRamsSite(value: unknown): boolean {
+  return isRecord(value) && isString(value['name']) && isStringArray(value['addressLines']);
+}
+
+function isPngSignatureDataUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/u.exec(value);
+  if (match === null) return false;
+  const encoded = match[1];
+  if (encoded === undefined || encoded.length % 4 !== 0) return false;
+  const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
+  const decodedBytes = (encoded.length / 4) * 3 - padding;
+  if (decodedBytes <= 8 || decodedBytes > RAMS_MAX_SIGNATURE_BYTES) return false;
+  try {
+    const header = atob(encoded.slice(0, 12));
+    return (
+      header.length >= 8 &&
+      [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => header.charCodeAt(index) === byte)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isRamsAcknowledgement(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['id']) &&
+    value['id'].trim() !== '' &&
+    isString(value['signerName']) &&
+    value['signerName'].trim() !== '' &&
+    isNullableString(value['signerEmail']) &&
+    isString(value['signerRole']) &&
+    value['signerRole'].trim() !== '' &&
+    isString(value['statement']) &&
+    value['statement'].trim() !== '' &&
+    isString(value['signedAt']) &&
+    value['signedAt'].trim() !== '' &&
+    isPngSignatureDataUrl(value['signatureData'])
   );
 }
 
@@ -1165,9 +1221,8 @@ function isRamsDraftData(value: unknown): boolean {
           (item) =>
             isRecord(item) &&
             isString(item['id']) &&
-            ['name', 'role', 'organisation', 'responsibility', 'contact'].every((key) =>
-              isString(item[key]),
-            ),
+            ['name', 'role', 'responsibility'].every((key) => isString(item[key])) &&
+            ['organisation', 'contact'].every((key) => isOptionalString(item[key])),
         ))) &&
     Array.isArray(method['steps']) &&
     method['steps'].every(isRamsMethodStep) &&
@@ -1234,6 +1289,8 @@ function isRamsRenderPayload(value: unknown): value is RamsRenderPayload {
   const site = value['site'];
   const people = value['people'];
   const history = value['revisionHistory'];
+  const jobs = value['jobs'];
+  const acknowledgements = value['acknowledgements'];
   if (
     !isRecord(organisation) ||
     !isRecord(job) ||
@@ -1258,17 +1315,19 @@ function isRamsRenderPayload(value: unknown): value is RamsRenderPayload {
     isString(value['generatedAt']) &&
     isString(organisation['name']) &&
     isStringArray(organisation['addressLines']) &&
-    isString(job['id']) &&
-    isNullableString(job['reference']) &&
-    isNullableString(job['externalReference']) &&
-    isString(job['title']) &&
-    isNullableString(job['category']) &&
-    isNullableString(job['jobType']) &&
-    isNullableString(job['plannedStart']) &&
-    isNullableString(job['targetCompletion']) &&
-    isString(customer['name']) &&
-    isString(site['name']) &&
-    isStringArray(site['addressLines']) &&
+    isRamsJob(job) &&
+    isRamsCustomer(customer) &&
+    isRamsSite(site) &&
+    Array.isArray(jobs) &&
+    jobs.length > 0 &&
+    jobs.every(
+      (context) =>
+        isRecord(context) &&
+        isRamsJob(context['job']) &&
+        isRamsCustomer(context['customer']) &&
+        isRamsSite(context['site']) &&
+        (context['assignedEngineer'] === undefined || isRamsPerson(context['assignedEngineer'])),
+    ) &&
     isRamsPerson(people['preparedBy']) &&
     (people['reviewedBy'] === undefined ||
       people['reviewedBy'] === null ||
@@ -1280,6 +1339,8 @@ function isRamsRenderPayload(value: unknown): value is RamsRenderPayload {
       people['assignedEngineer'] === null ||
       isRamsPerson(people['assignedEngineer'])) &&
     isRamsDraftData(value['data']) &&
+    Array.isArray(acknowledgements) &&
+    acknowledgements.every(isRamsAcknowledgement) &&
     history.every(
       (item) =>
         isRecord(item) &&

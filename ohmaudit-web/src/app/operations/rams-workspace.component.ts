@@ -6,10 +6,20 @@ import {
   type RamsDraft,
   type RamsHazard,
   type RamsMethodGroup,
+  type RamsRevisionDetail,
   type RamsTemplate,
+  type VisitSummary,
 } from '../core/api.service';
-import { applyRamsTemplate, cloneMethodSteps, hasReplaceableRamsWork } from '../core/rams-library';
+import {
+  applyRamsTemplate,
+  cloneMethodSteps,
+  hasReplaceableRamsWork,
+  ramsRiskClass,
+  ramsRiskScore,
+} from '../core/rams-library';
 import { ramsPdfFileName } from '../core/rams-routes';
+import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
+import { RiskMatrixComponent } from '../shared/risk-matrix.component';
 
 type RamsTab = 'overview' | 'scope' | 'method' | 'risk' | 'requirements' | 'supporting' | 'review';
 type ScopeList = 'exclusions' | 'engineerBriefing' | 'keyActivities' | 'assumptions' | 'workAreas';
@@ -28,7 +38,7 @@ type SupportingReferenceList =
 
 @Component({
   selector: 'oa-rams-workspace',
-  imports: [RouterLink],
+  imports: [RouterLink, RamsReadOnlyComponent, RiskMatrixComponent],
   templateUrl: './rams-workspace.component.html',
   styleUrls: ['./operations.css', './rams-workspace.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -54,6 +64,11 @@ export class RamsWorkspaceComponent {
   protected readonly methodGroupQuery = signal('');
   protected readonly selectedTemplateId = signal('');
   protected readonly selectedMethodGroupId = signal('');
+  protected readonly jobQuery = signal('');
+  protected readonly jobChoices = signal<VisitSummary[]>([]);
+  protected readonly selectedRevision = signal<RamsRevisionDetail | undefined>(undefined);
+  protected readonly revisionLoading = signal(false);
+  private jobSearchTimer?: ReturnType<typeof setTimeout>;
   protected readonly tabs: Array<{ key: RamsTab; label: string; number: number }> = [
     { key: 'overview', label: 'Overview', number: 1 },
     { key: 'scope', label: 'Scope', number: 2 },
@@ -101,7 +116,6 @@ export class RamsWorkspaceComponent {
     key: RequirementList;
     eyebrow: string;
     label: string;
-    required?: boolean;
   }> = [
     { key: 'plant', eyebrow: 'Equipment', label: 'Plant & machinery' },
     { key: 'materials', eyebrow: 'Resources', label: 'Materials' },
@@ -190,7 +204,7 @@ export class RamsWorkspaceComponent {
       draft.requirements.emergencyDetails.contactNumber.trim() &&
       draft.requirements.emergencyDetails.assemblyPoint.trim(),
     );
-    const requiredComplete =
+    const coreComplete =
       draft.overview.title.trim().length > 0 &&
       Boolean(draft.overview.effectiveFrom) &&
       scopeComplete &&
@@ -204,7 +218,7 @@ export class RamsWorkspaceComponent {
       risk: riskComplete,
       requirements: requirementsComplete,
       supporting: supportingComplete,
-      review: requiredComplete,
+      review: coreComplete,
     };
   });
   protected readonly readiness = computed(() => {
@@ -337,23 +351,17 @@ export class RamsWorkspaceComponent {
       draft.methodStatement.steps.push({
         id: crypto.randomUUID(),
         title: '',
-        required: true,
         detail: '',
       }),
     );
   }
 
-  protected updateMethodStep(
-    index: number,
-    field: 'title' | 'required' | 'detail',
-    value: string | boolean | number,
-  ): void {
+  protected updateMethodStep(index: number, field: 'title' | 'detail', value: string): void {
     this.mutate((draft) => {
       const step = draft.methodStatement.steps[index];
       if (!step) return;
       if (field === 'title' && typeof value === 'string') step.title = value;
       if (field === 'detail' && typeof value === 'string') step.detail = value;
-      if (field === 'required' && typeof value === 'boolean') step.required = value;
     });
   }
 
@@ -579,11 +587,83 @@ export class RamsWorkspaceComponent {
   }
 
   protected riskScore(likelihood: number, severity: number): number {
-    return likelihood * severity;
+    return ramsRiskScore(likelihood, severity);
   }
 
   protected riskClass(score: number): string {
-    return score <= 4 ? 'low' : score <= 9 ? 'medium' : score <= 15 ? 'high' : 'very-high';
+    return ramsRiskClass(score);
+  }
+
+  protected searchJobs(value: string): void {
+    this.jobQuery.set(value);
+    if (this.jobSearchTimer) clearTimeout(this.jobSearchTimer);
+    if (value.trim().length < 2) {
+      this.jobChoices.set([]);
+      return;
+    }
+    this.jobSearchTimer = setTimeout(() => {
+      void this.api
+        .listVisits(this.organisationId, { query: value.trim(), page: 1, pageSize: 20 })
+        .then((result) => this.jobChoices.set(result.visits))
+        .catch((error: unknown) =>
+          this.error.set(error instanceof Error ? error.message : 'Unable to search jobs.'),
+        );
+    }, 250);
+  }
+
+  protected async linkJob(visit: VisitSummary): Promise<void> {
+    const rams = this.rams();
+    if (!rams || !this.canManage() || rams.visits.some(({ id }) => id === visit.id)) return;
+    await this.run(async () => {
+      await this.api.linkRamsVisit(this.organisationId, rams.id, visit.id);
+      await this.reload(rams.id);
+      this.jobQuery.set('');
+      this.jobChoices.set([]);
+      this.notice.set('Job linked to this RAMS.');
+    });
+  }
+
+  protected isLinkedJob(visitId: string): boolean {
+    return this.rams()?.visits.some(({ id }) => id === visitId) ?? false;
+  }
+
+  protected async unlinkJob(visitId: string): Promise<void> {
+    const rams = this.rams();
+    if (!rams || !this.canManage() || rams.visits.length <= 1) return;
+    await this.run(async () => {
+      await this.api.unlinkRamsVisit(this.organisationId, rams.id, visitId);
+      await this.reload(rams.id);
+      this.notice.set('Job unlinked from this RAMS.');
+    });
+  }
+
+  protected async openRevision(revisionNumber: number): Promise<void> {
+    const rams = this.rams();
+    if (!rams) return;
+    this.revisionLoading.set(true);
+    this.error.set('');
+    try {
+      this.selectedRevision.set(
+        (await this.api.getRamsRevision(this.organisationId, rams.id, revisionNumber)).revision,
+      );
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to load this revision.');
+    } finally {
+      this.revisionLoading.set(false);
+    }
+  }
+
+  protected async downloadRevisionPdf(revision: RamsRevisionDetail): Promise<void> {
+    const rams = this.rams();
+    if (!rams) return;
+    await this.run(async () => {
+      const blob = await this.api.downloadRamsRevisionPdf(
+        this.organisationId,
+        rams.id,
+        revision.revisionNumber,
+      );
+      this.saveBlob(blob, `${rams.reference}-revision-${revision.revisionNumber}.pdf`);
+    });
   }
 
   protected async save(): Promise<void> {
@@ -784,7 +864,8 @@ export class RamsWorkspaceComponent {
     draft.scope.workBoundaries ??= '';
     draft.scope.responsibilities ??= [];
     draft.methodStatement.steps = (draft.methodStatement.steps ?? []).map((step) => ({
-      ...step,
+      id: step.id,
+      title: step.title ?? '',
       detail: step.detail ?? '',
     }));
     draft.riskAssessment.hazards = (draft.riskAssessment.hazards ?? []).map((hazard) => ({

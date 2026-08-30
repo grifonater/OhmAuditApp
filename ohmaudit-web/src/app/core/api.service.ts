@@ -387,6 +387,7 @@ export interface VisitSummary {
     inductionInformation?: string;
   };
   tasks: VisitTask[];
+  rams?: EngineerRamsRecord[];
 }
 export interface JobCategory {
   id: string;
@@ -453,7 +454,6 @@ export interface VisitDocument {
 export interface RamsMethodStep {
   id: string;
   title: string;
-  required: boolean;
   detail: string;
 }
 export interface RamsHazard {
@@ -558,7 +558,6 @@ export interface RamsPerson {
 }
 export interface RamsSummary {
   id: string;
-  visitId: string;
   reference: string;
   title: string;
   status: 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'RETURNED';
@@ -572,15 +571,25 @@ export interface RamsSummary {
   preparedBy: RamsPerson;
   reviewedBy?: RamsPerson | null;
   approvedBy?: RamsPerson | null;
+  visits: RamsVisit[];
 }
 export interface OrganisationRamsSummary extends RamsSummary {
-  visit: {
-    id: string;
-    reference?: string | null;
-    title: string;
-    customer: { name: string };
-    site: { name: string };
-  };
+  visits: RamsVisit[];
+}
+export interface RamsVisit {
+  id: string;
+  reference?: string | null;
+  title: string;
+  description?: string | null;
+  exclusions?: string | null;
+  jobType?: string | null;
+  scheduledStart: string;
+  scheduledEnd?: string | null;
+  status: string;
+  customer: { id?: string; name: string };
+  site: { id?: string; name: string; postcode?: string | null };
+  jobCategory?: { id: string; name: string } | null;
+  assignedUser?: RamsPerson | null;
 }
 export interface RamsTemplate {
   id: string;
@@ -615,27 +624,34 @@ export interface RamsLibraryHazardInput {
 }
 export interface RamsDetail extends RamsSummary {
   draftData: RamsDraft;
-  visit: {
-    id: string;
-    reference?: string | null;
-    title: string;
-    description?: string | null;
-    exclusions?: string | null;
-    jobType?: string | null;
-    scheduledStart: string;
-    scheduledEnd?: string | null;
-    status: string;
-    customer: { id: string; name: string };
-    site: { id: string; name: string; postcode?: string | null };
-    jobCategory?: { id: string; name: string } | null;
-    assignedUser?: RamsPerson | null;
-  };
-  revisions: Array<{
-    id: string;
-    revisionNumber: number;
-    createdAt: string;
-    createdBy: RamsPerson;
-  }>;
+  visits: RamsVisit[];
+  revisions: RamsRevisionSummary[];
+}
+export interface RamsRevisionSummary {
+  id: string;
+  revisionNumber: number;
+  createdAt: string;
+  createdBy: RamsPerson;
+  status?: string;
+  summary?: string;
+}
+export interface RamsRevisionDetail extends RamsRevisionSummary {
+  data: RamsDraft;
+}
+export interface EngineerRamsRecord extends RamsSummary {
+  draftData?: RamsDraft;
+  revisions?: RamsRevisionSummary[];
+  signedOn: boolean;
+  signedAt?: string | null;
+  signedBy?: RamsPerson | { displayName?: string | null; email?: string } | null;
+}
+export interface RamsAcknowledgement {
+  id: string;
+  signerName: string;
+  signerEmail?: string | null;
+  signerRole: string;
+  signedAt: string;
+  statement: string;
 }
 export interface InspectionSummary {
   id: string;
@@ -1404,10 +1420,11 @@ export class ApiService {
       `/visits/${encodeURIComponent(visitId)}/rams?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
-  listRams(organisationId: string) {
-    return this.request<{ rams: OrganisationRamsSummary[] }>(
-      `/rams?organisationId=${encodeURIComponent(organisationId)}`,
-    );
+  listRams(organisationId: string, options: { search?: string; limit?: number } = {}) {
+    const query = new URLSearchParams({ organisationId });
+    if (options.search?.trim()) query.set('search', options.search.trim());
+    if (options.limit !== undefined) query.set('limit', String(options.limit));
+    return this.request<{ rams: OrganisationRamsSummary[] }>(`/rams?${query.toString()}`);
   }
   listRamsTemplates(organisationId: string) {
     return this.request<{ templates: RamsTemplate[] }>(
@@ -1503,6 +1520,72 @@ export class ApiService {
       `/rams/${encodeURIComponent(ramsId)}?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
+  getRamsRevision(organisationId: string, ramsId: string, revisionNumber: number) {
+    return this.request<{ revision: RamsRevisionDetail }>(
+      `/rams/${encodeURIComponent(ramsId)}/revisions/${revisionNumber}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  linkRamsVisit(organisationId: string, ramsId: string, visitId: string) {
+    return this.request<{ rams: RamsDetail }>(
+      `/rams/${encodeURIComponent(ramsId)}/visits/${encodeURIComponent(visitId)}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST' },
+    );
+  }
+  unlinkRamsVisit(organisationId: string, ramsId: string, visitId: string) {
+    return this.request<void>(
+      `/rams/${encodeURIComponent(ramsId)}/visits/${encodeURIComponent(visitId)}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
+    );
+  }
+  listEngineerVisitRams(organisationId: string, visitId: string) {
+    return this.request<{ rams: RamsSummary[] }>(
+      `/visits/${encodeURIComponent(visitId)}/rams?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  listRamsAcknowledgements(organisationId: string, ramsId: string, visitId: string) {
+    return this.request<{ acknowledgements: RamsAcknowledgement[] }>(
+      `/rams/${encodeURIComponent(ramsId)}/visits/${encodeURIComponent(visitId)}/acknowledgements?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  listGuestVisitRams(token: string) {
+    return this.publicRequest<{ rams: EngineerRamsRecord[] }>(
+      `/guest/visits/${encodeURIComponent(token)}/rams`,
+    );
+  }
+  getGuestRamsRevision(token: string, ramsId: string, revisionNumber: number) {
+    return this.publicRequest<{ revision: RamsRevisionDetail }>(
+      `/guest/visits/${encodeURIComponent(token)}/rams/${encodeURIComponent(ramsId)}/revisions/${revisionNumber}`,
+    );
+  }
+  async downloadGuestRamsRevisionPdf(
+    token: string,
+    ramsId: string,
+    revisionNumber: number,
+  ): Promise<Blob> {
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}/guest/visits/${encodeURIComponent(token)}/rams/${encodeURIComponent(ramsId)}/revisions/${revisionNumber}/report.pdf`,
+      { cache: 'no-store' },
+    );
+    if (!response.ok) throw new Error('The historical RAMS PDF could not be generated.');
+    return response.blob();
+  }
+  signOnToRams(
+    organisationId: string,
+    visitId: string,
+    ramsId: string,
+    input: { signatureData: string },
+  ) {
+    return this.request<{ acknowledgement: RamsAcknowledgement }>(
+      `/rams/${encodeURIComponent(ramsId)}/visits/${encodeURIComponent(visitId)}/acknowledgements?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  signOnToGuestRams(token: string, ramsId: string, input: { signatureData: string }) {
+    return this.publicRequest<{ acknowledgement: RamsAcknowledgement }>(
+      `/guest/visits/${encodeURIComponent(token)}/rams/${encodeURIComponent(ramsId)}/acknowledgements`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
   updateRams(organisationId: string, ramsId: string, draft: RamsDraft) {
     return this.request<{ rams: RamsSummary }>(
       `/rams/${encodeURIComponent(ramsId)}?organisationId=${encodeURIComponent(organisationId)}`,
@@ -1523,6 +1606,20 @@ export class ApiService {
         { message?: string } | undefined;
       throw new Error(body?.message ?? 'The RAMS PDF could not be generated.');
     }
+    return response.blob();
+  }
+  async downloadRamsRevisionPdf(
+    organisationId: string,
+    ramsId: string,
+    revisionNumber: number,
+  ): Promise<Blob> {
+    const accessToken = this.auth.session()?.access_token;
+    if (accessToken === undefined) throw new Error('Sign in to continue.');
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}/rams/${encodeURIComponent(ramsId)}/revisions/${revisionNumber}/report.pdf?organisationId=${encodeURIComponent(organisationId)}`,
+      { headers: this.authenticatedHeaders(accessToken) },
+    );
+    if (!response.ok) throw new Error('The historical RAMS PDF could not be generated.');
     return response.blob();
   }
   submitRams(organisationId: string, ramsId: string) {
