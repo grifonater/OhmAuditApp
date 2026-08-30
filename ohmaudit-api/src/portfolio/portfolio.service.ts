@@ -848,6 +848,7 @@ export class PortfolioService {
         select: {
           inspections: { select: { id: true } },
           tasks: { select: { assetId: true } },
+          rams: { select: { id: true } },
         },
       });
       if (visit === null) return [];
@@ -862,6 +863,7 @@ export class PortfolioService {
           ...visit.tasks.flatMap((task) =>
             task.assetId === null ? [] : [{ entityType: 'Asset', entityId: task.assetId }],
           ),
+          ...(visit.rams == null ? [] : [{ entityType: 'Rams', entityId: visit.rams.id }]),
         ],
       };
     }

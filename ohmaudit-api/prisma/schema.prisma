@@ -122,6 +122,13 @@ enum InspectionStatus {
   SUPERSEDED
 }
 
+enum RamsStatus {
+  DRAFT
+  UNDER_REVIEW
+  APPROVED
+  RETURNED
+}
+
 enum DefectSeverity {
   ADVISORY
   MINOR
@@ -160,6 +167,10 @@ model User {
   supportSessionsTargeted PlatformSupportSession[] @relation("SupportSessionTarget")
   visitsAssigned          Visit[]                  @relation("VisitAssignedUser")
   visitsCreated           Visit[]                  @relation("VisitCreatedBy")
+  ramsPrepared            Rams[]                   @relation("RamsPreparedBy")
+  ramsReviewed            Rams[]                   @relation("RamsReviewedBy")
+  ramsApproved            Rams[]                   @relation("RamsApprovedBy")
+  ramsRevisionsCreated    RamsRevision[]           @relation("RamsRevisionCreatedBy")
 
   @@map("users")
 }
@@ -207,6 +218,8 @@ model Organisation {
   equipment                    OrganisationEquipment[]
   jobCategories                JobCategory[]
   supportSessions              PlatformSupportSession[]
+  rams                         Rams[]
+  ramsRevisions                RamsRevision[]
 
   @@map("organisations")
 }
@@ -651,12 +664,62 @@ model Visit {
   guestTokens       GuestAccessToken[]
   inspections       Inspection[]
   syncMutations     SyncMutation[]
+  rams              Rams?
 
   @@index([organisationId, scheduledStart, status])
   @@index([organisationId, assignedUserId])
   @@index([organisationId, completedAt])
   @@index([organisationId, jobCategoryId])
   @@map("visits")
+}
+
+model Rams {
+  id                    String         @id @default(uuid()) @db.Uuid
+  organisationId        String         @map("organisation_id") @db.Uuid
+  visitId               String         @unique @map("visit_id") @db.Uuid
+  reference             String
+  title                 String
+  status                RamsStatus     @default(DRAFT)
+  currentRevisionNumber Int            @default(0) @map("current_revision_number")
+  effectiveFrom         DateTime?      @map("effective_from") @db.Date
+  draftData             Json           @map("draft_data")
+  preparedByUserId      String         @map("prepared_by_user_id") @db.Uuid
+  submittedAt           DateTime?      @map("submitted_at")
+  reviewedAt            DateTime?      @map("reviewed_at")
+  reviewedByUserId      String?        @map("reviewed_by_user_id") @db.Uuid
+  approvedAt            DateTime?      @map("approved_at")
+  approvedByUserId      String?        @map("approved_by_user_id") @db.Uuid
+  reviewComment         String?        @map("review_comment")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+  organisation          Organisation   @relation(fields: [organisationId], references: [id])
+  visit                 Visit          @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  preparedBy            User           @relation("RamsPreparedBy", fields: [preparedByUserId], references: [id])
+  reviewedBy            User?          @relation("RamsReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  approvedBy            User?          @relation("RamsApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  revisions             RamsRevision[]
+
+  @@index([organisationId, status, updatedAt])
+  @@index([organisationId, visitId])
+  @@map("rams")
+}
+
+model RamsRevision {
+  id              String       @id @default(uuid()) @db.Uuid
+  organisationId  String       @map("organisation_id") @db.Uuid
+  ramsId          String       @map("rams_id") @db.Uuid
+  revisionNumber  Int          @map("revision_number")
+  data            Json
+  contextSnapshot Json         @default("{}") @map("context_snapshot")
+  createdByUserId String       @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at")
+  organisation    Organisation @relation(fields: [organisationId], references: [id])
+  rams            Rams         @relation(fields: [ramsId], references: [id], onDelete: Cascade)
+  createdBy       User         @relation("RamsRevisionCreatedBy", fields: [createdByUserId], references: [id])
+
+  @@unique([ramsId, revisionNumber])
+  @@index([organisationId, createdAt])
+  @@map("rams_revisions")
 }
 
 model JobCategory {

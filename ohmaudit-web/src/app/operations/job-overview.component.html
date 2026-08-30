@@ -45,14 +45,19 @@
             Edit job
           </button>
         }
-        <button
-          class="button primary compact"
-          type="button"
-          disabled
-          title="RAMS is the next module"
-        >
-          Add RAMS
-        </button>
+        @if (ramsRecords()[0]; as rams) {
+          <a
+            class="button primary compact"
+            [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', rams.id]"
+            >Open RAMS</a
+          >
+        } @else if (canManageRams()) {
+          <a
+            class="button primary compact"
+            [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', 'new']"
+            >Add RAMS</a
+          >
+        }
       </div>
     </header>
 
@@ -296,23 +301,82 @@
             <p class="eyebrow">Health &amp; safety</p>
             <h2>RAMS</h2>
           </div>
-          <button
-            class="button primary compact"
-            type="button"
-            disabled
-            title="RAMS is the next module"
-          >
-            Add RAMS
-          </button>
+          @if (ramsRecords()[0]; as rams) {
+            <a
+              class="button primary compact"
+              [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', rams.id]"
+              >Open RAMS</a
+            >
+          } @else if (canManageRams()) {
+            <a
+              class="button primary compact"
+              [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', 'new']"
+              >Create RAMS</a
+            >
+          }
         </div>
         <div class="card-body">
-          <div class="empty-state">
-            <h3>No RAMS added</h3>
-            <p>
-              Risk Assessment and Method Statements for this job will appear here. The RAMS module
-              is the next module and is not available yet.
-            </p>
-          </div>
+          @for (rams of ramsRecords(); track rams.id) {
+            <article class="record-card rams-record">
+              <div class="rams-record-main">
+                <div>
+                  <strong>{{ rams.title }}</strong
+                  ><small>{{ rams.reference }}</small>
+                </div>
+                <span
+                  class="badge"
+                  [class.success]="rams.status === 'APPROVED'"
+                  [class.warning]="rams.status === 'UNDER_REVIEW'"
+                  >{{ statusLabel(rams.status) }}</span
+                >
+              </div>
+              <dl class="rams-record-meta">
+                <div>
+                  <dt>Revision</dt>
+                  <dd>{{ rams.currentRevisionNumber || 'Draft' }}</dd>
+                </div>
+                <div>
+                  <dt>Prepared by</dt>
+                  <dd>{{ personName(rams.preparedBy) }}</dd>
+                </div>
+                <div>
+                  <dt>Effective from</dt>
+                  <dd>{{ formatDate(rams.effectiveFrom ?? undefined) }}</dd>
+                </div>
+                <div>
+                  <dt>Last updated</dt>
+                  <dd>{{ formatDate(rams.updatedAt, true) }}</dd>
+                </div>
+              </dl>
+              @if (rams.reviewComment) {
+                <p class="rams-review-note">{{ rams.reviewComment }}</p>
+              }
+              <a
+                class="button secondary compact"
+                [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', rams.id]"
+                >{{
+                  rams.status === 'DRAFT' || rams.status === 'RETURNED'
+                    ? 'Continue RAMS'
+                    : 'View RAMS'
+                }}</a
+              >
+            </article>
+          } @empty {
+            <div class="empty-state">
+              <h3>No RAMS added</h3>
+              <p>
+                Create a job-specific risk assessment and method statement covering scope, work
+                sequence, hazards, PPE and approval.
+              </p>
+              @if (canManageRams()) {
+                <a
+                  class="button primary"
+                  [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', 'new']"
+                  >Create RAMS</a
+                >
+              }
+            </div>
+          }
         </div>
       </section>
     }

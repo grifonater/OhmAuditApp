@@ -22,6 +22,7 @@ import { PlatformService } from './platform/platform.service';
 import { InstructionService } from './platform/instruction.service';
 import { EquipmentService } from './equipment/equipment.service';
 import { JobCategoryService } from './jobs/job-category.service';
+import { RamsService } from './rams/rams.service';
 import { DomainError } from './shared/domain-error';
 import type { ApiBindings } from './shared/environment';
 import { parseEnvironment } from './shared/environment';
@@ -368,6 +369,158 @@ const visitUpdateInput = z
     message: 'At least one job field must be provided.',
   });
 const jobCategoryInput = z.object({ name: z.string().trim().min(2).max(80) });
+const ramsListItem = z.string().trim().min(1).max(2000);
+const ramsDraftRowText = (maximum: number) => z.string().trim().max(maximum);
+const ramsNamedReferenceInput = z.object({
+  id: ramsDraftRowText(100),
+  name: ramsDraftRowText(500),
+  reference: ramsDraftRowText(2000),
+});
+const ramsDraftInput = z.object({
+  schemaVersion: z.literal(2).optional().default(2),
+  overview: z.object({
+    title: z.string().trim().max(200),
+    category: z.string().trim().max(120),
+    effectiveFrom: z.union([z.iso.date(), z.literal('')]),
+    reviewBy: ramsDraftRowText(200).optional().default(''),
+    revisionSummary: ramsDraftRowText(5000).optional().default(''),
+  }),
+  scope: z.object({
+    scopeOfWorks: z.string().max(20000),
+    exclusions: z.array(ramsListItem).max(100),
+    engineerBriefing: z.array(ramsListItem).max(100),
+    keyActivities: z.array(ramsListItem).max(100).optional().default([]),
+    assumptions: z.array(ramsListItem).max(100).optional().default([]),
+    workAreas: z.array(ramsListItem).max(100).optional().default([]),
+    workBoundaries: z.string().max(10000).optional().default(''),
+    responsibilities: z
+      .array(
+        z.object({
+          id: ramsDraftRowText(100),
+          name: ramsDraftRowText(500),
+          role: ramsDraftRowText(500),
+          organisation: ramsDraftRowText(500),
+          responsibility: ramsDraftRowText(5000),
+          contact: ramsDraftRowText(500),
+        }),
+      )
+      .max(100)
+      .optional()
+      .default([]),
+  }),
+  methodStatement: z.object({
+    steps: z
+      .array(
+        z.object({
+          id: ramsDraftRowText(100),
+          title: ramsDraftRowText(2000),
+          required: z.boolean(),
+          detail: z.string().max(10000).optional().default(''),
+          responsibility: ramsDraftRowText(500).optional().default(''),
+          estimatedMinutes: z.number().int().min(0).max(100000).optional().default(0),
+        }),
+      )
+      .max(200),
+  }),
+  riskAssessment: z.object({
+    hazards: z
+      .array(
+        z.object({
+          id: ramsDraftRowText(100),
+          hazard: z.string().trim().max(1000),
+          peopleAtRisk: z.string().trim().max(1000),
+          initialLikelihood: z.number().int().min(1).max(5),
+          initialSeverity: z.number().int().min(1).max(5),
+          controls: z.string().max(5000),
+          residualLikelihood: z.number().int().min(1).max(5),
+          residualSeverity: z.number().int().min(1).max(5),
+          howHarmed: z.string().max(5000).optional().default(''),
+          furtherActions: z.string().max(5000).optional().default(''),
+          actionOwner: ramsDraftRowText(500).optional().default(''),
+          actionDueDate: z
+            .union([z.iso.date(), z.literal('')])
+            .optional()
+            .default(''),
+          actionStatus: z.enum(['OPEN', 'CONTROLLED']).optional().default('OPEN'),
+        }),
+      )
+      .max(200),
+  }),
+  requirements: z.object({
+    ppe: z.array(ramsListItem).max(100),
+    tools: z.array(ramsListItem).max(100),
+    competencies: z.array(ramsListItem).max(100),
+    emergencyArrangements: z.array(ramsListItem).max(100),
+    plant: z.array(ramsListItem).max(100).optional().default([]),
+    materials: z.array(ramsListItem).max(100).optional().default([]),
+    training: z.array(ramsListItem).max(100).optional().default([]),
+    substances: z.array(ramsListItem).max(100).optional().default([]),
+    welfare: z.array(ramsListItem).max(100).optional().default([]),
+    emergencyDetails: z
+      .object({
+        contactName: ramsDraftRowText(500),
+        contactNumber: ramsDraftRowText(100),
+        nearestHospital: ramsDraftRowText(1000),
+        hospitalAddress: z.string().max(5000),
+        assemblyPoint: z.string().max(5000),
+        additionalInfo: z.string().max(5000),
+      })
+      .optional()
+      .default({
+        contactName: '',
+        contactNumber: '',
+        nearestHospital: '',
+        hospitalAddress: '',
+        assemblyPoint: '',
+        additionalInfo: '',
+      }),
+  }),
+  supportingInformation: z.object({
+    siteAccess: z.string().max(10000),
+    permits: z.string().max(10000),
+    welfare: z.string().max(10000),
+    environmental: z.string().max(10000),
+    references: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(100),
+          title: z.string().trim().min(1).max(200),
+          url: z.string().trim().max(2000),
+        }),
+      )
+      .max(100),
+    permitReferences: z.array(ramsNamedReferenceInput).max(100).optional().default([]),
+    coshhReferences: z.array(ramsNamedReferenceInput).max(100).optional().default([]),
+    workingAtHeightReferences: z.array(ramsNamedReferenceInput).max(100).optional().default([]),
+    legislationReferences: z.array(ramsNamedReferenceInput).max(100).optional().default([]),
+    documents: z
+      .array(
+        z.object({
+          id: ramsDraftRowText(100),
+          name: ramsDraftRowText(500),
+          type: ramsDraftRowText(200),
+          reference: ramsDraftRowText(2000),
+          status: ramsDraftRowText(200),
+        }),
+      )
+      .max(100)
+      .optional()
+      .default([]),
+    electricalSafety: z.array(ramsListItem).max(100).optional().default([]),
+  }),
+  review: z.object({
+    approvalMode: z.enum(['AUTHOR', 'REVIEWER']),
+    requireEngineerAcknowledgement: z.boolean(),
+    internalNotes: z.string().max(10000).optional().default(''),
+    changeImpact: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().default('LOW'),
+    revisionReason: z.string().max(5000).optional().default(''),
+    changeSummary: z.string().max(5000).optional().default(''),
+  }),
+});
+const ramsReviewInput = z.object({
+  action: z.enum(['APPROVE', 'RETURN']),
+  comment: z.string().trim().max(5000).optional(),
+});
 const syncInput = z.object({
   clientMutationId: z.string().uuid(),
   entityType: z.string().min(1).max(80),
@@ -732,7 +885,9 @@ export async function requestPdfRender(
     throw new DomainError(
       'PDF_RENDER_FAILED',
       body?.message ?? 'The PDF renderer could not generate this certificate.',
-      response.status === 404 || response.status === 422 ? response.status : 503,
+      response.status === 404 || response.status === 413 || response.status === 422
+        ? response.status
+        : 503,
     );
   } catch (error: unknown) {
     if (error instanceof DomainError) throw error;
@@ -2386,6 +2541,156 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       visit: await new VisitService(prismaFor(environment)).update(
         organisationId,
         visitId,
+        user.id,
+        context.get('correlationId'),
+        input,
+      ),
+    });
+  });
+  app.get('/api/v1/visits/:visitId/rams', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      rams: await new RamsService(prismaFor(environment)).list(organisationId, visitId),
+    });
+  });
+  app.post('/api/v1/visits/:visitId/rams', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json(
+      {
+        rams: await new RamsService(prismaFor(environment)).create(
+          organisationId,
+          visitId,
+          user.id,
+          context.get('correlationId'),
+        ),
+      },
+      201,
+    );
+  });
+  app.get('/api/v1/rams/:ramsId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      rams: await new RamsService(prismaFor(environment)).detail(organisationId, ramsId),
+    });
+  });
+  app.get('/api/v1/rams/:ramsId/report.pdf', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
+      throw new DomainError(
+        'PDF_RENDERER_UNAVAILABLE',
+        'PDF rendering is not configured for this environment.',
+        503,
+      );
+    const payload = await new RamsService(prismaFor(environment)).renderSource(
+      organisationId,
+      ramsId,
+    );
+    const rendered = await requestPdfRender(environment, '/render/rams-a4-v1', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-correlation-id': context.get('correlationId'),
+      },
+      body: JSON.stringify(payload),
+    });
+    const filenameReference = payload.reference
+      .normalize('NFKD')
+      .replace(/[^A-Za-z0-9._-]+/gu, '-')
+      .replace(/^-+|-+$/gu, '')
+      .slice(0, 100);
+    const headers = new Headers({
+      'content-type': rendered.headers.get('content-type') ?? 'application/pdf',
+      'content-disposition': `attachment; filename="${filenameReference || 'rams-report'}.pdf"`,
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
+    });
+    const renderer = rendered.headers.get('x-ohmaudit-pdf-renderer');
+    if (renderer !== null) headers.set('x-ohmaudit-pdf-renderer', renderer);
+    return new Response(rendered.body, {
+      status: rendered.status,
+      headers,
+    });
+  });
+  app.patch('/api/v1/rams/:ramsId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const input = ramsDraftInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json({
+      rams: await new RamsService(prismaFor(environment)).update(
+        organisationId,
+        ramsId,
+        user.id,
+        context.get('correlationId'),
+        input,
+      ),
+    });
+  });
+  app.post('/api/v1/rams/:ramsId/submit', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json({
+      rams: await new RamsService(prismaFor(environment)).submit(
+        organisationId,
+        ramsId,
+        user.id,
+        context.get('correlationId'),
+      ),
+    });
+  });
+  app.post('/api/v1/rams/:ramsId/review', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    const input = ramsReviewInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      input.action === 'APPROVE' ? 'rams.approve' : 'rams.review',
+    );
+    return context.json({
+      rams: await new RamsService(prismaFor(environment)).review(
+        organisationId,
+        ramsId,
         user.id,
         context.get('correlationId'),
         input,

@@ -1,6 +1,8 @@
 import { renderThermalReportHtml } from './thermal-report-html';
+import { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
 
 export { renderThermalReportHtml } from './thermal-report-html';
+export { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
 
 export interface PdfBindings {
   APP_ENV: 'local' | 'development' | 'staging' | 'production';
@@ -1047,6 +1049,367 @@ function isVisitReportPayload(value: unknown): value is VisitReportPayload {
   );
 }
 
+const RAMS_MAX_REQUEST_BYTES = 1024 * 1024;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || isString(value);
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || isString(value);
+}
+
+function isOptionalNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || isString(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isString);
+}
+
+function isOptionalStringArray(value: unknown): value is string[] | undefined {
+  return value === undefined || isStringArray(value);
+}
+
+function isRamsPerson(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    isOptionalString(value['id']) &&
+    isOptionalString(value['name']) &&
+    isOptionalNullableString(value['displayName']) &&
+    isOptionalString(value['email']) &&
+    isOptionalString(value['role']) &&
+    [value['name'], value['displayName'], value['email']].some(
+      (candidate) => typeof candidate === 'string' && candidate.trim() !== '',
+    )
+  );
+}
+
+function isRamsMethodStep(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value['id']) &&
+    isString(value['title']) &&
+    typeof value['required'] === 'boolean' &&
+    isOptionalString(value['detail']) &&
+    isOptionalString(value['responsibility']) &&
+    (value['estimatedMinutes'] === undefined ||
+      (typeof value['estimatedMinutes'] === 'number' &&
+        Number.isFinite(value['estimatedMinutes']) &&
+        value['estimatedMinutes'] >= 0))
+  );
+}
+
+function isRiskRating(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
+}
+
+function isRamsHazard(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value['id']) &&
+    isString(value['hazard']) &&
+    isString(value['peopleAtRisk']) &&
+    isRiskRating(value['initialLikelihood']) &&
+    isRiskRating(value['initialSeverity']) &&
+    isString(value['controls']) &&
+    isRiskRating(value['residualLikelihood']) &&
+    isRiskRating(value['residualSeverity']) &&
+    ['howHarmed', 'furtherActions', 'actionOwner', 'actionDueDate', 'actionStatus'].every((key) =>
+      isOptionalString(value[key]),
+    )
+  );
+}
+
+function isRamsDraftData(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const overview = value['overview'];
+  const scope = value['scope'];
+  const method = value['methodStatement'];
+  const risk = value['riskAssessment'];
+  const requirements = value['requirements'];
+  const supporting = value['supportingInformation'];
+  const review = value['review'];
+  if (
+    !isRecord(overview) ||
+    !isRecord(scope) ||
+    !isRecord(method) ||
+    !isRecord(risk) ||
+    !isRecord(requirements) ||
+    !isRecord(supporting) ||
+    !isRecord(review)
+  )
+    return false;
+  const references = supporting['references'];
+  const documents = supporting['documents'];
+  const responsibilities = scope['responsibilities'];
+  const emergencyDetails = requirements['emergencyDetails'];
+  const namedReference = (item: unknown): boolean =>
+    isRecord(item) && isString(item['id']) && isString(item['name']) && isString(item['reference']);
+  return (
+    (value['schemaVersion'] === undefined || value['schemaVersion'] === 2) &&
+    ['title', 'category', 'effectiveFrom'].every((key) => isString(overview[key])) &&
+    ['reviewBy', 'revisionSummary'].every((key) => isOptionalString(overview[key])) &&
+    isString(scope['scopeOfWorks']) &&
+    ['exclusions', 'engineerBriefing'].every((key) => isStringArray(scope[key])) &&
+    ['keyActivities', 'assumptions', 'workAreas'].every((key) =>
+      isOptionalStringArray(scope[key]),
+    ) &&
+    isOptionalString(scope['workBoundaries']) &&
+    (responsibilities === undefined ||
+      (Array.isArray(responsibilities) &&
+        responsibilities.every(
+          (item) =>
+            isRecord(item) &&
+            isString(item['id']) &&
+            ['name', 'role', 'organisation', 'responsibility', 'contact'].every((key) =>
+              isString(item[key]),
+            ),
+        ))) &&
+    Array.isArray(method['steps']) &&
+    method['steps'].every(isRamsMethodStep) &&
+    Array.isArray(risk['hazards']) &&
+    risk['hazards'].every(isRamsHazard) &&
+    ['ppe', 'tools', 'competencies', 'emergencyArrangements'].every((key) =>
+      isStringArray(requirements[key]),
+    ) &&
+    ['plant', 'materials', 'training', 'substances', 'welfare'].every((key) =>
+      isOptionalStringArray(requirements[key]),
+    ) &&
+    (emergencyDetails === undefined ||
+      (isRecord(emergencyDetails) &&
+        [
+          'contactName',
+          'contactNumber',
+          'nearestHospital',
+          'hospitalAddress',
+          'assemblyPoint',
+          'additionalInfo',
+        ].every((key) => isString(emergencyDetails[key])))) &&
+    ['siteAccess', 'permits', 'welfare', 'environmental'].every((key) =>
+      isString(supporting[key]),
+    ) &&
+    Array.isArray(references) &&
+    references.every(
+      (reference) =>
+        isRecord(reference) &&
+        isString(reference['id']) &&
+        isString(reference['title']) &&
+        isString(reference['url']),
+    ) &&
+    [
+      'permitReferences',
+      'coshhReferences',
+      'workingAtHeightReferences',
+      'legislationReferences',
+    ].every(
+      (key) =>
+        supporting[key] === undefined ||
+        (Array.isArray(supporting[key]) && supporting[key].every(namedReference)),
+    ) &&
+    isOptionalStringArray(supporting['electricalSafety']) &&
+    (documents === undefined ||
+      (Array.isArray(documents) &&
+        documents.every(
+          (document) =>
+            isRecord(document) &&
+            ['id', 'name', 'type', 'reference', 'status'].every((key) => isString(document[key])),
+        ))) &&
+    (review['approvalMode'] === 'AUTHOR' || review['approvalMode'] === 'REVIEWER') &&
+    typeof review['requireEngineerAcknowledgement'] === 'boolean' &&
+    ['internalNotes', 'changeImpact', 'revisionReason', 'changeSummary'].every((key) =>
+      isOptionalString(review[key]),
+    )
+  );
+}
+
+function isRamsRenderPayload(value: unknown): value is RamsRenderPayload {
+  if (!isRecord(value)) return false;
+  const organisation = value['organisation'];
+  const job = value['job'];
+  const customer = value['customer'];
+  const site = value['site'];
+  const people = value['people'];
+  const history = value['revisionHistory'];
+  if (
+    !isRecord(organisation) ||
+    !isRecord(job) ||
+    !isRecord(customer) ||
+    !isRecord(site) ||
+    !isRecord(people) ||
+    !Array.isArray(history)
+  )
+    return false;
+  return (
+    isString(value['templateVersion']) &&
+    ['DRAFT', 'UNDER_REVIEW', 'APPROVED'].includes(String(value['documentState'])) &&
+    (value['revisionNumber'] === null ||
+      (typeof value['revisionNumber'] === 'number' &&
+        Number.isInteger(value['revisionNumber']) &&
+        value['revisionNumber'] >= 0)) &&
+    isString(value['reference']) &&
+    isString(value['title']) &&
+    ['effectiveFrom', 'submittedAt', 'approvedAt', 'reviewComment'].every((key) =>
+      isNullableString(value[key]),
+    ) &&
+    isString(value['generatedAt']) &&
+    isString(organisation['name']) &&
+    isStringArray(organisation['addressLines']) &&
+    isString(job['id']) &&
+    isNullableString(job['reference']) &&
+    isNullableString(job['externalReference']) &&
+    isString(job['title']) &&
+    isNullableString(job['category']) &&
+    isNullableString(job['jobType']) &&
+    isNullableString(job['plannedStart']) &&
+    isNullableString(job['targetCompletion']) &&
+    isString(customer['name']) &&
+    isString(site['name']) &&
+    isStringArray(site['addressLines']) &&
+    isRamsPerson(people['preparedBy']) &&
+    (people['reviewedBy'] === undefined ||
+      people['reviewedBy'] === null ||
+      isRamsPerson(people['reviewedBy'])) &&
+    (people['approvedBy'] === undefined ||
+      people['approvedBy'] === null ||
+      isRamsPerson(people['approvedBy'])) &&
+    (people['assignedEngineer'] === undefined ||
+      people['assignedEngineer'] === null ||
+      isRamsPerson(people['assignedEngineer'])) &&
+    isRamsDraftData(value['data']) &&
+    history.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item['revisionNumber'] === 'number' &&
+        Number.isInteger(item['revisionNumber']) &&
+        item['revisionNumber'] >= 0 &&
+        isString(item['createdAt']) &&
+        isRamsPerson(item['createdBy']) &&
+        isOptionalString(item['status']) &&
+        isOptionalString(item['summary']),
+    )
+  );
+}
+
+function ramsJsonError(status: 413 | 422 | 502 | 503, code: string, message: string): Response {
+  return Response.json(
+    { code, message },
+    {
+      status,
+      headers: {
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    },
+  );
+}
+
+async function readRamsPayload(request: Request): Promise<RamsRenderPayload | Response> {
+  const contentLength = request.headers.get('content-length');
+  if (contentLength !== null) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > RAMS_MAX_REQUEST_BYTES)
+      return ramsJsonError(
+        413,
+        'RAMS_PAYLOAD_TOO_LARGE',
+        'The RAMS render payload must not exceed 1 MB.',
+      );
+  }
+  if (!request.headers.get('content-type')?.toLowerCase().includes('application/json'))
+    return ramsJsonError(422, 'INVALID_RAMS_PAYLOAD', 'A JSON RAMS render payload is required.');
+
+  const body = await request.arrayBuffer();
+  if (body.byteLength > RAMS_MAX_REQUEST_BYTES)
+    return ramsJsonError(
+      413,
+      'RAMS_PAYLOAD_TOO_LARGE',
+      'The RAMS render payload must not exceed 1 MB.',
+    );
+  let payload: unknown;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return ramsJsonError(422, 'INVALID_RAMS_PAYLOAD', 'The RAMS render payload is not valid JSON.');
+  }
+  if (!isRamsRenderPayload(payload))
+    return ramsJsonError(
+      422,
+      'INVALID_RAMS_PAYLOAD',
+      'The RAMS render payload is incomplete or invalid.',
+    );
+  return payload;
+}
+
+async function renderRamsReportWithBrowser(
+  environment: PdfBindings,
+  payload: RamsRenderPayload,
+): Promise<Response> {
+  if (environment.BROWSER === undefined)
+    return ramsJsonError(
+      503,
+      'RAMS_RENDERER_UNAVAILABLE',
+      'The browser PDF renderer is unavailable.',
+    );
+  const configuredTimeout = Number.parseInt(environment.RENDER_TIMEOUT_MS, 10);
+  const timeout = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(configuredTimeout, 5_000), 120_000)
+    : 30_000;
+  try {
+    const rendered = await environment.BROWSER.quickAction('pdf', {
+      html: renderRamsReportHtml(payload),
+      emulateMediaType: 'print',
+      setJavaScriptEnabled: false,
+      actionTimeout: timeout,
+      pdfOptions: {
+        format: 'a4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        displayHeaderFooter: false,
+        tagged: true,
+        outline: true,
+        timeout,
+      },
+    });
+    if (!rendered.ok) {
+      console.error(
+        JSON.stringify({ event: 'pdf.rams_browser_run_failed', status: rendered.status }),
+      );
+      return ramsJsonError(502, 'RAMS_RENDER_FAILED', 'The RAMS PDF could not be rendered.');
+    }
+    const headers = new Headers({
+      'content-type': 'application/pdf',
+      'content-disposition': 'inline; filename="rams.pdf"',
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
+      'x-ohmaudit-pdf-renderer': 'browser-run',
+    });
+    const browserTime = rendered.headers.get('x-browser-ms-used');
+    if (browserTime !== null) headers.set('x-ohmaudit-browser-ms-used', browserTime);
+    return new Response(rendered.body, { headers });
+  } catch (error: unknown) {
+    console.error(
+      JSON.stringify({
+        event: 'pdf.rams_browser_run_unavailable',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : 'Unknown Browser Run error',
+      }),
+    );
+    return ramsJsonError(
+      503,
+      'RAMS_RENDERER_UNAVAILABLE',
+      'The browser PDF renderer is unavailable.',
+    );
+  }
+}
+
 function thermalCertificateForBrowser(
   payload: CertificatePayload | VisitReportPayload,
 ): ThermalCertificatePayload | undefined {
@@ -1258,6 +1621,11 @@ export default {
         { code: 'ROUTE_NOT_FOUND', message: 'Render route not found.' },
         { status: 404 },
       );
+    if (templateId === 'rams-a4-v1') {
+      const ramsPayload = await readRamsPayload(request);
+      if (ramsPayload instanceof Response) return ramsPayload;
+      return renderRamsReportWithBrowser(env, ramsPayload);
+    }
     const payload: unknown = await request.json();
     const visitReport = templateId === 'visit-report';
     if (visitReport ? !isVisitReportPayload(payload) : !isPayload(payload))

@@ -5,6 +5,7 @@ import {
   ApiService,
   type AssetSummary,
   type JobCategory,
+  type RamsSummary,
   type TimelineEvent,
   type VisitDocument,
   type VisitSummary,
@@ -28,6 +29,11 @@ const EVENT_LABELS: Record<string, string> = {
   InspectionRejected: 'Inspection rejected',
   InspectionSubmissionOverridden: 'Inspection submission overridden',
   CertificateIssued: 'Certificate issued',
+  RamsCreated: 'RAMS created',
+  RamsUpdated: 'RAMS draft updated',
+  RamsSubmitted: 'RAMS submitted for review',
+  RamsApproved: 'RAMS approved',
+  RamsReturned: 'RAMS returned for changes',
 };
 
 @Component({
@@ -52,6 +58,7 @@ export class JobOverviewComponent {
   protected readonly activeTab = signal<JobTab>('overview');
   protected readonly timelineEvents = signal<TimelineEvent[]>([]);
   protected readonly documents = signal<VisitDocument[]>([]);
+  protected readonly ramsRecords = signal<RamsSummary[]>([]);
   protected readonly progressLoaded = signal(false);
   protected readonly documentsLoaded = signal(false);
   protected readonly progressLoading = signal(false);
@@ -67,6 +74,7 @@ export class JobOverviewComponent {
   protected readonly canEdit = computed(() => this.capabilities().includes('visits.create'));
   protected readonly canAssign = computed(() => this.capabilities().includes('visits.assign'));
   protected readonly canIssue = computed(() => this.capabilities().includes('certificates.issue'));
+  protected readonly canManageRams = computed(() => this.capabilities().includes('rams.manage'));
   protected readonly canGenerate = computed(() =>
     this.capabilities().includes('certificates.generate'),
   );
@@ -138,7 +146,7 @@ export class JobOverviewComponent {
   protected tabCount(tab: JobTab): number | null {
     switch (tab) {
       case 'rams':
-        return 0;
+        return this.ramsRecords().length;
       case 'inspections':
         return this.inspectionCount();
       case 'assets':
@@ -256,7 +264,9 @@ export class JobOverviewComponent {
       .replace(/^./u, (value) => value.toLocaleUpperCase('en-GB'));
   }
 
-  protected personName(person: { displayName?: string; email: string } | undefined): string {
+  protected personName(
+    person: { displayName?: string | null; email: string } | null | undefined,
+  ): string {
     return person?.displayName || person?.email || 'Not recorded';
   }
 
@@ -299,15 +309,17 @@ export class JobOverviewComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const [account, categories] = await Promise.all([
+      const [account, categories, rams] = await Promise.all([
         this.api.currentUser(),
         this.api.listJobCategories(this.organisationId),
+        this.api.listVisitRams(this.organisationId, this.visitId),
       ]);
       this.capabilities.set(
         account.memberships.find((item) => item.organisation.id === this.organisationId)?.role
           .capabilities ?? [],
       );
       this.categories.set(categories.categories);
+      this.ramsRecords.set(rams.rams);
       await this.loadJob();
     });
   }

@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { AppConfigService } from './app-config.service';
 import { AuthService } from './auth.service';
+import { ramsPdfPath } from './rams-routes';
 
 export interface CurrentUserResponse {
   user: {
@@ -448,6 +449,155 @@ export interface VisitDocument {
     asset?: { id: string; displayName: string; assetReference: string } | null;
     siteName: string;
   };
+}
+export interface RamsMethodStep {
+  id: string;
+  title: string;
+  required: boolean;
+  detail: string;
+  responsibility: string;
+  estimatedMinutes: number;
+}
+export interface RamsHazard {
+  id: string;
+  hazard: string;
+  peopleAtRisk: string;
+  initialLikelihood: number;
+  initialSeverity: number;
+  controls: string;
+  residualLikelihood: number;
+  residualSeverity: number;
+  howHarmed: string;
+  furtherActions: string;
+  actionOwner: string;
+  actionDueDate: string;
+  actionStatus: 'OPEN' | 'CONTROLLED';
+}
+export interface RamsNamedReference {
+  id: string;
+  name: string;
+  reference: string;
+}
+export interface RamsDraft {
+  schemaVersion?: 2;
+  overview: {
+    title: string;
+    category: string;
+    effectiveFrom: string;
+    reviewBy: string;
+    revisionSummary: string;
+  };
+  scope: {
+    scopeOfWorks: string;
+    exclusions: string[];
+    engineerBriefing: string[];
+    keyActivities: string[];
+    assumptions: string[];
+    workAreas: string[];
+    workBoundaries: string;
+    responsibilities: Array<{
+      id: string;
+      name: string;
+      role: string;
+      organisation: string;
+      responsibility: string;
+      contact: string;
+    }>;
+  };
+  methodStatement: { steps: RamsMethodStep[] };
+  riskAssessment: { hazards: RamsHazard[] };
+  requirements: {
+    ppe: string[];
+    tools: string[];
+    competencies: string[];
+    emergencyArrangements: string[];
+    plant: string[];
+    materials: string[];
+    training: string[];
+    substances: string[];
+    welfare: string[];
+    emergencyDetails: {
+      contactName: string;
+      contactNumber: string;
+      nearestHospital: string;
+      hospitalAddress: string;
+      assemblyPoint: string;
+      additionalInfo: string;
+    };
+  };
+  supportingInformation: {
+    siteAccess: string;
+    permits: string;
+    welfare: string;
+    environmental: string;
+    references: Array<{ id: string; title: string; url: string }>;
+    permitReferences: RamsNamedReference[];
+    coshhReferences: RamsNamedReference[];
+    workingAtHeightReferences: RamsNamedReference[];
+    legislationReferences: RamsNamedReference[];
+    documents: Array<{
+      id: string;
+      name: string;
+      type: string;
+      reference: string;
+      status: string;
+    }>;
+    electricalSafety: string[];
+  };
+  review: {
+    approvalMode: 'AUTHOR' | 'REVIEWER';
+    requireEngineerAcknowledgement: boolean;
+    internalNotes: string;
+    changeImpact: 'LOW' | 'MEDIUM' | 'HIGH';
+    revisionReason: string;
+    changeSummary: string;
+  };
+}
+export interface RamsPerson {
+  id: string;
+  displayName?: string | null;
+  email: string;
+}
+export interface RamsSummary {
+  id: string;
+  visitId: string;
+  reference: string;
+  title: string;
+  status: 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'RETURNED';
+  currentRevisionNumber: number;
+  effectiveFrom?: string | null;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  reviewComment?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  preparedBy: RamsPerson;
+  reviewedBy?: RamsPerson | null;
+  approvedBy?: RamsPerson | null;
+}
+export interface RamsDetail extends RamsSummary {
+  draftData: RamsDraft;
+  visit: {
+    id: string;
+    reference?: string | null;
+    title: string;
+    description?: string | null;
+    exclusions?: string | null;
+    jobType?: string | null;
+    scheduledStart: string;
+    scheduledEnd?: string | null;
+    status: string;
+    customer: { id: string; name: string };
+    site: { id: string; name: string; postcode?: string | null };
+    jobCategory?: { id: string; name: string } | null;
+    assignedUser?: RamsPerson | null;
+  };
+  revisions: Array<{
+    id: string;
+    revisionNumber: number;
+    createdAt: string;
+    createdBy: RamsPerson;
+  }>;
 }
 export interface InspectionSummary {
   id: string;
@@ -1209,6 +1359,60 @@ export class ApiService {
   listVisitDocuments(organisationId: string, visitId: string) {
     return this.request<{ documents: VisitDocument[] }>(
       `/visits/${visitId}/documents?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  listVisitRams(organisationId: string, visitId: string) {
+    return this.request<{ rams: RamsSummary[] }>(
+      `/visits/${encodeURIComponent(visitId)}/rams?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  createVisitRams(organisationId: string, visitId: string) {
+    return this.request<{ rams: RamsDetail }>(
+      `/visits/${encodeURIComponent(visitId)}/rams?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST' },
+    );
+  }
+  getRams(organisationId: string, ramsId: string) {
+    return this.request<{ rams: RamsDetail }>(
+      `/rams/${encodeURIComponent(ramsId)}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  updateRams(organisationId: string, ramsId: string, draft: RamsDraft) {
+    return this.request<{ rams: RamsSummary }>(
+      `/rams/${encodeURIComponent(ramsId)}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PATCH', body: JSON.stringify(draft) },
+    );
+  }
+  async downloadRamsPdf(organisationId: string, ramsId: string): Promise<Blob> {
+    const accessToken = this.auth.session()?.access_token;
+    if (accessToken === undefined) throw new Error('Sign in to continue.');
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}${ramsPdfPath(ramsId, organisationId)}`,
+      {
+        headers: this.authenticatedHeaders(accessToken),
+      },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as
+        { message?: string } | undefined;
+      throw new Error(body?.message ?? 'The RAMS PDF could not be generated.');
+    }
+    return response.blob();
+  }
+  submitRams(organisationId: string, ramsId: string) {
+    return this.request<{ rams: RamsSummary }>(
+      `/rams/${encodeURIComponent(ramsId)}/submit?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST' },
+    );
+  }
+  reviewRams(
+    organisationId: string,
+    ramsId: string,
+    input: { action: 'APPROVE' | 'RETURN'; comment?: string },
+  ) {
+    return this.request<{ rams: RamsSummary }>(
+      `/rams/${encodeURIComponent(ramsId)}/review?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', body: JSON.stringify(input) },
     );
   }
   search(organisationId: string, query: string) {

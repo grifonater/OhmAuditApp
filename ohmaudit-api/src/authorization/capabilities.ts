@@ -7,6 +7,10 @@ export const capabilities = [
   'assets.manage',
   'visits.create',
   'visits.assign',
+  'rams.read',
+  'rams.manage',
+  'rams.review',
+  'rams.approve',
   'inspections.perform',
   'inspections.review',
   'inspections.approve',
@@ -84,6 +88,31 @@ export const capabilityCatalogue: CapabilityDefinition[] = [
     group: 'Jobs',
     name: 'Assign jobs',
     description: 'Assign jobs to engineers and guest engineers.',
+  },
+  {
+    key: 'rams.read',
+    group: 'Jobs',
+    name: 'View RAMS',
+    description: 'View risk assessments and method statements linked to jobs.',
+  },
+  {
+    key: 'rams.manage',
+    group: 'Jobs',
+    name: 'Manage RAMS',
+    description: 'Create, edit and submit RAMS for review.',
+  },
+  {
+    key: 'rams.review',
+    group: 'Jobs',
+    name: 'Review RAMS',
+    description: 'Review submitted RAMS and return them for changes.',
+  },
+  {
+    key: 'rams.approve',
+    group: 'Jobs',
+    name: 'Approve RAMS',
+    description: 'Approve RAMS revisions for use on jobs.',
+    sensitive: true,
   },
   {
     key: 'inspections.perform',
@@ -202,11 +231,13 @@ const readOnly: Capability[] = [
   'customers.read',
   'sites.read',
   'assets.read',
+  'rams.read',
   'ev.assets.read',
   'thermal.equipment.read',
 ];
 const engineer: Capability[] = [
   ...readOnly,
+  'rams.manage',
   'inspections.perform',
   'ev.inspections.perform',
   'thermal.inspections.perform',
@@ -219,6 +250,7 @@ const office: Capability[] = [
   'ev.assets.manage',
   'visits.create',
   'visits.assign',
+  'rams.manage',
   'certificates.generate',
 ];
 
@@ -242,6 +274,8 @@ export const defaultRoles = [
     capabilities: [
       ...office,
       'inspections.review',
+      'rams.review',
+      'rams.approve',
       'inspections.approve',
       'certificates.issue',
       'ev.certificates.issue',
