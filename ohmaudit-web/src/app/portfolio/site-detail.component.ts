@@ -148,6 +148,11 @@ export class SiteDetailComponent {
     serialNumber: new FormControl('', { nonNullable: true }),
     notes: new FormControl('', { nonNullable: true }),
   });
+  protected readonly duplicateSource = signal<AssetSummary | undefined>(undefined);
+  protected readonly duplicateForm = new FormGroup({
+    displayName: new FormControl('', { nonNullable: true, validators: Validators.required }),
+    assetReference: new FormControl('', { nonNullable: true, validators: Validators.required }),
+  });
   constructor() {
     this.destroyRef.onDestroy(() => this.revokeSiteImages());
     void this.load();
@@ -262,6 +267,39 @@ export class SiteDetailComponent {
   protected cancelAssetEdit(): void {
     this.editingAssetId.set(undefined);
     this.assetForm.reset({ assetType: this.evEnabled() ? 'EV Charger' : 'General Asset' });
+  }
+  protected openDuplicate(asset: AssetSummary): void {
+    this.duplicateSource.set(asset);
+    this.duplicateForm.setValue({
+      displayName: asset.displayName,
+      assetReference: asset.assetReference,
+    });
+  }
+  protected closeDuplicate(): void {
+    this.duplicateSource.set(undefined);
+    this.duplicateForm.reset({ displayName: '', assetReference: '' });
+  }
+  protected closeDuplicateOnBackdrop(event: Event): void {
+    if (event.target === event.currentTarget) this.closeDuplicate();
+  }
+  protected async duplicateAsset(): Promise<void> {
+    const source = this.duplicateSource();
+    if (!source || this.duplicateForm.invalid) return;
+    await this.run(async () => {
+      await this.api.createAsset(this.organisationId, {
+        siteId: this.siteId,
+        assetType: source.assetType,
+        assetReference: this.duplicateForm.controls.assetReference.value,
+        displayName: this.duplicateForm.controls.displayName.value,
+        ...(source.manufacturer === undefined ? {} : { manufacturer: source.manufacturer }),
+        ...(source.model === undefined ? {} : { model: source.model }),
+        ...(source.serialNumber === undefined ? {} : { serialNumber: source.serialNumber }),
+        ...(source.notes === undefined ? {} : { notes: source.notes }),
+      });
+      this.closeDuplicate();
+      await this.load();
+      this.error.set('');
+    });
   }
   protected async saveAsset(): Promise<void> {
     const id = this.editingAssetId();

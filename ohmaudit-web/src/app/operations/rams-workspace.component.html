@@ -810,7 +810,12 @@
                                 "
                               >
                                 @for (value of likelihoods; track value) {
-                                  <option [value]="value">{{ value }}</option>
+                                  <option
+                                    [value]="value"
+                                    [selected]="hazard.initialLikelihood === value"
+                                  >
+                                    {{ value }}
+                                  </option>
                                 }
                               </select></label
                             ><label
@@ -822,7 +827,12 @@
                                 "
                               >
                                 @for (value of likelihoods; track value) {
-                                  <option [value]="value">{{ value }}</option>
+                                  <option
+                                    [value]="value"
+                                    [selected]="hazard.initialSeverity === value"
+                                  >
+                                    {{ value }}
+                                  </option>
                                 }
                               </select></label
                             ><strong
@@ -862,7 +872,12 @@
                                 "
                               >
                                 @for (value of likelihoods; track value) {
-                                  <option [value]="value">{{ value }}</option>
+                                  <option
+                                    [value]="value"
+                                    [selected]="hazard.residualLikelihood === value"
+                                  >
+                                    {{ value }}
+                                  </option>
                                 }
                               </select></label
                             ><label
@@ -878,7 +893,12 @@
                                 "
                               >
                                 @for (value of likelihoods; track value) {
-                                  <option [value]="value">{{ value }}</option>
+                                  <option
+                                    [value]="value"
+                                    [selected]="hazard.residualSeverity === value"
+                                  >
+                                    {{ value }}
+                                  </option>
                                 }
                               </select></label
                             ><strong

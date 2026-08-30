@@ -60,6 +60,8 @@ export class RamsLibraryComponent {
   protected readonly templateSourceRamsId = signal('');
   protected readonly templateSourceQuery = signal('');
   protected readonly templateSourceResults = signal<OrganisationRamsSummary[]>([]);
+  protected readonly templateSourceDraftTouched = signal(false);
+  protected readonly templateSourceEditTouched = signal(false);
   protected readonly templateEdits = signal<Record<string, TemplateEdit>>({});
   protected readonly editingTemplateId = signal('');
   protected readonly showGroupCreate = signal(false);
@@ -151,6 +153,35 @@ export class RamsLibraryComponent {
       },
     }));
     this.editingTemplateId.set(template.id);
+    this.templateSourceEditTouched.set(false);
+  }
+
+  protected openTemplateCreate(): void {
+    this.showTemplateCreate.set(true);
+    this.templateSourceDraftTouched.set(false);
+    this.templateSourceQuery.set('');
+    this.templateSourceRamsId.set('');
+    this.templateSourceResults.set([]);
+  }
+
+  protected closeTemplateCreate(): void {
+    this.showTemplateCreate.set(false);
+    this.templateSourceDraftTouched.set(false);
+    this.templateSourceResults.set([]);
+  }
+
+  protected touchTemplateSourceDraft(): void {
+    this.templateSourceDraftTouched.set(true);
+  }
+
+  protected touchTemplateSourceEdit(): void {
+    this.templateSourceEditTouched.set(true);
+  }
+
+  protected closeTemplateEdit(): void {
+    this.editingTemplateId.set('');
+    this.templateSourceEditTouched.set(false);
+    this.templateSourceResults.set([]);
   }
 
   protected updateTemplateEdit(id: string, field: keyof TemplateEdit, value: string): void {
@@ -178,6 +209,8 @@ export class RamsLibraryComponent {
       this.templateDescription.set('');
       this.templateSourceRamsId.set('');
       this.templateSourceQuery.set('');
+      this.templateSourceDraftTouched.set(false);
+      this.templateSourceResults.set([]);
       await this.reloadTemplates();
       this.notice.set('RAMS template created.');
     });
@@ -229,7 +262,7 @@ export class RamsLibraryComponent {
         description: edit.description.trim(),
         data: structuredClone(data),
       });
-      this.editingTemplateId.set('');
+      this.closeTemplateEdit();
       await this.reloadTemplates();
       this.notice.set(replaceContent ? 'Template content replaced.' : 'Template details saved.');
     });
@@ -537,7 +570,7 @@ export class RamsLibraryComponent {
       actionDueDate: '',
       actionStatus: 'OPEN',
       initialLikelihood: 3,
-      initialSeverity: 3,
+      initialSeverity: 5,
       residualLikelihood: 1,
       residualSeverity: 3,
     };

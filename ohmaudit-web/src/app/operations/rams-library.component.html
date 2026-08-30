@@ -67,7 +67,7 @@
         </select>
       </label>
     } @else if (activeTab() === 'templates' && canManage()) {
-      <button class="button primary" type="button" (click)="showTemplateCreate.set(true)">
+      <button class="button primary" type="button" (click)="openTemplateCreate()">
         Create template
       </button>
     } @else if (activeTab() === 'methods' && canManage()) {
@@ -144,11 +144,7 @@
             <h2>Create RAMS template</h2>
             <small>Start blank or optionally copy content from an existing RAMS draft.</small>
           </div>
-          <button
-            class="button ghost compact"
-            type="button"
-            (click)="showTemplateCreate.set(false)"
-          >
+          <button class="button ghost compact" type="button" (click)="closeTemplateCreate()">
             Cancel
           </button>
         </div>
@@ -167,8 +163,9 @@
               placeholder="Search by RAMS, job, client or site"
               [value]="templateSourceQuery()"
               (input)="searchTemplateSources($any($event.target).value)"
+              (focus)="touchTemplateSourceDraft()"
             />
-            @if (templateSourceResults().length) {
+            @if (templateSourceDraftTouched() && templateSourceResults().length) {
               <div class="search-results" role="listbox" aria-label="RAMS search results">
                 @for (item of templateSourceResults(); track item.id) {
                   <button
@@ -243,8 +240,9 @@
                       placeholder="Search RAMS"
                       [value]="templateSourceQuery()"
                       (input)="searchTemplateSources($any($event.target).value)"
+                      (focus)="touchTemplateSourceEdit()"
                     />
-                    @if (templateSourceResults().length) {
+                    @if (templateSourceEditTouched() && templateSourceResults().length) {
                       <div class="search-results" role="listbox">
                         @for (item of templateSourceResults(); track item.id) {
                           <button type="button" (click)="selectTemplateSource(item, template.id)">
@@ -265,11 +263,7 @@
                   </button>
                 </div>
                 <div class="form-actions full">
-                  <button
-                    class="button ghost compact"
-                    type="button"
-                    (click)="editingTemplateId.set('')"
-                  >
+                  <button class="button ghost compact" type="button" (click)="closeTemplateEdit()">
                     Cancel</button
                   ><button
                     class="button primary compact"
@@ -594,7 +588,9 @@
                 (change)="updateNewHazard('initialLikelihood', toNumber($any($event.target).value))"
               >
                 @for (option of likelihoods; track option) {
-                  <option [value]="option">{{ option }}</option>
+                  <option [value]="option" [selected]="newHazard().initialLikelihood === option">
+                    {{ option }}
+                  </option>
                 }
               </select></label
             ><label class="field"
@@ -603,7 +599,9 @@
                 (change)="updateNewHazard('initialSeverity', toNumber($any($event.target).value))"
               >
                 @for (option of severities; track option) {
-                  <option [value]="option">{{ option }}</option>
+                  <option [value]="option" [selected]="newHazard().initialSeverity === option">
+                    {{ option }}
+                  </option>
                 }
               </select></label
             ><label class="field"
@@ -614,7 +612,9 @@
                 "
               >
                 @for (option of likelihoods; track option) {
-                  <option [value]="option">{{ option }}</option>
+                  <option [value]="option" [selected]="newHazard().residualLikelihood === option">
+                    {{ option }}
+                  </option>
                 }
               </select></label
             ><label class="field"
@@ -623,7 +623,9 @@
                 (change)="updateNewHazard('residualSeverity', toNumber($any($event.target).value))"
               >
                 @for (option of severities; track option) {
-                  <option [value]="option">{{ option }}</option>
+                  <option [value]="option" [selected]="newHazard().residualSeverity === option">
+                    {{ option }}
+                  </option>
                 }
               </select></label
             >
@@ -737,7 +739,9 @@
                       "
                     >
                       @for (option of likelihoods; track option) {
-                        <option [value]="option">{{ option }}</option>
+                        <option [value]="option" [selected]="edit.initialLikelihood === option">
+                          {{ option }}
+                        </option>
                       }
                     </select></label
                   ><label class="field"
@@ -752,7 +756,9 @@
                       "
                     >
                       @for (option of severities; track option) {
-                        <option [value]="option">{{ option }}</option>
+                        <option [value]="option" [selected]="edit.initialSeverity === option">
+                          {{ option }}
+                        </option>
                       }
                     </select></label
                   ><label class="field"
@@ -767,7 +773,9 @@
                       "
                     >
                       @for (option of likelihoods; track option) {
-                        <option [value]="option">{{ option }}</option>
+                        <option [value]="option" [selected]="edit.residualLikelihood === option">
+                          {{ option }}
+                        </option>
                       }
                     </select></label
                   ><label class="field"
@@ -782,7 +790,9 @@
                       "
                     >
                       @for (option of severities; track option) {
-                        <option [value]="option">{{ option }}</option>
+                        <option [value]="option" [selected]="edit.residualSeverity === option">
+                          {{ option }}
+                        </option>
                       }
                     </select></label
                   >

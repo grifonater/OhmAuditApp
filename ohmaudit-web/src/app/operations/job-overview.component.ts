@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
@@ -57,6 +64,8 @@ export class JobOverviewComponent {
   protected readonly error = signal('');
   protected readonly notice = signal('');
   protected readonly activeTab = signal<JobTab>('overview');
+  protected readonly jobSitePhotoUrl = signal('');
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly timelineEvents = signal<TimelineEvent[]>([]);
   protected readonly documents = signal<VisitDocument[]>([]);
   protected readonly ramsRecords = signal<RamsSummary[]>([]);
@@ -151,6 +160,10 @@ export class JobOverviewComponent {
   });
 
   constructor() {
+    this.destroyRef.onDestroy(() => {
+      const url = this.jobSitePhotoUrl();
+      if (url) URL.revokeObjectURL(url);
+    });
     void this.load();
   }
 
@@ -373,7 +386,28 @@ export class JobOverviewComponent {
   }
 
   private async loadJob(): Promise<void> {
-    this.job.set((await this.api.getVisit(this.organisationId, this.visitId)).visit);
+    const visit = (await this.api.getVisit(this.organisationId, this.visitId)).visit;
+    this.job.set(visit);
+    void this.loadSitePhoto(visit.site.id);
+  }
+
+  private async loadSitePhoto(siteId: string): Promise<void> {
+    try {
+      const blob = await this.findSitePhoto(siteId);
+      if (!blob) return;
+      const url = this.jobSitePhotoUrl();
+      if (url) URL.revokeObjectURL(url);
+      this.jobSitePhotoUrl.set(URL.createObjectURL(blob));
+    } catch {
+      this.jobSitePhotoUrl.set('');
+    }
+  }
+
+  private async findSitePhoto(siteId: string): Promise<Blob | null> {
+    const site = (await this.api.getSite(this.organisationId, siteId)).site;
+    const media = site.media?.find((item) => item.isPrimary) ?? site.media?.[0];
+    if (!media) return null;
+    return this.api.downloadMedia(this.organisationId, media.id);
   }
 
   private async reloadRams(): Promise<void> {

@@ -25,6 +25,21 @@
   color: white;
   background: linear-gradient(145deg, var(--oa-teal-500), var(--oa-teal-700));
   font-size: 1.8rem;
+  padding: 0.25rem;
+}
+.job-mark svg {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+.job-mark-photo {
+  overflow: hidden;
+  padding: 0;
+}
+.job-mark-photo img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 .job-reference-line,
 .job-meta,
