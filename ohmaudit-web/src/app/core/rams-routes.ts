@@ -11,7 +11,7 @@ export const ramsDetailRoute = {
 export const engineerVisitRoutePath = 'org/:organisationId/visits/:visitId';
 
 export function ramsPdfPath(ramsId: string, organisationId: string): string {
-  return `/rams/${encodeURIComponent(ramsId)}/pdf?organisationId=${encodeURIComponent(organisationId)}`;
+  return `/rams/${encodeURIComponent(ramsId)}/report.pdf?organisationId=${encodeURIComponent(organisationId)}`;
 }
 
 export function ramsPdfFileName(

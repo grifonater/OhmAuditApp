@@ -20,7 +20,7 @@ describe('RAMS routes', () => {
 
   it('builds an encoded RAMS PDF route', () => {
     expect(ramsPdfPath('rams/1', 'org & one')).toBe(
-      '/rams/rams%2F1/pdf?organisationId=org%20%26%20one',
+      '/rams/rams%2F1/report.pdf?organisationId=org%20%26%20one',
     );
   });
 

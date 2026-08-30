@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { authenticate } from './auth/auth.middleware';
@@ -2595,7 +2596,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       rams: await new RamsService(prismaFor(environment)).detail(organisationId, ramsId),
     });
   });
-  app.get('/api/v1/rams/:ramsId/report.pdf', async (context) => {
+  const renderRamsPdf = async (context: Context<AppEnvironment>) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
     const ramsId = z.uuid().parse(context.req.param('ramsId'));
@@ -2639,7 +2640,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       status: rendered.status,
       headers,
     });
-  });
+  };
+  app.get('/api/v1/rams/:ramsId/report.pdf', renderRamsPdf);
+  app.get('/api/v1/rams/:ramsId/pdf', renderRamsPdf);
   app.patch('/api/v1/rams/:ramsId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
