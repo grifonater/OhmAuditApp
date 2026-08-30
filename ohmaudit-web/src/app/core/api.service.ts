@@ -575,6 +575,31 @@ export interface RamsSummary {
   reviewedBy?: RamsPerson | null;
   approvedBy?: RamsPerson | null;
 }
+export interface OrganisationRamsSummary extends RamsSummary {
+  visit: {
+    id: string;
+    reference?: string | null;
+    title: string;
+    customer: { name: string };
+    site: { name: string };
+  };
+}
+export interface RamsTemplate {
+  id: string;
+  name: string;
+  description: string;
+  data: RamsDraft;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface RamsMethodGroup {
+  id: string;
+  name: string;
+  description: string;
+  steps: RamsMethodStep[];
+  createdAt: string;
+  updatedAt: string;
+}
 export interface RamsDetail extends RamsSummary {
   draftData: RamsDraft;
   visit: {
@@ -1364,6 +1389,71 @@ export class ApiService {
   listVisitRams(organisationId: string, visitId: string) {
     return this.request<{ rams: RamsSummary[] }>(
       `/visits/${encodeURIComponent(visitId)}/rams?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  listRams(organisationId: string) {
+    return this.request<{ rams: OrganisationRamsSummary[] }>(
+      `/rams?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  listRamsTemplates(organisationId: string) {
+    return this.request<{ templates: RamsTemplate[] }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-templates`,
+    );
+  }
+  createRamsTemplate(
+    organisationId: string,
+    input: { name: string; description: string; data: RamsDraft },
+  ) {
+    return this.request<{ template: RamsTemplate }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-templates`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  updateRamsTemplate(
+    organisationId: string,
+    templateId: string,
+    input: { name: string; description: string; data: RamsDraft },
+  ) {
+    return this.request<{ template: RamsTemplate }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-templates/${encodeURIComponent(templateId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    );
+  }
+  deleteRamsTemplate(organisationId: string, templateId: string) {
+    return this.request(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-templates/${encodeURIComponent(templateId)}`,
+      { method: 'DELETE' },
+    );
+  }
+  listRamsMethodGroups(organisationId: string) {
+    return this.request<{ groups: RamsMethodGroup[] }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-method-groups`,
+    );
+  }
+  createRamsMethodGroup(
+    organisationId: string,
+    input: { name: string; description: string; steps: RamsMethodStep[] },
+  ) {
+    return this.request<{ group: RamsMethodGroup }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-method-groups`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  updateRamsMethodGroup(
+    organisationId: string,
+    groupId: string,
+    input: { name: string; description: string; steps: RamsMethodStep[] },
+  ) {
+    return this.request<{ group: RamsMethodGroup }>(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-method-groups/${encodeURIComponent(groupId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    );
+  }
+  deleteRamsMethodGroup(organisationId: string, groupId: string) {
+    return this.request(
+      `/organisations/${encodeURIComponent(organisationId)}/rams-method-groups/${encodeURIComponent(groupId)}`,
+      { method: 'DELETE' },
     );
   }
   createVisitRams(organisationId: string, visitId: string) {

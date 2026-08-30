@@ -3,6 +3,7 @@ import {
   engineerVisitRoutePath,
   ramsCreateRoute,
   ramsDetailRoute,
+  ramsLibraryRoute,
   ramsPdfFileName,
   ramsPdfPath,
 } from '../src/app/core/rams-routes';
@@ -11,6 +12,11 @@ describe('RAMS routes', () => {
   it('guards RAMS creation and reading with their dedicated capabilities', () => {
     expect(ramsCreateRoute.capabilities).toEqual(['rams.manage']);
     expect(ramsDetailRoute.capabilities).toEqual(['rams.read']);
+    expect(ramsLibraryRoute.capabilities).toEqual(['rams.read']);
+  });
+
+  it('keeps the library at organisation scope', () => {
+    expect(ramsLibraryRoute.path).toBe('org/:organisationId/rams');
   });
 
   it('keeps RAMS routes nested under their job', () => {

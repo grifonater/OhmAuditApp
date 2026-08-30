@@ -1,0 +1,539 @@
+<main class="page operations-page library-page">
+  <header class="page-header library-header">
+    <div>
+      <p class="eyebrow">Field operations</p>
+      <h1>RAMS library</h1>
+      <p>Find live RAMS and maintain reusable content for consistent, safe job planning.</p>
+    </div>
+    <a class="button secondary" [routerLink]="['/app/org', organisationId, 'visits']">View jobs</a>
+  </header>
+
+  <nav class="library-tabs" role="tablist" aria-label="RAMS library sections">
+    <button
+      type="button"
+      role="tab"
+      [class.active]="activeTab() === 'all'"
+      (click)="switchTab('all')"
+    >
+      All RAMS <span>{{ rams().length }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [class.active]="activeTab() === 'templates'"
+      (click)="switchTab('templates')"
+    >
+      RAMS templates <span>{{ templates().length }}</span>
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [class.active]="activeTab() === 'methods'"
+      (click)="switchTab('methods')"
+    >
+      Method statements <span>{{ groups().length }}</span>
+    </button>
+  </nav>
+
+  <section class="library-toolbar">
+    <label class="search-control">
+      <span aria-hidden="true">S</span>
+      <input
+        type="search"
+        [value]="query()"
+        (input)="query.set($any($event.target).value)"
+        [placeholder]="
+          activeTab() === 'all' ? 'Search RAMS, job, client or site' : 'Search reusable content'
+        "
+      />
+    </label>
+    @if (activeTab() === 'all') {
+      <label class="status-filter"
+        >Status
+        <select [value]="status()" (change)="status.set($any($event.target).value)">
+          <option value="ALL">All statuses</option>
+          <option value="DRAFT">Draft</option>
+          <option value="UNDER_REVIEW">Under review</option>
+          <option value="APPROVED">Approved</option>
+          <option value="RETURNED">Returned</option>
+        </select>
+      </label>
+    } @else if (activeTab() === 'templates' && canManage()) {
+      <button class="button primary" type="button" (click)="showTemplateCreate.set(true)">
+        Create template
+      </button>
+    } @else if (activeTab() === 'methods' && canManage()) {
+      <button class="button primary" type="button" (click)="showGroupCreate.set(true)">
+        Create method group
+      </button>
+    }
+  </section>
+
+  @if (notice()) {
+    <div class="notice" role="status">{{ notice() }}</div>
+  }
+
+  @if (activeTab() === 'all') {
+    <section class="library-list" aria-label="All RAMS">
+      @for (item of filteredRams(); track item.id) {
+        <article class="card library-record">
+          <span class="document-mark">RA</span>
+          <div class="library-copy">
+            <div class="record-title">
+              <strong>{{ item.title || item.visit.title }}</strong
+              ><span
+                class="badge"
+                [class.success]="item.status === 'APPROVED'"
+                [class.warning]="item.status === 'UNDER_REVIEW'"
+                >{{ statusLabel(item.status) }}</span
+              >
+            </div>
+            <p>{{ item.visit.customer.name }} <span>/</span> {{ item.visit.site.name }}</p>
+            <small
+              >{{ item.reference }} / {{ item.visit.reference || item.visit.title }} / Updated
+              {{ formatDate(item.updatedAt) }}</small
+            >
+          </div>
+          <a
+            class="button secondary compact"
+            [routerLink]="['/app/org', organisationId, 'visits', item.visit.id, 'rams', item.id]"
+            >Open RAMS</a
+          >
+        </article>
+      } @empty {
+        <div class="card library-empty">
+          <h2>No RAMS found</h2>
+          <p>Adjust the search or status filter, or create RAMS from a job.</p>
+          <a class="button primary" [routerLink]="['/app/org', organisationId, 'visits']"
+            >Go to jobs</a
+          >
+        </div>
+      }
+    </section>
+  }
+
+  @if (activeTab() === 'templates') {
+    @if (showTemplateCreate()) {
+      <section class="card editor-card compact-editor">
+        <div class="card-header">
+          <div>
+            <h2>Create RAMS template</h2>
+            <small>Copy content from an existing RAMS draft.</small>
+          </div>
+          <button
+            class="button ghost compact"
+            type="button"
+            (click)="showTemplateCreate.set(false)"
+          >
+            Cancel
+          </button>
+        </div>
+        <div class="card-body editor-grid">
+          <label class="field"
+            >Template name *<input
+              [value]="templateName()"
+              (input)="templateName.set($any($event.target).value)"
+          /></label>
+          <label class="field"
+            >Source RAMS *<select
+              [value]="templateSourceRamsId()"
+              (change)="templateSourceRamsId.set($any($event.target).value)"
+            >
+              <option value="">Choose RAMS</option>
+              @for (item of rams(); track item.id) {
+                <option [value]="item.id">
+                  {{ item.reference }} / {{ item.title || item.visit.title }}
+                </option>
+              }
+            </select></label
+          >
+          <label class="field full"
+            >Description<textarea
+              rows="3"
+              [value]="templateDescription()"
+              (input)="templateDescription.set($any($event.target).value)"
+            ></textarea>
+          </label>
+          <div class="form-actions full">
+            <button
+              class="button primary"
+              type="button"
+              [disabled]="busy() || !templateName().trim() || !templateSourceRamsId()"
+              (click)="createTemplate()"
+            >
+              Create template
+            </button>
+          </div>
+        </div>
+      </section>
+    }
+    <section class="library-list" aria-label="RAMS templates">
+      @for (template of filteredTemplates(); track template.id) {
+        <article class="card reusable-card">
+          <div class="reusable-heading">
+            <span class="document-mark template">T</span>
+            <div>
+              <strong>{{ template.name }}</strong>
+              <p>{{ template.description || 'No description' }}</p>
+              <small>Updated {{ formatDate(template.updatedAt) }}</small>
+            </div>
+          </div>
+          @if (editingTemplateId() === template.id) {
+            @if (templateEdits()[template.id]; as edit) {
+              <div class="inline-editor editor-grid">
+                <label class="field"
+                  >Name *<input
+                    [value]="edit.name"
+                    (input)="updateTemplateEdit(template.id, 'name', $any($event.target).value)"
+                /></label>
+                <label class="field full"
+                  >Description<textarea
+                    rows="2"
+                    [value]="edit.description"
+                    (input)="
+                      updateTemplateEdit(template.id, 'description', $any($event.target).value)
+                    "
+                  ></textarea>
+                </label>
+                <div class="replace-row full">
+                  <label class="field"
+                    >Replace content from RAMS<select
+                      [value]="edit.sourceRamsId"
+                      (change)="
+                        updateTemplateEdit(template.id, 'sourceRamsId', $any($event.target).value)
+                      "
+                    >
+                      <option value="">Choose RAMS</option>
+                      @for (item of rams(); track item.id) {
+                        <option [value]="item.id">
+                          {{ item.reference }} / {{ item.title || item.visit.title }}
+                        </option>
+                      }
+                    </select></label
+                  ><button
+                    class="button secondary compact"
+                    type="button"
+                    [disabled]="busy() || !edit.sourceRamsId"
+                    (click)="saveTemplate(template, true)"
+                  >
+                    Replace content
+                  </button>
+                </div>
+                <div class="form-actions full">
+                  <button
+                    class="button ghost compact"
+                    type="button"
+                    (click)="editingTemplateId.set('')"
+                  >
+                    Cancel</button
+                  ><button
+                    class="button primary compact"
+                    type="button"
+                    [disabled]="busy() || !edit.name.trim()"
+                    (click)="saveTemplate(template, false)"
+                  >
+                    Save details
+                  </button>
+                </div>
+              </div>
+            }
+          } @else {
+            <div class="card-actions">
+              <a
+                class="button primary compact"
+                [routerLink]="['/app/org', organisationId, 'visits']"
+                [queryParams]="{ ramsTemplateId: template.id }"
+                >Apply to job</a
+              >
+              @if (canManage()) {
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  (click)="startTemplateEdit(template)"
+                >
+                  Edit</button
+                ><button
+                  class="button danger compact"
+                  type="button"
+                  (click)="archiveTemplate(template)"
+                >
+                  Archive
+                </button>
+              }
+            </div>
+          }
+        </article>
+      } @empty {
+        <div class="card library-empty">
+          <h2>No templates found</h2>
+          <p>Create one from an existing RAMS draft to reuse approved planning content.</p>
+        </div>
+      }
+    </section>
+  }
+
+  @if (activeTab() === 'methods') {
+    @if (showGroupCreate()) {
+      <section class="card editor-card">
+        <div class="card-header">
+          <div>
+            <h2>Create method statement group</h2>
+            <small>Build a reusable ordered safe work sequence.</small>
+          </div>
+          <button class="button ghost compact" type="button" (click)="showGroupCreate.set(false)">
+            Cancel
+          </button>
+        </div>
+        <div class="card-body group-editor">
+          <div class="editor-grid">
+            <label class="field"
+              >Group name *<input
+                [value]="newGroup().name"
+                (input)="updateNewGroup('name', $any($event.target).value)" /></label
+            ><label class="field full"
+              >Description<textarea
+                rows="2"
+                [value]="newGroup().description"
+                (input)="updateNewGroup('description', $any($event.target).value)"
+              ></textarea>
+            </label>
+          </div>
+          @for (step of newGroup().steps; track step.id) {
+            <div class="group-step">
+              <span class="step-number">{{ $index + 1 }}</span>
+              <div class="step-fields">
+                <input
+                  placeholder="Step title *"
+                  [value]="step.title"
+                  (input)="updateGroupStep($index, 'title', $any($event.target).value)"
+                /><textarea
+                  rows="2"
+                  placeholder="Detailed safe method *"
+                  [value]="step.detail"
+                  (input)="updateGroupStep($index, 'detail', $any($event.target).value)"
+                ></textarea
+                ><input
+                  placeholder="Responsibility *"
+                  [value]="step.responsibility"
+                  (input)="updateGroupStep($index, 'responsibility', $any($event.target).value)"
+                /><label
+                  >Minutes<input
+                    type="number"
+                    min="0"
+                    [value]="step.estimatedMinutes"
+                    (input)="
+                      updateGroupStep($index, 'estimatedMinutes', $any($event.target).value)
+                    " /></label
+                ><label class="check-field"
+                  ><input
+                    type="checkbox"
+                    [checked]="step.required"
+                    (change)="updateGroupStep($index, 'required', $any($event.target).checked)"
+                  />
+                  Required</label
+                >
+              </div>
+              <div class="step-actions">
+                <button type="button" [disabled]="$first" (click)="moveGroupStep($index, -1)">
+                  Up</button
+                ><button type="button" [disabled]="$last" (click)="moveGroupStep($index, 1)">
+                  Down</button
+                ><button type="button" (click)="removeGroupStep($index)">Remove</button>
+              </div>
+            </div>
+          }
+          <div class="group-footer">
+            <button
+              class="button secondary compact"
+              type="button"
+              [disabled]="newGroup().steps.length >= 200"
+              (click)="addGroupStep()"
+            >
+              Add step</button
+            ><button
+              class="button primary"
+              type="button"
+              [disabled]="busy() || !newGroup().name.trim() || !newGroup().steps.length"
+              (click)="createGroup()"
+            >
+              Create group
+            </button>
+          </div>
+        </div>
+      </section>
+    }
+    <section class="library-list" aria-label="Method statement groups">
+      @for (group of filteredGroups(); track group.id) {
+        <article class="card reusable-card method-card">
+          <div class="reusable-heading">
+            <span class="document-mark method">MS</span>
+            <div>
+              <strong>{{ group.name }}</strong>
+              <p>{{ group.description || 'No description' }}</p>
+              <small>{{ group.steps.length }} steps / {{ formatDate(group.updatedAt) }}</small>
+            </div>
+          </div>
+          @if (editingGroupId() === group.id) {
+            @if (groupEdits()[group.id]; as edit) {
+              <div class="inline-editor group-editor">
+                <div class="editor-grid">
+                  <label class="field"
+                    >Group name *<input
+                      [value]="edit.name"
+                      (input)="updateGroup(group.id, 'name', $any($event.target).value)" /></label
+                  ><label class="field full"
+                    >Description<textarea
+                      rows="2"
+                      [value]="edit.description"
+                      (input)="updateGroup(group.id, 'description', $any($event.target).value)"
+                    ></textarea>
+                  </label>
+                </div>
+                @for (step of edit.steps; track step.id) {
+                  <div class="group-step">
+                    <span class="step-number">{{ $index + 1 }}</span>
+                    <div class="step-fields">
+                      <input
+                        placeholder="Step title *"
+                        [value]="step.title"
+                        (input)="
+                          updateGroupStep($index, 'title', $any($event.target).value, group.id)
+                        "
+                      /><textarea
+                        rows="2"
+                        placeholder="Detailed safe method *"
+                        [value]="step.detail"
+                        (input)="
+                          updateGroupStep($index, 'detail', $any($event.target).value, group.id)
+                        "
+                      ></textarea
+                      ><input
+                        placeholder="Responsibility *"
+                        [value]="step.responsibility"
+                        (input)="
+                          updateGroupStep(
+                            $index,
+                            'responsibility',
+                            $any($event.target).value,
+                            group.id
+                          )
+                        "
+                      /><label
+                        >Minutes<input
+                          type="number"
+                          min="0"
+                          [value]="step.estimatedMinutes"
+                          (input)="
+                            updateGroupStep(
+                              $index,
+                              'estimatedMinutes',
+                              $any($event.target).value,
+                              group.id
+                            )
+                          " /></label
+                      ><label class="check-field"
+                        ><input
+                          type="checkbox"
+                          [checked]="step.required"
+                          (change)="
+                            updateGroupStep(
+                              $index,
+                              'required',
+                              $any($event.target).checked,
+                              group.id
+                            )
+                          "
+                        />
+                        Required</label
+                      >
+                    </div>
+                    <div class="step-actions">
+                      <button
+                        type="button"
+                        [disabled]="$first"
+                        (click)="moveGroupStep($index, -1, group.id)"
+                      >
+                        Up</button
+                      ><button
+                        type="button"
+                        [disabled]="$last"
+                        (click)="moveGroupStep($index, 1, group.id)"
+                      >
+                        Down</button
+                      ><button type="button" (click)="removeGroupStep($index, group.id)">
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                }
+                <div class="group-footer">
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    [disabled]="edit.steps.length >= 200"
+                    (click)="addGroupStep(group.id)"
+                  >
+                    Add step</button
+                  ><span></span
+                  ><button
+                    class="button ghost compact"
+                    type="button"
+                    (click)="editingGroupId.set('')"
+                  >
+                    Cancel</button
+                  ><button
+                    class="button primary compact"
+                    type="button"
+                    [disabled]="busy() || !edit.name.trim() || !edit.steps.length"
+                    (click)="saveGroup(group)"
+                  >
+                    Save group
+                  </button>
+                </div>
+              </div>
+            }
+          } @else {
+            <ol class="method-preview">
+              @for (step of group.steps.slice(0, 3); track step.id) {
+                <li>
+                  <strong>{{ step.title }}</strong
+                  ><span
+                    >{{ step.responsibility
+                    }}{{
+                      step.estimatedMinutes ? ' / ' + step.estimatedMinutes + ' min' : ''
+                    }}</span
+                  >
+                </li>
+              }
+              @if (group.steps.length > 3) {
+                <li class="more">+ {{ group.steps.length - 3 }} more steps</li>
+              }
+            </ol>
+            @if (canManage()) {
+              <div class="card-actions">
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  (click)="startGroupEdit(group)"
+                >
+                  Edit group</button
+                ><button class="button danger compact" type="button" (click)="archiveGroup(group)">
+                  Archive
+                </button>
+              </div>
+            }
+          }
+        </article>
+      } @empty {
+        <div class="card library-empty">
+          <h2>No method groups found</h2>
+          <p>Create a reusable sequence to append to RAMS method statements.</p>
+        </div>
+      }
+    </section>
+  }
+
+  @if (error()) {
+    <p class="error floating-error" role="alert">{{ error() }}</p>
+  }
+</main>

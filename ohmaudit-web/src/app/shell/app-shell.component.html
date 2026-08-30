@@ -45,6 +45,11 @@
             <span class="nav-icon">✓</span><span>Inspections</span>
           </a>
         }
+        @if (hasCapability('rams.read')) {
+          <a [routerLink]="organisationLink('/rams')" routerLinkActive="active">
+            <span class="nav-icon">R</span><span>RAMS library</span>
+          </a>
+        }
         <span class="nav-item disabled"
           ><span class="nav-icon">≡</span><span>Documents</span><small>Soon</small></span
         >

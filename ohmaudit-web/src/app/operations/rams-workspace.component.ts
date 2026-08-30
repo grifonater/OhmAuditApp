@@ -1,6 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ApiService, type RamsDetail, type RamsDraft, type RamsHazard } from '../core/api.service';
+import {
+  ApiService,
+  type RamsDetail,
+  type RamsDraft,
+  type RamsHazard,
+  type RamsMethodGroup,
+  type RamsTemplate,
+} from '../core/api.service';
+import { applyRamsTemplate, cloneMethodSteps, hasReplaceableRamsWork } from '../core/rams-library';
 import { ramsPdfFileName } from '../core/rams-routes';
 
 type RamsTab = 'overview' | 'scope' | 'method' | 'risk' | 'requirements' | 'supporting' | 'review';
@@ -40,6 +48,12 @@ export class RamsWorkspaceComponent {
   protected readonly notice = signal('');
   protected readonly reviewComment = signal('');
   protected readonly savedAt = signal<Date | undefined>(undefined);
+  protected readonly templates = signal<RamsTemplate[]>([]);
+  protected readonly methodGroups = signal<RamsMethodGroup[]>([]);
+  protected readonly templateQuery = signal('');
+  protected readonly methodGroupQuery = signal('');
+  protected readonly selectedTemplateId = signal('');
+  protected readonly selectedMethodGroupId = signal('');
   protected readonly tabs: Array<{ key: RamsTab; label: string; number: number }> = [
     { key: 'overview', label: 'Overview', number: 1 },
     { key: 'scope', label: 'Scope', number: 2 },
@@ -103,6 +117,25 @@ export class RamsWorkspaceComponent {
   protected readonly editable = computed(() => {
     const status = this.rams()?.status;
     return this.canManage() && (status === 'DRAFT' || status === 'RETURNED');
+  });
+  protected readonly filteredTemplates = computed(() => {
+    const query = this.templateQuery().trim().toLocaleLowerCase('en-GB');
+    return this.templates().filter(
+      (template) =>
+        !query ||
+        template.name.toLocaleLowerCase('en-GB').includes(query) ||
+        template.description.toLocaleLowerCase('en-GB').includes(query),
+    );
+  });
+  protected readonly filteredMethodGroups = computed(() => {
+    const query = this.methodGroupQuery().trim().toLocaleLowerCase('en-GB');
+    return this.methodGroups().filter(
+      (group) =>
+        !query ||
+        group.name.toLocaleLowerCase('en-GB').includes(query) ||
+        group.description.toLocaleLowerCase('en-GB').includes(query) ||
+        group.steps.some((step) => step.title.toLocaleLowerCase('en-GB').includes(query)),
+    );
   });
   protected readonly sectionCompletion = computed<Record<RamsTab, boolean>>(() => {
     const draft = this.draft();
@@ -200,6 +233,47 @@ export class RamsWorkspaceComponent {
     const current = this.tabs.findIndex(({ key }) => key === this.activeTab());
     const next = this.tabs[Math.max(0, Math.min(this.tabs.length - 1, current + offset))];
     if (next) this.switchTab(next.key);
+  }
+
+  protected applyTemplate(): void {
+    const current = this.draft();
+    const template = this.templates().find(({ id }) => id === this.selectedTemplateId());
+    if (!current || !template || !this.editable()) return;
+    if (
+      hasReplaceableRamsWork(current) &&
+      !confirm(
+        `Replace the reusable content in this RAMS with "${template.name}"? Job and site details will be preserved.`,
+      )
+    )
+      return;
+    this.draft.set(applyRamsTemplate(current, template.data, () => crypto.randomUUID()));
+    this.notice.set(`Applied "${template.name}". Save the draft to keep this change.`);
+  }
+
+  protected applyMethodGroup(mode: 'APPEND' | 'REPLACE'): void {
+    const group = this.methodGroups().find(({ id }) => id === this.selectedMethodGroupId());
+    const current = this.draft();
+    if (!group || !current || !this.editable()) return;
+    const existing = current.methodStatement.steps.length;
+    if (mode === 'APPEND' && existing + group.steps.length > 200) {
+      this.error.set('Method statements can contain no more than 200 steps.');
+      return;
+    }
+    if (
+      mode === 'REPLACE' &&
+      existing > 0 &&
+      !confirm(`Replace all method steps with "${group.name}"?`)
+    )
+      return;
+    this.mutate((draft) => {
+      const steps = cloneMethodSteps(group.steps.slice(0, 200), () => crypto.randomUUID());
+      draft.methodStatement.steps =
+        mode === 'REPLACE' ? steps : [...draft.methodStatement.steps, ...steps];
+    });
+    this.error.set('');
+    this.notice.set(
+      `${mode === 'REPLACE' ? 'Replaced' : 'Appended'} method steps from "${group.name}". Save the draft to keep this change.`,
+    );
   }
 
   protected updateOverview(field: keyof RamsDraft['overview'], value: string): void {
@@ -623,7 +697,13 @@ export class RamsWorkspaceComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const account = await this.api.currentUser();
+      const [account, templates, groups] = await Promise.all([
+        this.api.currentUser(),
+        this.api.listRamsTemplates(this.organisationId),
+        this.api.listRamsMethodGroups(this.organisationId),
+      ]);
+      this.templates.set(templates.templates);
+      this.methodGroups.set(groups.groups);
       this.capabilities.set(
         account.memberships.find(({ organisation }) => organisation.id === this.organisationId)
           ?.role.capabilities ?? [],

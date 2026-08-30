@@ -1,5 +1,5 @@
 import type { Routes } from '@angular/router';
-import { ramsCreateRoute, ramsDetailRoute } from './core/rams-routes';
+import { ramsCreateRoute, ramsDetailRoute, ramsLibraryRoute } from './core/rams-routes';
 import { authGuard } from './core/auth.guard';
 import { authorizationGuard } from './core/authorization.guard';
 
@@ -172,6 +172,15 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./operations/thermal-inspection.component').then(
             (module) => module.ThermalInspectionComponent,
+          ),
+      },
+      {
+        path: ramsLibraryRoute.path,
+        canActivate: [authorizationGuard],
+        data: { capabilities: [...ramsLibraryRoute.capabilities] },
+        loadComponent: () =>
+          import('./operations/rams-library.component').then(
+            (module) => module.RamsLibraryComponent,
           ),
       },
       {

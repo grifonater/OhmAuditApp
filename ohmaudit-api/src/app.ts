@@ -24,6 +24,7 @@ import { InstructionService } from './platform/instruction.service';
 import { EquipmentService } from './equipment/equipment.service';
 import { JobCategoryService } from './jobs/job-category.service';
 import { RamsService } from './rams/rams.service';
+import { RamsLibraryService } from './rams/rams-library.service';
 import { DomainError } from './shared/domain-error';
 import type { ApiBindings } from './shared/environment';
 import { parseEnvironment } from './shared/environment';
@@ -377,6 +378,14 @@ const ramsNamedReferenceInput = z.object({
   name: ramsDraftRowText(500),
   reference: ramsDraftRowText(2000),
 });
+const ramsMethodStepInput = z.object({
+  id: ramsDraftRowText(100),
+  title: ramsDraftRowText(2000),
+  required: z.boolean(),
+  detail: z.string().max(10000).optional().default(''),
+  responsibility: ramsDraftRowText(500).optional().default(''),
+  estimatedMinutes: z.number().int().min(0).max(100000).optional().default(0),
+});
 const ramsDraftInput = z.object({
   schemaVersion: z.literal(2).optional().default(2),
   overview: z.object({
@@ -410,18 +419,7 @@ const ramsDraftInput = z.object({
       .default([]),
   }),
   methodStatement: z.object({
-    steps: z
-      .array(
-        z.object({
-          id: ramsDraftRowText(100),
-          title: ramsDraftRowText(2000),
-          required: z.boolean(),
-          detail: z.string().max(10000).optional().default(''),
-          responsibility: ramsDraftRowText(500).optional().default(''),
-          estimatedMinutes: z.number().int().min(0).max(100000).optional().default(0),
-        }),
-      )
-      .max(200),
+    steps: z.array(ramsMethodStepInput).max(200),
   }),
   riskAssessment: z.object({
     hazards: z
@@ -517,6 +515,25 @@ const ramsDraftInput = z.object({
     revisionReason: z.string().max(5000).optional().default(''),
     changeSummary: z.string().max(5000).optional().default(''),
   }),
+});
+const ramsTemplateInput = z.object({
+  name: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(5000).default(''),
+  data: ramsDraftInput,
+});
+const ramsMethodGroupInput = z.object({
+  name: z.string().trim().min(2).max(160),
+  description: z.string().trim().max(5000).default(''),
+  steps: z
+    .array(
+      ramsMethodStepInput.extend({
+        title: z.string().trim().min(1).max(2000),
+        detail: z.string().trim().min(1).max(10000),
+        responsibility: z.string().trim().min(1).max(500),
+      }),
+    )
+    .min(1)
+    .max(200),
 });
 const ramsReviewInput = z.object({
   action: z.enum(['APPROVE', 'RETURN']),
@@ -2583,6 +2600,167 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       201,
     );
   });
+  app.get('/api/v1/rams', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      rams: await new RamsService(prismaFor(environment)).listOrganisation(organisationId),
+    });
+  });
+  app.get('/api/v1/organisations/:organisationId/rams-templates', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      templates: await new RamsLibraryService(prismaFor(environment)).listTemplates(organisationId),
+    });
+  });
+  app.post('/api/v1/organisations/:organisationId/rams-templates', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const input = ramsTemplateInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json(
+      {
+        template: await new RamsLibraryService(prismaFor(environment)).createTemplate(
+          organisationId,
+          user.id,
+          context.get('correlationId'),
+          input,
+        ),
+      },
+      201,
+    );
+  });
+  app.patch('/api/v1/organisations/:organisationId/rams-templates/:templateId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const templateId = z.uuid().parse(context.req.param('templateId'));
+    const input = ramsTemplateInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json({
+      template: await new RamsLibraryService(prismaFor(environment)).updateTemplate(
+        organisationId,
+        templateId,
+        user.id,
+        context.get('correlationId'),
+        input,
+      ),
+    });
+  });
+  app.delete(
+    '/api/v1/organisations/:organisationId/rams-templates/:templateId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.param('organisationId'));
+      const templateId = z.uuid().parse(context.req.param('templateId'));
+      const { user } = await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'rams.manage',
+      );
+      await new RamsLibraryService(prismaFor(environment)).archiveTemplate(
+        organisationId,
+        templateId,
+        user.id,
+        context.get('correlationId'),
+      );
+      return context.body(null, 204);
+    },
+  );
+  app.get('/api/v1/organisations/:organisationId/rams-method-groups', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.read',
+    );
+    return context.json({
+      groups: await new RamsLibraryService(prismaFor(environment)).listMethodGroups(organisationId),
+    });
+  });
+  app.post('/api/v1/organisations/:organisationId/rams-method-groups', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.param('organisationId'));
+    const input = ramsMethodGroupInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    return context.json(
+      {
+        group: await new RamsLibraryService(prismaFor(environment)).createMethodGroup(
+          organisationId,
+          user.id,
+          context.get('correlationId'),
+          input,
+        ),
+      },
+      201,
+    );
+  });
+  app.patch(
+    '/api/v1/organisations/:organisationId/rams-method-groups/:groupId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.param('organisationId'));
+      const groupId = z.uuid().parse(context.req.param('groupId'));
+      const input = ramsMethodGroupInput.parse(await context.req.json());
+      const { user } = await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'rams.manage',
+      );
+      return context.json({
+        group: await new RamsLibraryService(prismaFor(environment)).updateMethodGroup(
+          organisationId,
+          groupId,
+          user.id,
+          context.get('correlationId'),
+          input,
+        ),
+      });
+    },
+  );
+  app.delete(
+    '/api/v1/organisations/:organisationId/rams-method-groups/:groupId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.param('organisationId'));
+      const groupId = z.uuid().parse(context.req.param('groupId'));
+      const { user } = await identityService(environment, options).requireMembership(
+        context.get('actor'),
+        organisationId,
+        'rams.manage',
+      );
+      await new RamsLibraryService(prismaFor(environment)).archiveMethodGroup(
+        organisationId,
+        groupId,
+        user.id,
+        context.get('correlationId'),
+      );
+      return context.body(null, 204);
+    },
+  );
   app.get('/api/v1/rams/:ramsId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));

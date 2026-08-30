@@ -179,6 +179,33 @@ dd {
   display: grid;
   gap: 0.7rem;
 }
+.reusable-content-panel {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(30rem, 1.5fr);
+  align-items: end;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-color: #bfd2ef;
+  background: linear-gradient(135deg, #fff, var(--oa-teal-50));
+}
+.reusable-panel-copy h2 {
+  margin: 0.2rem 0;
+  color: var(--oa-navy-950);
+  font-size: 0.9rem;
+}
+.reusable-panel-copy small {
+  display: block;
+  color: var(--oa-ink-muted);
+  line-height: 1.45;
+}
+.reusable-picker {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(12rem, 1fr) auto;
+  gap: 0.45rem;
+}
+.method-picker {
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(12rem, 1fr) auto auto;
+}
 .workspace-aside {
   position: sticky;
   top: 5.4rem;
@@ -776,6 +803,9 @@ dd {
   }
 }
 @media (max-width: 68rem) {
+  .reusable-content-panel {
+    grid-template-columns: 1fr;
+  }
   .workspace-layout {
     grid-template-columns: 1fr;
   }
@@ -791,6 +821,10 @@ dd {
   }
 }
 @media (max-width: 48rem) {
+  .reusable-picker,
+  .method-picker {
+    grid-template-columns: 1fr;
+  }
   .rams-toolbar {
     align-items: flex-start;
     flex-direction: column;

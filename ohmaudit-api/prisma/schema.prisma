@@ -220,6 +220,8 @@ model Organisation {
   supportSessions              PlatformSupportSession[]
   rams                         Rams[]
   ramsRevisions                RamsRevision[]
+  ramsTemplates                RamsTemplate[]
+  ramsMethodStatementGroups    RamsMethodStatementGroup[]
 
   @@map("organisations")
 }
@@ -720,6 +722,40 @@ model RamsRevision {
   @@unique([ramsId, revisionNumber])
   @@index([organisationId, createdAt])
   @@map("rams_revisions")
+}
+
+model RamsTemplate {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  name           String
+  normalisedName String       @map("normalised_name")
+  description    String       @default("")
+  data           Json
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, normalisedName])
+  @@index([organisationId, status, name])
+  @@map("rams_templates")
+}
+
+model RamsMethodStatementGroup {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  name           String
+  normalisedName String       @map("normalised_name")
+  description    String       @default("")
+  steps          Json
+  status         RecordStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, normalisedName])
+  @@index([organisationId, status, name])
+  @@map("rams_method_statement_groups")
 }
 
 model JobCategory {

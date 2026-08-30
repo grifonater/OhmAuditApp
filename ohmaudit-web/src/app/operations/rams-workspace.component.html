@@ -124,6 +124,46 @@
       <div class="workspace-layout">
         <section class="workspace-main">
           @if (activeTab() === 'overview') {
+            <article class="card reusable-content-panel">
+              <div class="reusable-panel-copy">
+                <p class="eyebrow">Reusable content</p>
+                <h2>Apply a RAMS template</h2>
+                <small
+                  >Replaces reusable planning content while preserving this job's title, category,
+                  dates, work areas, responsibilities, PPE, emergency, access, permit and review
+                  details.</small
+                >
+              </div>
+              <div class="reusable-picker">
+                <input
+                  type="search"
+                  placeholder="Search templates"
+                  [value]="templateQuery()"
+                  [disabled]="!editable()"
+                  (input)="templateQuery.set($any($event.target).value)"
+                  aria-label="Search RAMS templates"
+                />
+                <select
+                  [value]="selectedTemplateId()"
+                  [disabled]="!editable()"
+                  (change)="selectedTemplateId.set($any($event.target).value)"
+                  aria-label="RAMS template"
+                >
+                  <option value="">Choose a template</option>
+                  @for (template of filteredTemplates(); track template.id) {
+                    <option [value]="template.id">{{ template.name }}</option>
+                  }
+                </select>
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  [disabled]="!editable() || !selectedTemplateId()"
+                  (click)="applyTemplate()"
+                >
+                  Apply template
+                </button>
+              </div>
+            </article>
             <article class="card section-card">
               <div class="card-header">
                 <div>
@@ -505,6 +545,55 @@
           }
 
           @if (activeTab() === 'method') {
+            <article class="card reusable-content-panel method-library-panel">
+              <div class="reusable-panel-copy">
+                <p class="eyebrow">Method library</p>
+                <h2>Add a saved method statement</h2>
+                <small
+                  >Append a sequence or replace the current steps. A RAMS supports up to 200
+                  steps.</small
+                >
+              </div>
+              <div class="reusable-picker method-picker">
+                <input
+                  type="search"
+                  placeholder="Search method groups"
+                  [value]="methodGroupQuery()"
+                  [disabled]="!editable()"
+                  (input)="methodGroupQuery.set($any($event.target).value)"
+                  aria-label="Search method statement groups"
+                />
+                <select
+                  [value]="selectedMethodGroupId()"
+                  [disabled]="!editable()"
+                  (change)="selectedMethodGroupId.set($any($event.target).value)"
+                  aria-label="Method statement group"
+                >
+                  <option value="">Choose a method group</option>
+                  @for (group of filteredMethodGroups(); track group.id) {
+                    <option [value]="group.id">
+                      {{ group.name }} ({{ group.steps.length }} steps)
+                    </option>
+                  }
+                </select>
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  [disabled]="!editable() || !selectedMethodGroupId()"
+                  (click)="applyMethodGroup('APPEND')"
+                >
+                  Append
+                </button>
+                <button
+                  class="button ghost compact"
+                  type="button"
+                  [disabled]="!editable() || !selectedMethodGroupId()"
+                  (click)="applyMethodGroup('REPLACE')"
+                >
+                  Replace
+                </button>
+              </div>
+            </article>
             <article class="card section-card">
               <div class="card-header">
                 <div>

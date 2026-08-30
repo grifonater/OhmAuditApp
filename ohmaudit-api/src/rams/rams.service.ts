@@ -481,6 +481,40 @@ function normalizeSnapshot(value: unknown): RamsContextSnapshot {
 export class RamsService {
   constructor(private readonly prisma: PrismaClient) {}
 
+  listOrganisation(organisationId: string) {
+    return this.prisma.rams.findMany({
+      where: { organisationId },
+      select: {
+        id: true,
+        visitId: true,
+        reference: true,
+        title: true,
+        status: true,
+        currentRevisionNumber: true,
+        effectiveFrom: true,
+        submittedAt: true,
+        approvedAt: true,
+        reviewComment: true,
+        createdAt: true,
+        updatedAt: true,
+        visit: {
+          select: {
+            id: true,
+            reference: true,
+            title: true,
+            scheduledStart: true,
+            customer: { select: { id: true, name: true } },
+            site: { select: { id: true, name: true } },
+          },
+        },
+        preparedBy: { select: personSelect },
+        reviewedBy: { select: personSelect },
+        approvedBy: { select: personSelect },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   list(organisationId: string, visitId: string) {
     return this.prisma.rams.findMany({
       where: { organisationId, visitId },
