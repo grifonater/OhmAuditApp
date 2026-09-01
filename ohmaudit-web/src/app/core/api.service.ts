@@ -1825,6 +1825,7 @@ export class ApiService {
       scheduledStart?: string;
       scheduledEnd?: string | null;
       engineerNotes?: string | null;
+      evDiscoveryEnabled?: boolean;
     },
   ) {
     return this.request<{ visit: VisitSummary }>(

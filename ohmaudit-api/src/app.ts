@@ -367,6 +367,7 @@ const visitUpdateInput = z
     scheduledStart: z.coerce.date().optional(),
     scheduledEnd: z.union([z.coerce.date(), z.null()]).optional(),
     engineerNotes: nullableJobText(5000),
+    evDiscoveryEnabled: z.boolean().optional(),
   })
   .refine((input) => Object.values(input).some((value) => value !== undefined), {
     message: 'At least one job field must be provided.',

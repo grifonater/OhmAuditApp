@@ -157,6 +157,7 @@ export class JobOverviewComponent {
     description: new FormControl('', { nonNullable: true }),
     exclusions: new FormControl('', { nonNullable: true }),
     engineerNotes: new FormControl('', { nonNullable: true }),
+    evDiscoveryEnabled: new FormControl(false, { nonNullable: true }),
   });
 
   constructor() {
@@ -204,6 +205,7 @@ export class JobOverviewComponent {
       description: job.description ?? '',
       exclusions: job.exclusions ?? '',
       engineerNotes: job.engineerNotes ?? '',
+      evDiscoveryEnabled: job.evDiscoveryEnabled,
     });
     this.editing.set(true);
   }
@@ -223,6 +225,7 @@ export class JobOverviewComponent {
         description: value.description || null,
         exclusions: value.exclusions || null,
         engineerNotes: value.engineerNotes || null,
+        evDiscoveryEnabled: value.evDiscoveryEnabled,
       });
       this.editing.set(false);
       await this.loadJob();

@@ -139,6 +139,16 @@
           <label class="field full"
             >Engineer remarks / briefing<textarea formControlName="engineerNotes"></textarea>
           </label>
+          <label class="discovery-option full">
+            <input type="checkbox" formControlName="evDiscoveryEnabled" />
+            <span
+              ><strong>Allow the engineer to add chargers found on site</strong
+              ><small
+                >New chargers remain provisional until the office approves them. Enable this for
+                jobs created before charger discovery was fully connected.</small
+              ></span
+            >
+          </label>
           <div class="form-actions full">
             <button class="button secondary" type="button" (click)="editing.set(false)">
               Cancel
@@ -192,6 +202,10 @@
               <div>
                 <dt>Created</dt>
                 <dd>{{ formatDate(currentJob.createdAt, true) }}</dd>
+              </div>
+              <div>
+                <dt>Engineer charger discovery</dt>
+                <dd>{{ currentJob.evDiscoveryEnabled ? 'Enabled' : 'Disabled' }}</dd>
               </div>
             </dl>
           </article>

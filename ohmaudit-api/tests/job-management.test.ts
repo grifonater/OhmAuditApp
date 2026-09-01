@@ -83,6 +83,7 @@ describe('Job management', () => {
       description: 'Replace the damaged main board.',
       exclusions: null,
       jobCategoryId: 'category-a',
+      evDiscoveryEnabled: true,
     });
 
     expect(update).toEqual({
@@ -92,6 +93,7 @@ describe('Job management', () => {
         description: 'Replace the damaged main board.',
         exclusions: null,
         jobCategoryId: 'category-a',
+        evDiscoveryEnabled: true,
       },
     });
     expect(audit).toMatchObject({

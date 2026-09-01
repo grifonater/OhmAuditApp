@@ -281,6 +281,7 @@ export class VisitService {
       scheduledStart?: Date | undefined;
       scheduledEnd?: Date | null | undefined;
       engineerNotes?: string | null | undefined;
+      evDiscoveryEnabled?: boolean | undefined;
     },
   ) {
     const current = await this.requireVisit(organisationId, visitId);
