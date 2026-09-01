@@ -1,8 +1,30 @@
-import type { RamsDraft, RamsHazard, RamsLibraryHazard, RamsMethodStep } from './api.service';
+import type {
+  RamsDraft,
+  RamsHazard,
+  RamsLibraryHazard,
+  RamsMethodStep,
+  RamsRecommendation,
+} from './api.service';
 
 export type IdFactory = () => string;
 
 export type RamsRiskBand = 'Low' | 'Medium' | 'High' | 'Very high';
+
+export interface RamsRecommendationLoadResult {
+  recommendations: RamsRecommendation[];
+  error: string;
+}
+
+export async function resolveRamsRecommendations(
+  request: () => Promise<{ recommendations: RamsRecommendation[] }>,
+): Promise<RamsRecommendationLoadResult> {
+  try {
+    const result = await request();
+    return { recommendations: result.recommendations.slice(0, 3), error: '' };
+  } catch {
+    return { recommendations: [], error: 'Unable to load similar RAMS.' };
+  }
+}
 
 export function ramsRiskScore(likelihood: number, severity: number): number {
   return likelihood * severity;

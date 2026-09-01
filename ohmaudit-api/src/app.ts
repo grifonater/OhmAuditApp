@@ -25,6 +25,7 @@ import { EquipmentService } from './equipment/equipment.service';
 import { JobCategoryService } from './jobs/job-category.service';
 import { RamsService } from './rams/rams.service';
 import { RamsLibraryService } from './rams/rams-library.service';
+import { requestRamsRecommendations } from './rams/rams-recommendation.client';
 import { DomainError } from './shared/domain-error';
 import type { ApiBindings } from './shared/environment';
 import { parseEnvironment } from './shared/environment';
@@ -2974,6 +2975,27 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     );
     return context.json({
       rams: await new RamsService(prismaFor(environment)).detail(organisationId, ramsId),
+    });
+  });
+  app.get('/api/v1/rams/:ramsId/recommendations', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const ramsId = z.uuid().parse(context.req.param('ramsId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'rams.manage',
+    );
+    const service = new RamsService(prismaFor(environment));
+    const recommendationContext = await service.recommendationContext(organisationId, ramsId);
+    const matches = await requestRamsRecommendations(
+      environment.AI_WORKER,
+      organisationId,
+      recommendationContext,
+      context.get('correlationId'),
+    );
+    return context.json({
+      recommendations: service.hydrateRecommendations(recommendationContext, matches),
     });
   });
   app.post('/api/v1/rams/:ramsId/visits/:visitId', async (context) => {

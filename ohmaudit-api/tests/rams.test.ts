@@ -78,6 +78,119 @@ const readyDraft: RamsDraft = normalizeRamsDraft({
 });
 
 describe('RAMS workflow', () => {
+  it('builds recommendation context with tenant and active-visit predicates', async () => {
+    let currentQuery: unknown;
+    let candidateQuery: unknown;
+    const prisma = {
+      rams: {
+        findFirst: (input: unknown) => {
+          currentQuery = input;
+          return Promise.resolve({
+            id: 'rams-current',
+            title: 'Current RAMS',
+            visits: [{ visit: { title: 'Current job', description: 'Current description' } }],
+          });
+        },
+        findMany: (input: unknown) => {
+          candidateQuery = input;
+          return Promise.resolve([
+            {
+              id: 'rams-candidate',
+              reference: 'RAMS-2',
+              title: 'Candidate RAMS',
+              status: 'APPROVED',
+              currentRevisionNumber: 2,
+              draftData: {},
+              visits: [{ visit: { title: 'Candidate job', description: 'Candidate description' } }],
+            },
+          ]);
+        },
+      },
+    } as unknown as PrismaClient;
+
+    const context = await new RamsService(prisma).recommendationContext(
+      'organisation-a',
+      'rams-current',
+    );
+
+    expect(currentQuery).toMatchObject({
+      where: { id: 'rams-current', organisationId: 'organisation-a' },
+      select: {
+        visits: {
+          where: { visit: { organisationId: 'organisation-a', archivedAt: null } },
+          orderBy: { linkedAt: 'asc' },
+          take: 1,
+        },
+      },
+    });
+    expect(candidateQuery).toMatchObject({
+      where: {
+        id: { not: 'rams-current' },
+        organisationId: 'organisation-a',
+        visits: {
+          some: { visit: { organisationId: 'organisation-a', archivedAt: null } },
+        },
+      },
+      take: 500,
+    });
+    expect(context).toMatchObject({
+      current: {
+        id: 'rams-current',
+        title: 'Current RAMS',
+        jobDescription: 'Current description',
+      },
+      candidates: [
+        {
+          id: 'rams-candidate',
+          jobTitle: 'Candidate job',
+          jobDescription: 'Candidate description',
+        },
+      ],
+    });
+  });
+
+  it('hydrates only known high-confidence candidates and normalizes authoritative drafts', () => {
+    const service = new RamsService({} as PrismaClient);
+    const recommendations = service.hydrateRecommendations(
+      {
+        current: { id: 'current', title: 'Current', jobDescription: '' },
+        candidates: [
+          {
+            id: 'candidate-a',
+            reference: 'RAMS-A',
+            title: 'Candidate A',
+            status: 'APPROVED',
+            currentRevisionNumber: 1,
+            draftData: { overview: { title: 'Stored title' } },
+          },
+          {
+            id: 'candidate-b',
+            reference: 'RAMS-B',
+            title: 'Candidate B',
+            status: 'DRAFT',
+            currentRevisionNumber: 0,
+            draftData: {},
+          },
+        ],
+      },
+      [
+        { id: 'other-tenant-rams', score: 0.99 },
+        { id: 'candidate-a', score: 0.81 },
+        { id: 'candidate-b', score: 0.77 },
+        { id: 'candidate-a', score: 0.98 },
+      ],
+    );
+
+    expect(recommendations).toHaveLength(1);
+    expect(recommendations[0]).toMatchObject({
+      id: 'candidate-a',
+      reference: 'RAMS-A',
+      title: 'Candidate A',
+      score: 0.81,
+      draftData: { schemaVersion: 2, overview: { title: 'Stored title' } },
+    });
+  });
+
   it('creates a new RAMS and join row for every visit-scoped create', async () => {
     let createInput: unknown;
     const create = vi.fn((input: unknown) => {

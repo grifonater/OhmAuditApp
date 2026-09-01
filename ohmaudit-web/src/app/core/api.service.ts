@@ -637,6 +637,17 @@ export interface RamsDetail extends RamsSummary {
   visits: RamsVisit[];
   revisions: RamsRevisionSummary[];
 }
+export interface RamsRecommendation {
+  id: string;
+  reference: string;
+  title: string;
+  status: 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'RETURNED';
+  currentRevisionNumber: number;
+  draftData: RamsDraft;
+  score: number;
+  jobTitle?: string;
+  jobDescription?: string;
+}
 export interface RamsRevisionSummary {
   id: string;
   revisionNumber: number;
@@ -1544,6 +1555,11 @@ export class ApiService {
   getRams(organisationId: string, ramsId: string) {
     return this.request<{ rams: RamsDetail }>(
       `/rams/${encodeURIComponent(ramsId)}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  getRamsRecommendations(organisationId: string, ramsId: string) {
+    return this.request<{ recommendations: RamsRecommendation[] }>(
+      `/rams/${encodeURIComponent(ramsId)}/recommendations?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
   getRamsRevision(organisationId: string, ramsId: string, revisionNumber: number) {

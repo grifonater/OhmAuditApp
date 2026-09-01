@@ -246,6 +246,61 @@
                 </button>
               </div>
             </article>
+            @if (recommendationsLoading()) {
+              <article
+                class="card recommendations-panel recommendations-state"
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <span class="recommendations-loader" aria-hidden="true"></span>
+                <span>Finding similar RAMS from your organisation...</span>
+              </article>
+            } @else if (recommendationsError()) {
+              <article
+                class="card recommendations-panel recommendations-state recommendation-error"
+              >
+                <span>{{ recommendationsError() }}</span>
+                <button class="button ghost compact" type="button" (click)="retryRecommendations()">
+                  Retry
+                </button>
+              </article>
+            } @else if (recommendations().length) {
+              <article class="card recommendations-panel">
+                <div class="recommendations-heading">
+                  <div>
+                    <p class="eyebrow">Suggested starting points</p>
+                    <h2>Similar RAMS from your organisation</h2>
+                  </div>
+                  <small>Compare and copy reusable content into this draft.</small>
+                </div>
+                <div class="recommendation-grid">
+                  @for (recommendation of recommendations(); track recommendation.id) {
+                    <section class="recommendation-card">
+                      <div class="recommendation-card-head">
+                        <span>{{ recommendation.reference }}</span>
+                        <strong>{{ similarityPercentage(recommendation.score) }}% similar</strong>
+                      </div>
+                      <h3>{{ recommendation.title }}</h3>
+                      <span class="recommendation-status">{{
+                        statusLabel(recommendation.status)
+                      }}</span>
+                      @if (recommendation.jobDescription) {
+                        <p>{{ recommendation.jobDescription }}</p>
+                      }
+                      @if (editable()) {
+                        <button
+                          class="button secondary compact"
+                          type="button"
+                          (click)="applyRecommendation(recommendation)"
+                        >
+                          Use this RAMS
+                        </button>
+                      }
+                    </section>
+                  }
+                </div>
+              </article>
+            }
           }
           <article class="card section-card">
             <div class="card-header">

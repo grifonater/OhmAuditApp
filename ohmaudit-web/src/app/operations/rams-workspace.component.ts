@@ -6,6 +6,7 @@ import {
   type RamsDraft,
   type RamsHazard,
   type RamsMethodGroup,
+  type RamsRecommendation,
   type RamsRevisionDetail,
   type RamsTemplate,
   type RamsLibraryHazard,
@@ -19,6 +20,7 @@ import {
   importRamsHazards,
   ramsRiskClass,
   ramsRiskScore,
+  resolveRamsRecommendations,
 } from '../core/rams-library';
 import { ramsPdfFileName } from '../core/rams-routes';
 import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
@@ -65,6 +67,9 @@ export class RamsWorkspaceComponent {
   protected readonly reviewComment = signal('');
   protected readonly savedAt = signal<Date | undefined>(undefined);
   protected readonly templates = signal<RamsTemplate[]>([]);
+  protected readonly recommendations = signal<RamsRecommendation[]>([]);
+  protected readonly recommendationsLoading = signal(false);
+  protected readonly recommendationsError = signal('');
   protected readonly methodGroups = signal<RamsMethodGroup[]>([]);
   protected readonly hazardLibrary = signal<RamsLibraryHazard[]>([]);
   protected readonly hazardQuery = signal('');
@@ -280,6 +285,32 @@ export class RamsWorkspaceComponent {
       return;
     this.draft.set(applyRamsTemplate(current, template.data, () => crypto.randomUUID()));
     this.notice.set(`Applied "${template.name}". Save the draft to keep this change.`);
+  }
+
+  protected applyRecommendation(recommendation: RamsRecommendation): void {
+    const current = this.draft();
+    if (!current || !this.editable()) return;
+    if (
+      hasReplaceableRamsWork(current) &&
+      !confirm(
+        `Replace the reusable content in this RAMS with "${recommendation.title}"? Job and site details will be preserved.`,
+      )
+    )
+      return;
+    this.draft.set(applyRamsTemplate(current, recommendation.draftData, () => crypto.randomUUID()));
+    this.notice.set(
+      `Copied "${recommendation.title}" into this draft. Review the content and save the draft when ready.`,
+    );
+  }
+
+  protected similarityPercentage(score: number): number {
+    const percentage = score <= 1 ? score * 100 : score;
+    return Math.round(Math.max(0, Math.min(100, percentage)));
+  }
+
+  protected async retryRecommendations(): Promise<void> {
+    const ramsId = this.rams()?.id;
+    if (ramsId) await this.loadRecommendations(ramsId);
   }
 
   protected applyMethodGroup(mode: 'APPEND' | 'REPLACE'): void {
@@ -844,9 +875,24 @@ export class RamsWorkspaceComponent {
   }
 
   private setRams(rams: RamsDetail): void {
+    const shouldLoadRecommendations = this.rams()?.id !== rams.id;
     this.rams.set(rams);
     this.draft.set(this.normalizeDraft(rams.draftData));
     this.reviewComment.set(rams.reviewComment ?? '');
+    if (shouldLoadRecommendations) void this.loadRecommendations(rams.id);
+  }
+
+  private async loadRecommendations(ramsId: string): Promise<void> {
+    this.recommendationsLoading.set(true);
+    this.recommendationsError.set('');
+    this.recommendations.set([]);
+    const result = await resolveRamsRecommendations(() =>
+      this.api.getRamsRecommendations(this.organisationId, ramsId),
+    );
+    if (this.rams()?.id !== ramsId) return;
+    this.recommendations.set(result.recommendations);
+    this.recommendationsError.set(result.error);
+    this.recommendationsLoading.set(false);
   }
 
   private mutate(operation: (draft: RamsDraft) => void): void {

@@ -9,6 +9,7 @@ import {
   ramsRiskBand,
   ramsRiskScore,
   importRamsHazards,
+  resolveRamsRecommendations,
 } from '../src/app/core/rams-library';
 
 function draft(title: string): RamsDraft {
@@ -150,6 +151,58 @@ describe('RAMS reusable content', () => {
     expect(result.review.internalNotes).toBe('Keep');
     expect(result.methodStatement.steps[0]?.id).not.toBe('step-old');
     expect(result.scope.responsibilities[0]?.id).not.toBe('responsibility-old');
+    expect(result.overview).toMatchObject({
+      title: 'Job RAMS',
+      category: 'Job category',
+      effectiveFrom: '2026-08-30',
+    });
+    expect(result.scope).toMatchObject({
+      workAreas: ['Plant room'],
+      workBoundaries: 'Job boundary',
+    });
+    expect(result.requirements.emergencyDetails).toEqual(current.requirements.emergencyDetails);
+    expect(result.supportingInformation.siteAccess).toBe('Report to reception');
+  });
+
+  it('clones every nested ID when recommendation content is applied', () => {
+    const current = draft('Job RAMS');
+    const recommendation = draft('Similar RAMS');
+    recommendation.methodStatement.steps = [{ id: 'step-old', title: 'Isolate', detail: 'Safely' }];
+    recommendation.riskAssessment.hazards = [createRamsHazard(() => 'hazard-old')];
+    recommendation.supportingInformation.references = [
+      { id: 'reference-old', title: 'Guide', url: 'https://example.test' },
+    ];
+    recommendation.supportingInformation.permitReferences = [
+      { id: 'permit-old', name: 'Permit', reference: 'P1' },
+    ];
+    recommendation.supportingInformation.documents = [
+      { id: 'document-old', name: 'Plan', type: 'PDF', reference: 'D1', status: 'Current' },
+    ];
+
+    let id = 0;
+    const result = applyRamsTemplate(current, recommendation, () => `fresh-${++id}`);
+    const clonedIds = [
+      result.scope.responsibilities[0]?.id,
+      result.methodStatement.steps[0]?.id,
+      result.riskAssessment.hazards[0]?.id,
+      result.supportingInformation.references[0]?.id,
+      result.supportingInformation.permitReferences[0]?.id,
+      result.supportingInformation.documents[0]?.id,
+    ];
+    expect(clonedIds.every((value) => value?.startsWith('fresh-'))).toBe(true);
+    expect(new Set(clonedIds).size).toBe(clonedIds.length);
+  });
+
+  it('leaves the draft unchanged when recommendations fail to load', async () => {
+    const current = draft('Job RAMS');
+    const before = structuredClone(current);
+
+    const result = await resolveRamsRecommendations(() =>
+      Promise.reject(new Error('Recommendation service unavailable')),
+    );
+
+    expect(result).toEqual({ recommendations: [], error: 'Unable to load similar RAMS.' });
+    expect(current).toEqual(before);
   });
 
   it('merges and deduplicates all baseline requirement categories', () => {

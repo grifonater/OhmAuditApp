@@ -150,6 +150,33 @@ export interface RamsJobContext {
   assignedEngineer?: RamsPerson;
 }
 
+export interface RamsRecommendationDocument {
+  id: string;
+  reference: string;
+  title: string;
+  status: string;
+  currentRevisionNumber: number;
+  draftData: unknown;
+  jobTitle?: string;
+  jobDescription?: string;
+}
+
+export interface RamsRecommendationContext {
+  current: { id: string; title: string; jobDescription: string };
+  candidates: RamsRecommendationDocument[];
+}
+
+export interface RamsRecommendationMatch {
+  id: string;
+  score: number;
+}
+
+const maximumSemanticDescriptionCharacters = 1_800;
+
+function semanticDescription(value: string | null | undefined): string {
+  return (value ?? '').slice(0, maximumSemanticDescriptionCharacters);
+}
+
 export interface RamsRenderPayload extends RamsContextSnapshot {
   templateVersion: 'rams-a4-v1';
   documentState: 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED';
@@ -613,6 +640,77 @@ export class RamsService {
       ...rams,
       visits: visits.map(({ visit }) => visit),
     }));
+  }
+
+  async recommendationContext(
+    organisationId: string,
+    ramsId: string,
+  ): Promise<RamsRecommendationContext> {
+    const activeVisit = {
+      where: { visit: { organisationId, archivedAt: null } },
+      orderBy: { linkedAt: 'asc' as const },
+      take: 1,
+      select: { visit: { select: { title: true, description: true } } },
+    };
+    const current = await this.prisma.rams.findFirst({
+      where: { id: ramsId, organisationId },
+      select: { id: true, title: true, visits: activeVisit },
+    });
+    if (current === null)
+      throw new DomainError('RAMS_NOT_FOUND', 'The RAMS record was not found.', 404);
+
+    const candidates = await this.prisma.rams.findMany({
+      where: {
+        id: { not: ramsId },
+        organisationId,
+        visits: { some: { visit: { organisationId, archivedAt: null } } },
+      },
+      select: {
+        id: true,
+        reference: true,
+        title: true,
+        status: true,
+        currentRevisionNumber: true,
+        draftData: true,
+        visits: activeVisit,
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      take: 500,
+    });
+    const currentVisit = current.visits[0]?.visit;
+    return {
+      current: {
+        id: current.id,
+        title: current.title,
+        jobDescription: semanticDescription(currentVisit?.description),
+      },
+      candidates: candidates.map(({ visits, ...candidate }) => {
+        const visit = visits[0]?.visit;
+        return {
+          ...candidate,
+          ...(visit?.title ? { jobTitle: visit.title } : {}),
+          ...(visit?.description ? { jobDescription: semanticDescription(visit.description) } : {}),
+        };
+      }),
+    };
+  }
+
+  hydrateRecommendations(context: RamsRecommendationContext, matches: RamsRecommendationMatch[]) {
+    const candidates = new Map(context.candidates.map((candidate) => [candidate.id, candidate]));
+    const seen = new Set<string>();
+    return matches
+      .filter(({ id, score }) => {
+        if (score < 0.78 || seen.has(id) || !candidates.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .map(({ id, score }) => {
+        const candidate = candidates.get(id);
+        if (candidate === undefined) throw new Error('Recommendation candidate was not hydrated.');
+        return { ...candidate, draftData: normalizeRamsDraft(candidate.draftData), score };
+      })
+      .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))
+      .slice(0, 3);
   }
 
   async list(organisationId: string, visitId: string) {
