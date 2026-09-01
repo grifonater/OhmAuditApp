@@ -41,6 +41,7 @@ export class VisitService {
             'DRAFT' | 'SCHEDULED' | 'IN_PROGRESS' | 'SUBMITTED' | 'COMPLETED' | 'CANCELLED');
     const where: Prisma.VisitWhereInput = {
       organisationId,
+      archivedAt: null,
       ...(query === undefined || query === ''
         ? {}
         : {
@@ -285,6 +286,7 @@ export class VisitService {
     },
   ) {
     const current = await this.requireVisit(organisationId, visitId);
+    this.rejectArchived(current.archivedAt);
     await this.validateCategory(organisationId, input.jobCategoryId ?? undefined);
     const scheduledStart = input.scheduledStart ?? current.scheduledStart;
     const scheduledEnd =
@@ -321,6 +323,137 @@ export class VisitService {
     });
   }
 
+  async addTasks(
+    organisationId: string,
+    visitId: string,
+    actorUserId: string,
+    correlationId: string,
+    input: Array<{ assetId?: string | undefined; moduleKey: string; title: string }>,
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      const visit = await transaction.visit.findFirst({
+        where: { id: visitId, organisationId },
+        include: { tasks: { select: { assetId: true, moduleKey: true, displayOrder: true } } },
+      });
+      if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+      this.rejectArchived(visit.archivedAt);
+
+      const inputKeys = input.map((task) => `${task.assetId ?? 'site'}:${task.moduleKey}`);
+      if (new Set(inputKeys).size !== inputKeys.length)
+        throw new DomainError(
+          'VISIT_TASK_DUPLICATE',
+          'The same asset and module cannot be added to a job more than once.',
+          409,
+        );
+      const existingKeys = new Set(
+        visit.tasks.map((task) => `${task.assetId ?? 'site'}:${task.moduleKey}`),
+      );
+      if (inputKeys.some((key) => existingKeys.has(key)))
+        throw new DomainError(
+          'VISIT_TASK_DUPLICATE',
+          'The same asset and module already exists on this job.',
+          409,
+        );
+
+      const assetIds = [...new Set(input.flatMap((task) => (task.assetId ? [task.assetId] : [])))];
+      const assets =
+        assetIds.length === 0
+          ? []
+          : await transaction.asset.findMany({
+              where: {
+                id: { in: assetIds },
+                organisationId,
+                siteId: visit.siteId,
+                status: 'ACTIVE',
+              },
+              select: { id: true, assetType: true },
+            });
+      if (assets.length !== assetIds.length)
+        throw new DomainError(
+          'VISIT_ASSET_INVALID',
+          'One or more job assets are not active assets at this site.',
+          422,
+        );
+      const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+      if (
+        input.some(
+          (task) =>
+            task.moduleKey === 'ev-charging' &&
+            (task.assetId === undefined ||
+              !this.isEvAssetType(assetById.get(task.assetId)?.assetType)),
+        )
+      )
+        throw new DomainError(
+          'VISIT_EV_ASSET_INVALID',
+          'EV charging tasks can only be added to active EV assets.',
+          422,
+        );
+
+      const firstDisplayOrder = Math.max(-1, ...visit.tasks.map((task) => task.displayOrder)) + 1;
+      const tasks = [];
+      for (const [offset, task] of input.entries()) {
+        tasks.push(
+          await transaction.visitTask.create({
+            data: {
+              organisationId,
+              visitId,
+              ...(task.assetId === undefined ? {} : { assetId: task.assetId }),
+              moduleKey: task.moduleKey,
+              title: task.title,
+              status: 'PENDING',
+              displayOrder: firstDisplayOrder + offset,
+            },
+          }),
+        );
+      }
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'VisitTasksAdded',
+          entityType: 'Visit',
+          entityId: visitId,
+          data: { taskIds: tasks.map((task) => task.id), taskCount: tasks.length },
+        },
+      });
+      return tasks;
+    });
+  }
+
+  async archive(
+    organisationId: string,
+    visitId: string,
+    actorUserId: string,
+    correlationId: string,
+  ) {
+    const current = await this.requireVisit(organisationId, visitId);
+    if (current.archivedAt !== null) return current;
+    const archivedAt = new Date();
+    return this.prisma.$transaction(async (transaction) => {
+      const visit = await transaction.visit.update({
+        where: { id: visitId },
+        data: { archivedAt },
+      });
+      await transaction.guestAccessToken.updateMany({
+        where: { visitId, revokedAt: null, expiresAt: { gt: archivedAt } },
+        data: { revokedAt: archivedAt },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'VisitArchived',
+          entityType: 'Visit',
+          entityId: visitId,
+          data: { archivedAt: archivedAt.toISOString() },
+        },
+      });
+      return visit;
+    });
+  }
+
   async addEvAsset(
     organisationId: string,
     visitId: string,
@@ -341,6 +474,7 @@ export class VisitService {
       include: { tasks: { select: { displayOrder: true } } },
     });
     if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    this.rejectArchived(visit.archivedAt);
     if (!visit.evDiscoveryEnabled)
       throw new DomainError(
         'EV_DISCOVERY_NOT_ENABLED',
@@ -428,7 +562,8 @@ export class VisitService {
   }
 
   async guestLink(organisationId: string, visitId: string, validDays = 7) {
-    await this.detail(organisationId, visitId);
+    const visit = await this.requireVisit(organisationId, visitId);
+    this.rejectArchived(visit.archivedAt);
     const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
     const tokenHash = await hashToken(token);
     const expiresAt = new Date(Date.now() + validDays * 86400000);
@@ -560,6 +695,15 @@ export class VisitService {
     const visit = await this.prisma.visit.findFirst({ where: { id: visitId, organisationId } });
     if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
     return visit;
+  }
+
+  private rejectArchived(archivedAt: Date | null) {
+    if (archivedAt !== null && archivedAt !== undefined)
+      throw new DomainError('VISIT_ARCHIVED', 'Archived jobs cannot be changed.', 409);
+  }
+
+  private isEvAssetType(assetType: string | undefined): boolean {
+    return assetType !== undefined && /\bev\b|electric vehicle|charger/iu.test(assetType);
   }
 
   private async validateCategory(organisationId: string, categoryId: string | undefined) {

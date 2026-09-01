@@ -260,6 +260,67 @@ dd {
   display: grid;
   gap: 0.45rem;
 }
+.task-picker {
+  display: grid;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--oa-line-soft);
+  background: var(--oa-canvas-soft);
+}
+.task-picker-controls {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.35fr) minmax(14rem, 1fr);
+  gap: 0.7rem;
+}
+.task-asset-list {
+  display: grid;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.45rem;
+  background: white;
+}
+.task-asset-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--oa-line-soft);
+  cursor: pointer;
+}
+.task-asset-row:last-child {
+  border-bottom: 0;
+}
+.task-asset-row input {
+  width: auto;
+  min-height: auto;
+}
+.task-asset-row span,
+.task-picker-callout > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+.task-asset-row small,
+.task-picker-callout small {
+  color: var(--oa-ink-muted);
+  font-size: 0.65rem;
+}
+.task-picker-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.45rem;
+  background: white;
+}
+.task-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
 .task-list > div {
   display: flex;
   justify-content: space-between;
@@ -573,6 +634,16 @@ dd {
   .inspection-task {
     flex-direction: column;
     gap: 0.5rem;
+  }
+  .task-picker-controls {
+    grid-template-columns: 1fr;
+  }
+  .task-picker-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+  .task-picker-actions .button {
+    width: 100%;
   }
   .task-meta {
     justify-content: flex-start;

@@ -656,6 +656,7 @@ model Visit {
   guestMobile          String?               @map("guest_mobile")
   engineerNotes        String?               @map("engineer_notes")
   evDiscoveryEnabled   Boolean               @default(false) @map("ev_discovery_enabled")
+  archivedAt           DateTime?             @map("archived_at")
   submittedAt          DateTime?             @map("submitted_at")
   completedAt          DateTime?             @map("completed_at")
   createdAt            DateTime              @default(now()) @map("created_at")

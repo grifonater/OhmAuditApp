@@ -65,6 +65,14 @@
           <button class="button secondary compact" type="button" (click)="startEditing()">
             Edit job
           </button>
+          <button
+            class="button danger compact"
+            type="button"
+            [disabled]="busy()"
+            (click)="archiveJob()"
+          >
+            Archive job
+          </button>
         }
         @if (ramsRecords()[0]; as rams) {
           <a
@@ -470,7 +478,7 @@
       <section class="card tab-panel" id="inspections">
         <div class="card-header">
           <div>
-            <h2>Inspections ({{ inspections().length }})</h2>
+            <h2>Inspections ({{ currentJob.tasks.length }})</h2>
             <small>{{ completedTaskCount() }}/{{ currentJob.tasks.length }} tasks completed</small>
           </div>
           <a
@@ -479,48 +487,133 @@
             >Open workspace</a
           >
         </div>
-        @if (inspections().length === 0) {
+        @if (canEdit()) {
+          <div class="task-picker card-body">
+            <div class="task-picker-controls">
+              <label class="field"
+                >Inspection module<select
+                  [value]="taskModule()"
+                  (change)="selectTaskModule($any($event.target).value)"
+                >
+                  @for (module of taskModules(); track module.key) {
+                    <option [value]="module.key">{{ module.label }}</option>
+                  }
+                </select></label
+              >
+              @if (taskModule() !== 'thermal-imaging') {
+                <label class="field task-asset-search"
+                  >Search site assets<input
+                    type="search"
+                    placeholder="Name, reference, make, model or serial"
+                    [value]="taskAssetQuery()"
+                    (input)="taskAssetQuery.set($any($event.target).value)"
+                /></label>
+              }
+            </div>
+
+            @if (taskModule() === 'thermal-imaging') {
+              <div class="task-picker-callout">
+                <div>
+                  <strong>Site-wide thermal imaging survey</strong>
+                  <small>Creates one task for the whole site.</small>
+                </div>
+                @if (thermalTaskExists()) {
+                  <span class="badge">Already added</span>
+                }
+              </div>
+            } @else {
+              <div class="task-asset-list">
+                @for (asset of eligibleAssets(); track asset.id) {
+                  <label class="task-asset-row">
+                    <input
+                      type="checkbox"
+                      [checked]="selectedTaskAssetIds().has(asset.id)"
+                      (change)="toggleTaskAsset(asset.id, $any($event.target).checked)"
+                    />
+                    <span>
+                      <strong>{{ asset.displayName }}</strong>
+                      <small
+                        >{{ asset.assetReference }} · {{ asset.assetType }} ·
+                        {{ asset.manufacturer || 'Make not set' }} {{ asset.model || '' }}</small
+                      >
+                    </span>
+                  </label>
+                } @empty {
+                  <p class="muted">No eligible active assets match this search.</p>
+                }
+              </div>
+            }
+
+            <div class="task-picker-actions">
+              @if (selectedTaskAssetIds().size > 0) {
+                <button class="button ghost compact" type="button" (click)="clearTaskAssets()">
+                  Clear selection
+                </button>
+              }
+              <button
+                class="button primary compact"
+                type="button"
+                [disabled]="
+                  busy() ||
+                  (taskModule() === 'thermal-imaging'
+                    ? thermalTaskExists()
+                    : selectedTaskAssetIds().size === 0)
+                "
+                (click)="addInspectionTasks()"
+              >
+                Add
+                {{ taskModule() === 'thermal-imaging' ? 1 : selectedTaskAssetIds().size }}
+                inspection task(s)
+              </button>
+            </div>
+          </div>
+        }
+        @if (currentJob.tasks.length === 0) {
           <div class="card-body">
             <div class="empty-state">
-              <h3>No inspections yet</h3>
-              <p>Inspection tasks created for this job will appear here automatically.</p>
+              <h3>No inspection tasks</h3>
+              <p>Add an inspection task to make it available in the engineer workspace.</p>
             </div>
           </div>
         } @else {
           <div class="task-list card-body">
-            @for (entry of inspections(); track entry.task.id) {
+            @for (task of currentJob.tasks; track task.id) {
               <div class="inspection-task">
                 <div class="task-main">
-                  <strong>{{ entry.task.title }}</strong>
+                  <strong>{{ task.title }}</strong>
                   <small
-                    >{{ moduleLabel(entry.inspection.moduleKey) }} ·
-                    {{ entry.task.asset?.displayName || 'Site-wide task' }}</small
+                    >{{ moduleLabel(task.moduleKey) }} ·
+                    {{ task.asset?.displayName || 'Site-wide task' }}</small
                   >
-                  @if (entry.inspection.defects && entry.inspection.defects.length > 0) {
+                  @if (task.inspection?.defects; as defects) {
                     <small class="defect-summary">
-                      @if (openDefectCount(entry.inspection.defects); as open) {
+                      @if (openDefectCount(defects); as open) {
                         <strong>{{ open }} open</strong>
                       }
-                      @if (severityCount(entry.inspection.defects, 'HIGH'); as high) {
+                      @if (severityCount(defects, 'HIGH'); as high) {
                         <span class="defect-high">{{ high }} high</span>
                       }
-                      @if (severityCount(entry.inspection.defects, 'MEDIUM'); as medium) {
+                      @if (severityCount(defects, 'MEDIUM'); as medium) {
                         <span>{{ medium }} medium</span>
                       }
-                      @if (severityCount(entry.inspection.defects, 'LOW'); as low) {
+                      @if (severityCount(defects, 'LOW'); as low) {
                         <span>{{ low }} low</span>
                       }
                     </small>
                   }
                 </div>
                 <div class="task-meta">
-                  <span class="badge">{{ statusLabel(entry.inspection.status) }}</span>
-                  <small>Revision {{ entry.inspection.currentRevisionNumber }}</small>
-                  @if (entry.inspection.status === 'APPROVED' && entry.inspection.approvedAt) {
-                    <small>Approved {{ formatDate(entry.inspection.approvedAt) }}</small>
-                  }
-                  @if (entry.inspection.status === 'SUBMITTED' && entry.inspection.submittedAt) {
-                    <small>Submitted {{ formatDate(entry.inspection.submittedAt) }}</small>
+                  <span class="badge">{{
+                    statusLabel(task.inspection?.status || task.status)
+                  }}</span>
+                  @if (task.inspection; as inspection) {
+                    <small>Revision {{ inspection.currentRevisionNumber }}</small>
+                    @if (inspection.status === 'APPROVED' && inspection.approvedAt) {
+                      <small>Approved {{ formatDate(inspection.approvedAt) }}</small>
+                    }
+                    @if (inspection.status === 'SUBMITTED' && inspection.submittedAt) {
+                      <small>Submitted {{ formatDate(inspection.submittedAt) }}</small>
+                    }
                   }
                   <a
                     class="button ghost compact"

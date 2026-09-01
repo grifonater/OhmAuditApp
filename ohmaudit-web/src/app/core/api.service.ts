@@ -376,6 +376,7 @@ export interface VisitSummary {
   completedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  archivedAt?: string | null;
   customer: { id: string; name: string };
   site: {
     id: string;
@@ -389,6 +390,11 @@ export interface VisitSummary {
   };
   tasks: VisitTask[];
   rams?: EngineerRamsRecord[];
+}
+export interface VisitTaskInput {
+  assetId?: string;
+  moduleKey: string;
+  title: string;
 }
 export interface JobCategory {
   id: string;
@@ -1764,6 +1770,18 @@ export class ApiService {
   getVisit(organisationId: string, visitId: string) {
     return this.request<{ visit: VisitSummary }>(
       `/visits/${visitId}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  addVisitTasks(organisationId: string, visitId: string, tasks: VisitTaskInput[]) {
+    return this.request<{ tasks: VisitTask[] }>(
+      `/visits/${visitId}/tasks?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', body: JSON.stringify({ tasks }) },
+    );
+  }
+  archiveVisit(organisationId: string, visitId: string) {
+    return this.request<{ visit: VisitSummary }>(
+      `/visits/${visitId}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
     );
   }
   addVisitEvAsset(

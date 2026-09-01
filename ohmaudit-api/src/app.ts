@@ -334,6 +334,7 @@ const visitTaskInput = z.object({
   moduleKey: z.enum(['core', 'ev-charging', 'thermal-imaging']),
   title: z.string().trim().min(2).max(160),
 });
+const visitTasksInput = z.object({ tasks: z.array(visitTaskInput).min(1).max(100) });
 const visitInput = z.object({
   siteId: z.uuid(),
   reference: optionalTrimmed(100),
@@ -2595,13 +2596,60 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       'visits.create',
     );
     const input = visitUpdateInput.parse(await context.req.json());
+    const prisma = prismaFor(environment);
+    if (input.evDiscoveryEnabled === true)
+      await requireModuleForKey(prisma, organisationId, 'ev-charging');
     return context.json({
-      visit: await new VisitService(prismaFor(environment)).update(
+      visit: await new VisitService(prisma).update(
         organisationId,
         visitId,
         user.id,
         context.get('correlationId'),
         input,
+      ),
+    });
+  });
+  app.post('/api/v1/visits/:visitId/tasks', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const input = visitTasksInput.parse(await context.req.json());
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'visits.create',
+    );
+    const prisma = prismaFor(environment);
+    for (const moduleKey of new Set(input.tasks.map((task) => task.moduleKey)))
+      await requireModuleForKey(prisma, organisationId, moduleKey);
+    return context.json(
+      {
+        tasks: await new VisitService(prisma).addTasks(
+          organisationId,
+          visitId,
+          user.id,
+          context.get('correlationId'),
+          input.tasks,
+        ),
+      },
+      201,
+    );
+  });
+  app.delete('/api/v1/visits/:visitId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'visits.create',
+    );
+    return context.json({
+      visit: await new VisitService(prismaFor(environment)).archive(
+        organisationId,
+        visitId,
+        user.id,
+        context.get('correlationId'),
       ),
     });
   });

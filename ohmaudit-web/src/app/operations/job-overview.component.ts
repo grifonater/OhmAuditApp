@@ -7,10 +7,11 @@ import {
   signal,
 } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   ApiService,
   type AssetSummary,
+  type Entitlement,
   type JobCategory,
   type OrganisationRamsSummary,
   type RamsSummary,
@@ -19,18 +20,19 @@ import {
   type VisitSummary,
   type VisitTask,
 } from '../core/api.service';
+import {
+  buildVisitTaskInputs,
+  eligibleTaskAssets,
+  type InspectionModuleKey,
+} from './visit-task-helpers';
 
 type JobTab = 'overview' | 'rams' | 'inspections' | 'assets' | 'progress' | 'documents';
-
-function isInspectionTask(
-  task: VisitTask,
-): task is VisitTask & { inspection: NonNullable<VisitTask['inspection']> } {
-  return task.inspection !== undefined;
-}
 
 const EVENT_LABELS: Record<string, string> = {
   VisitCreated: 'Job created',
   VisitUpdated: 'Job details updated',
+  VisitTasksAdded: 'Inspection tasks added',
+  VisitArchived: 'Job archived',
   VisitCertificatesIssued: 'Certificates issued',
   InspectionSubmitted: 'Inspection submitted',
   InspectionApproved: 'Inspection approved',
@@ -54,15 +56,21 @@ const EVENT_LABELS: Record<string, string> = {
 export class JobOverviewComponent {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly visitId = this.route.snapshot.paramMap.get('visitId') ?? '';
   protected readonly job = signal<VisitSummary | undefined>(undefined);
   protected readonly categories = signal<JobCategory[]>([]);
+  protected readonly entitlements = signal<Entitlement[]>([]);
+  protected readonly siteAssets = signal<AssetSummary[]>([]);
   protected readonly capabilities = signal<string[]>([]);
   protected readonly editing = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly notice = signal('');
+  protected readonly taskModule = signal<InspectionModuleKey>('core');
+  protected readonly taskAssetQuery = signal('');
+  protected readonly selectedTaskAssetIds = signal<Set<string>>(new Set());
   protected readonly activeTab = signal<JobTab>('overview');
   protected readonly jobSitePhotoUrl = signal('');
   private readonly destroyRef = inject(DestroyRef);
@@ -93,6 +101,40 @@ export class JobOverviewComponent {
   protected readonly canGenerate = computed(() =>
     this.capabilities().includes('certificates.generate'),
   );
+  protected readonly taskModules = computed(() => {
+    const entitled = new Set(
+      this.entitlements()
+        .filter((item) => item.entitled)
+        .map((item) => item.module.key),
+    );
+    return [
+      ...(entitled.has('ev-charging')
+        ? [{ key: 'ev-charging' as const, label: 'EV Charging' }]
+        : []),
+      ...(entitled.has('thermal-imaging')
+        ? [{ key: 'thermal-imaging' as const, label: 'Thermal' }]
+        : []),
+      { key: 'core' as const, label: 'General' },
+    ];
+  });
+  protected readonly selectableTaskAssets = computed(() => {
+    const moduleKey = this.taskModule();
+    if (moduleKey === 'thermal-imaging') return [];
+    return eligibleTaskAssets(this.siteAssets(), this.job()?.tasks ?? [], moduleKey);
+  });
+  protected readonly eligibleAssets = computed(() => {
+    const moduleKey = this.taskModule();
+    if (moduleKey === 'thermal-imaging') return [];
+    return eligibleTaskAssets(
+      this.siteAssets(),
+      this.job()?.tasks ?? [],
+      moduleKey,
+      this.taskAssetQuery(),
+    );
+  });
+  protected readonly thermalTaskExists = computed(() =>
+    (this.job()?.tasks ?? []).some((task) => task.moduleKey === 'thermal-imaging'),
+  );
   protected readonly ramsCandidates = computed(() => {
     const linkedIds = new Set(this.ramsRecords().map(({ id }) => id));
     const siteId = this.job()?.site.id;
@@ -122,16 +164,8 @@ export class JobOverviewComponent {
     }
     return [...assets.values()].map((asset) => ({ asset, taskCount: counts.get(asset.id) ?? 0 }));
   });
-  protected readonly inspectionCount = computed(
-    () => this.job()?.tasks.filter((task) => task.inspection !== undefined).length ?? 0,
-  );
   protected readonly completedTaskCount = computed(
     () => this.job()?.tasks.filter((task) => task.status === 'COMPLETED').length ?? 0,
-  );
-  protected readonly inspections = computed(() =>
-    (this.job()?.tasks ?? [])
-      .filter(isInspectionTask)
-      .map((task) => ({ task, inspection: task.inspection })),
   );
   protected readonly progressEvents = computed(() =>
     this.timelineEvents().map((event) => ({
@@ -179,7 +213,7 @@ export class JobOverviewComponent {
       case 'rams':
         return this.ramsRecords().length;
       case 'inspections':
-        return this.inspectionCount();
+        return this.job()?.tasks.length ?? 0;
       case 'assets':
         return this.linkedAssets().length;
       case 'progress':
@@ -230,6 +264,51 @@ export class JobOverviewComponent {
       this.editing.set(false);
       await this.loadJob();
       this.notice.set('Job details updated.');
+    });
+  }
+
+  protected selectTaskModule(moduleKey: InspectionModuleKey): void {
+    this.taskModule.set(moduleKey);
+    this.taskAssetQuery.set('');
+    this.selectedTaskAssetIds.set(new Set());
+  }
+
+  protected toggleTaskAsset(assetId: string, selected: boolean): void {
+    const next = new Set(this.selectedTaskAssetIds());
+    if (selected) next.add(assetId);
+    else next.delete(assetId);
+    this.selectedTaskAssetIds.set(next);
+  }
+
+  protected clearTaskAssets(): void {
+    this.selectedTaskAssetIds.set(new Set());
+  }
+
+  protected async addInspectionTasks(): Promise<void> {
+    if (!this.canEdit()) return;
+    const moduleKey = this.taskModule();
+    if (moduleKey === 'thermal-imaging' && this.thermalTaskExists()) return;
+    const selectedAssets = this.selectableTaskAssets().filter((asset) =>
+      this.selectedTaskAssetIds().has(asset.id),
+    );
+    if (moduleKey !== 'thermal-imaging' && selectedAssets.length === 0) return;
+
+    const tasks = buildVisitTaskInputs(moduleKey, selectedAssets);
+    await this.run(async () => {
+      await this.api.addVisitTasks(this.organisationId, this.visitId, tasks);
+      await this.loadJob();
+      this.selectedTaskAssetIds.set(new Set());
+      this.taskAssetQuery.set('');
+      this.notice.set(`${tasks.length} inspection task${tasks.length === 1 ? '' : 's'} added.`);
+    });
+  }
+
+  protected async archiveJob(): Promise<void> {
+    if (!this.canEdit() || !window.confirm('Archive this job? This action cannot be undone.'))
+      return;
+    await this.run(async () => {
+      await this.api.archiveVisit(this.organisationId, this.visitId);
+      await this.router.navigate(['/app/org', this.organisationId, 'visits']);
     });
   }
 
@@ -339,7 +418,7 @@ export class JobOverviewComponent {
       ? 'EV charging inspection'
       : moduleKey === 'thermal-imaging'
         ? 'Thermal imaging inspection'
-        : 'Inspection';
+        : 'General inspection';
   }
 
   protected openDefectCount(defects: Array<{ status: string }> | undefined): number {
@@ -373,10 +452,11 @@ export class JobOverviewComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const [account, categories, rams] = await Promise.all([
+      const [account, categories, rams, entitlements] = await Promise.all([
         this.api.currentUser(),
         this.api.listJobCategories(this.organisationId),
         this.api.listVisitRams(this.organisationId, this.visitId),
+        this.api.entitlements(this.organisationId),
       ]);
       this.capabilities.set(
         account.memberships.find((item) => item.organisation.id === this.organisationId)?.role
@@ -384,6 +464,9 @@ export class JobOverviewComponent {
       );
       this.categories.set(categories.categories);
       this.ramsRecords.set(rams.rams);
+      this.entitlements.set(entitlements.entitlements);
+      const firstModule = this.taskModules()[0];
+      if (firstModule) this.taskModule.set(firstModule.key);
       await this.loadJob();
     });
   }
@@ -391,12 +474,17 @@ export class JobOverviewComponent {
   private async loadJob(): Promise<void> {
     const visit = (await this.api.getVisit(this.organisationId, this.visitId)).visit;
     this.job.set(visit);
-    void this.loadSitePhoto(visit.site.id);
+    const site = (await this.api.getSite(this.organisationId, visit.site.id)).site;
+    this.siteAssets.set(site.assets);
+    void this.loadSitePhoto(site.media ?? []);
   }
 
-  private async loadSitePhoto(siteId: string): Promise<void> {
+  private async loadSitePhoto(
+    mediaItems: NonNullable<Awaited<ReturnType<ApiService['getSite']>>['site']['media']>,
+  ): Promise<void> {
     try {
-      const blob = await this.findSitePhoto(siteId);
+      const media = mediaItems.find((item) => item.isPrimary) ?? mediaItems[0];
+      const blob = media ? await this.api.downloadMedia(this.organisationId, media.id) : null;
       if (!blob) return;
       const url = this.jobSitePhotoUrl();
       if (url) URL.revokeObjectURL(url);
@@ -404,13 +492,6 @@ export class JobOverviewComponent {
     } catch {
       this.jobSitePhotoUrl.set('');
     }
-  }
-
-  private async findSitePhoto(siteId: string): Promise<Blob | null> {
-    const site = (await this.api.getSite(this.organisationId, siteId)).site;
-    const media = site.media?.find((item) => item.isPrimary) ?? site.media?.[0];
-    if (!media) return null;
-    return this.api.downloadMedia(this.organisationId, media.id);
   }
 
   private async reloadRams(): Promise<void> {

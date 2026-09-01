@@ -32,6 +32,20 @@ describe('operational tenant isolation', () => {
     ).rejects.toMatchObject({ code: 'SITE_NOT_FOUND', status: 404 });
   });
 
+  it('cannot add tasks to another organisation visit', async () => {
+    const transaction = { visit: { findFirst: vi.fn().mockResolvedValue(null) } };
+    const prisma = {
+      $transaction: (operation: (client: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).addTasks('organisation-b', 'visit-from-a', 'user-b', 'correlation', [
+        { moduleKey: 'core', title: 'Inspect board' },
+      ]),
+    ).rejects.toMatchObject({ code: 'VISIT_NOT_FOUND', status: 404 });
+  });
+
   it('records an engineer-discovered charger as provisional until office approval', async () => {
     let createdAssetInput: unknown;
     const createAsset = vi.fn((input: unknown) => {
