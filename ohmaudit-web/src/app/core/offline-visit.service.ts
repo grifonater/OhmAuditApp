@@ -8,7 +8,10 @@ import {
   type VisitSummary,
 } from './api.service';
 import { AuthService } from './auth.service';
-import { buildMediaMetadataUpdateBody } from '../operations/thermal-inspection.helpers';
+import {
+  buildMediaMetadataUpdateBody,
+  remapThermalSubmissionIds,
+} from '../operations/thermal-inspection.helpers';
 
 export interface StoredVisitPack {
   visitId: string;
@@ -669,14 +672,6 @@ export class OfflineVisitService {
     submission: Record<string, unknown>,
     mediaIds: Record<string, string>,
   ): Record<string, unknown> {
-    if (Object.keys(mediaIds).length === 0) return submission;
-    const replace = (value: unknown): unknown => {
-      if (typeof value === 'string') return mediaIds[value] ?? value;
-      if (Array.isArray(value)) return value.map(replace);
-      if (typeof value === 'object' && value !== null)
-        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)]));
-      return value;
-    };
-    return replace(submission) as Record<string, unknown>;
+    return remapThermalSubmissionIds(submission, mediaIds);
   }
 }

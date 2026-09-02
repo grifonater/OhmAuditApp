@@ -79,12 +79,47 @@ describe('Thermal draft report preview', () => {
     let mediaWhere: unknown;
     const findMany = vi.fn((input: { where: unknown }) => {
       mediaWhere = input.where;
-      return Promise.resolve([]);
+      return Promise.resolve([
+        {
+          id: 'media-a',
+          organisationId: 'organisation-a',
+          entityType: 'Inspection',
+          entityId: 'inspection-a',
+          category: 'thermal-image',
+          mimeType: 'image/jpeg',
+          status: 'AVAILABLE',
+          storageKey: 'inspection-a/media-a.jpg',
+        },
+      ]);
     });
-    const prisma = { media: { findMany } } as unknown as PrismaClient;
+    const prisma = {
+      media: {
+        findMany,
+        findFirst: vi.fn(() =>
+          Promise.resolve({
+            id: 'media-a',
+            organisationId: 'organisation-a',
+            mimeType: 'image/jpeg',
+            status: 'AVAILABLE',
+            storageKey: 'inspection-a/media-a.jpg',
+          }),
+        ),
+      },
+    } as unknown as PrismaClient;
+    const mediaEnvironment = {
+      ...environment,
+      MEDIA_BUCKET: {
+        get: vi.fn(() =>
+          Promise.resolve({
+            size: 3,
+            arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer),
+          }),
+        ),
+      },
+    } as unknown as ApiBindings;
 
     await thermalCertificateData({
-      environment,
+      environment: mediaEnvironment,
       prisma,
       organisationId: 'organisation-a',
       inspectionId: 'inspection-a',
@@ -102,6 +137,191 @@ describe('Thermal draft report preview', () => {
       organisationId: 'organisation-a',
       entityType: 'Inspection',
       entityId: 'inspection-a',
+    });
+  });
+
+  it('retrieves all unique assigned images and preserves target image order and descriptions', async () => {
+    const ids = Array.from({ length: 24 }, (_, index) => `media-${index + 1}`);
+    let requestedIds: string[] = [];
+    const rows = ids.map((id, index) => ({
+      id,
+      organisationId: 'organisation-a',
+      entityType: 'Inspection',
+      entityId: 'inspection-a',
+      category: index % 2 === 0 ? 'thermal-image' : 'standard-image',
+      mimeType: 'image/jpeg',
+      status: 'AVAILABLE',
+      storageKey: `inspection-a/${id}.jpg`,
+    }));
+    const findMany = vi.fn((input: { where: { id: { in: string[] } } }) => {
+      requestedIds = input.where.id.in;
+      return Promise.resolve([...rows].reverse());
+    });
+    const findFirst = vi.fn((input: { where: { id: string; organisationId: string } }) =>
+      Promise.resolve(
+        rows.find(
+          ({ id, organisationId }) =>
+            id === input.where.id && organisationId === input.where.organisationId,
+        ) ?? null,
+      ),
+    );
+    const prisma = { media: { findMany, findFirst } } as unknown as PrismaClient;
+    const bytes = new TextEncoder().encode('jpeg bytes');
+    const mediaEnvironment = {
+      ...environment,
+      MEDIA_BUCKET: {
+        get: vi.fn(() =>
+          Promise.resolve({
+            size: bytes.byteLength,
+            arrayBuffer: () => Promise.resolve(bytes.buffer),
+          }),
+        ),
+      },
+    } as unknown as ApiBindings;
+
+    const result = await thermalCertificateData({
+      environment: mediaEnvironment,
+      prisma,
+      organisationId: 'organisation-a',
+      inspectionId: 'inspection-a',
+      revisionData: {
+        targets: [
+          {
+            name: 'First',
+            imageIds: ids.slice(0, 13),
+            imageDescriptions: { 'media-1': '  first\u0000 description  ' },
+          },
+          {
+            name: 'Second',
+            imageIds: ['media-1', ...ids.slice(13)],
+            imageDescriptions: {
+              'media-1': 'Target-specific text',
+              'media-14': 'x'.repeat(600),
+            },
+          },
+        ],
+      },
+      reportReference: 'THERMAL-001',
+      organisationName: 'Test Organisation',
+      customerName: 'Test Customer',
+      siteName: 'Test Site',
+      siteAddress: [],
+      reportDate: new Date('2026-09-02T00:00:00.000Z'),
+      engineerName: 'Test Engineer',
+    });
+
+    expect(requestedIds).toEqual(ids.slice(0, 24));
+    expect(result.targets[0]?.images).toHaveLength(13);
+    expect(result.targets[1]?.images.map(({ kind }) => kind)).toEqual([
+      'Infrared',
+      ...ids.slice(13, 24).map((_, index) => (index % 2 === 1 ? 'Infrared' : 'Standard')),
+    ]);
+    expect(result.targets[0]?.images[0]).toMatchObject({ description: 'first  description' });
+    expect(result.targets[1]?.images[0]).toMatchObject({ description: 'Target-specific text' });
+    expect(result.targets[1]?.images[1]?.description).toHaveLength(500);
+    expect(result.targets[1]?.images).toHaveLength(12);
+  });
+
+  it('throws THERMAL_REPORT_IMAGE_UNAVAILABLE when a scoped media lookup cannot resolve every requested id', async () => {
+    let requestedIds: string[] = [];
+    const prisma = {
+      media: {
+        findMany: vi.fn((input: { where: { id: { in: string[] } } }) => {
+          requestedIds = input.where.id.in;
+          return Promise.resolve([
+            {
+              id: 'media-1',
+              organisationId: 'organisation-a',
+              entityType: 'Inspection',
+              entityId: 'inspection-a',
+              category: 'thermal-image',
+              mimeType: 'image/jpeg',
+              status: 'AVAILABLE',
+              storageKey: 'inspection-a/media-1.jpg',
+            },
+          ]);
+        }),
+      },
+    } as unknown as PrismaClient;
+
+    await expect(
+      thermalCertificateData({
+        environment,
+        prisma,
+        organisationId: 'organisation-a',
+        inspectionId: 'inspection-a',
+        revisionData: { targets: [{ imageIds: ['media-1', 'media-2'] }] },
+        reportReference: 'THERMAL-001',
+        organisationName: 'Test Organisation',
+        customerName: 'Test Customer',
+        siteName: 'Test Site',
+        siteAddress: [],
+        reportDate: new Date('2026-09-02T00:00:00.000Z'),
+        engineerName: 'Test Engineer',
+      }),
+    ).rejects.toMatchObject({
+      code: 'THERMAL_REPORT_IMAGE_UNAVAILABLE',
+      status: 422,
+    });
+
+    expect(requestedIds).toEqual(['media-1', 'media-2']);
+  });
+
+  it('throws THERMAL_REPORT_IMAGE_UNAVAILABLE when a resolved image cannot be loaded from storage', async () => {
+    const prisma = {
+      media: {
+        findMany: vi.fn(() =>
+          Promise.resolve([
+            {
+              id: 'media-1',
+              organisationId: 'organisation-a',
+              entityType: 'Inspection',
+              entityId: 'inspection-a',
+              category: 'thermal-image',
+              mimeType: 'image/jpeg',
+              status: 'AVAILABLE',
+              storageKey: 'inspection-a/media-1.jpg',
+            },
+            {
+              id: 'media-2',
+              organisationId: 'organisation-a',
+              entityType: 'Inspection',
+              entityId: 'inspection-a',
+              category: 'thermal-image',
+              mimeType: 'image/jpeg',
+              status: 'AVAILABLE',
+              storageKey: 'inspection-a/media-2.jpg',
+            },
+          ]),
+        ),
+        findFirst: vi.fn(() => Promise.resolve(null)),
+      },
+    } as unknown as PrismaClient;
+    const mediaEnvironment = {
+      ...environment,
+      MEDIA_BUCKET: {
+        get: vi.fn(() => Promise.resolve(null)),
+      },
+    } as unknown as ApiBindings;
+
+    await expect(
+      thermalCertificateData({
+        environment: mediaEnvironment,
+        prisma,
+        organisationId: 'organisation-a',
+        inspectionId: 'inspection-a',
+        revisionData: { targets: [{ imageIds: ['media-1', 'media-2'] }] },
+        reportReference: 'THERMAL-001',
+        organisationName: 'Test Organisation',
+        customerName: 'Test Customer',
+        siteName: 'Test Site',
+        siteAddress: [],
+        reportDate: new Date('2026-09-02T00:00:00.000Z'),
+        engineerName: 'Test Engineer',
+      }),
+    ).rejects.toMatchObject({
+      code: 'THERMAL_REPORT_IMAGE_UNAVAILABLE',
+      status: 422,
     });
   });
 

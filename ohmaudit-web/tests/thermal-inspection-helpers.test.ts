@@ -5,6 +5,12 @@ import {
   buildThermalInspectionReport,
   canReviewThermalPdf,
   metadataFailureAction,
+  normalizeImageDescriptions,
+  normalizeThermalTarget,
+  patchImageDescription,
+  remapImageDescriptions,
+  remapThermalSubmissionIds,
+  remapThermalTargetIds,
   thermalImageLimitError,
   thermalPreviewBody,
   thermalPreviewSignerError,
@@ -42,6 +48,7 @@ const target: ThermalTarget = {
   reference: 'DB-1',
   location: 'Plant room',
   imageIds: ['media-1'],
+  imageDescriptions: { 'media-1': 'Infrared image showing the hot connection.' },
   condition: 'FAULT',
   issueSummary: 'Elevated temperature',
   severity: 'MAJOR',
@@ -91,6 +98,7 @@ describe('thermal inspection helpers', () => {
       signature: report.signature,
     });
     expect(report.defects[0]?.photoMediaIds).toEqual(report.data.targets[0]?.imageIds);
+    expect(report.data.targets[0]?.imageDescriptions).toEqual(target.imageDescriptions);
   });
 
   it('only offers preview to an online member with a current inspection', () => {
@@ -105,6 +113,72 @@ describe('thermal inspection helpers', () => {
   it('enforces the single-request 500 image limit before upload', () => {
     expect(thermalImageLimitError(498, 2)).toBe('');
     expect(thermalImageLimitError(498, 3)).toContain('up to 500 images');
+  });
+
+  it('normalizes legacy targets and sanitizes malformed description maps', () => {
+    const legacy = normalizeThermalTarget({ ...target, imageDescriptions: undefined });
+    expect(legacy?.imageDescriptions).toEqual({});
+
+    const normalized = normalizeThermalTarget({
+      ...target,
+      imageIds: ['media-1', 'media-2'],
+      imageDescriptions: {
+        'media-1': `  ${'x'.repeat(510)}  `,
+        'media-2': 42,
+        orphan: 'not assigned',
+      },
+    });
+    expect(normalized?.imageDescriptions).toEqual({ 'media-1': 'x'.repeat(500) });
+  });
+
+  it('patches descriptions sparsely and removes empty values', () => {
+    const assigned = { imageIds: ['media-1', 'media-2'], imageDescriptions: {} };
+    const patched = patchImageDescription(assigned, 'media-1', '  Panel connection  ');
+    expect(patched).toEqual({ 'media-1': 'Panel connection' });
+    expect(
+      patchImageDescription({ ...assigned, imageDescriptions: patched }, 'media-1', '   '),
+    ).toEqual({});
+    expect(normalizeImageDescriptions(assigned.imageIds, { orphan: 'ignored' })).toEqual({});
+  });
+
+  it('remaps only thermal ID fields and description keys for offline sync', () => {
+    const submission = {
+      data: {
+        note: 'offline:media-1',
+        targets: [
+          {
+            imageIds: ['offline:media-1'],
+            imageDescriptions: { 'offline:media-1': 'Connection detail' },
+          },
+        ],
+      },
+      defects: [{ photoMediaIds: ['offline:media-1'] }],
+      arbitrary: { 'offline:media-1': 'offline:media-1' },
+    };
+    expect(remapThermalSubmissionIds(submission, { 'offline:media-1': 'server-1' })).toEqual({
+      data: {
+        note: 'offline:media-1',
+        targets: [
+          { imageIds: ['server-1'], imageDescriptions: { 'server-1': 'Connection detail' } },
+        ],
+      },
+      defects: [{ photoMediaIds: ['server-1'] }],
+      arbitrary: { 'offline:media-1': 'offline:media-1' },
+    });
+    expect(
+      remapImageDescriptions(
+        ['offline:media-1'],
+        { 'offline:media-1': 'Connection detail' },
+        { 'offline:media-1': 'server-1' },
+      ),
+    ).toEqual({ 'server-1': 'Connection detail' });
+  });
+
+  it('preserves descriptions while the report builder IDs are remapped', () => {
+    expect(remapThermalTargetIds(target, { 'media-1': 'server-1' })).toMatchObject({
+      imageIds: ['server-1'],
+      imageDescriptions: { 'server-1': 'Infrared image showing the hot connection.' },
+    });
   });
 
   it('validates preview signer names before opening a window', () => {

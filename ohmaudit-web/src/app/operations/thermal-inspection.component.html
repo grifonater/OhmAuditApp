@@ -385,9 +385,16 @@
                 type="button"
                 [class.selected]="selectedImageIds().has(image.id)"
                 (click)="toggleImage(image.id)"
+                [attr.aria-label]="
+                  (selectedImageIds().has(image.id) ? 'Deselect ' : 'Select ') +
+                  (image.caption || image.originalFilename || 'inspection image')
+                "
               >
                 @if (imageUrls()[image.id]) {
-                  <img [src]="imageUrls()[image.id]" alt="" />
+                  <img
+                    [src]="imageUrls()[image.id]"
+                    [alt]="image.caption || image.originalFilename || 'Available inspection image'"
+                  />
                 }
                 <span>{{ imageKind(image) === 'thermal' ? 'Infrared' : 'Standard' }}</span>
               </button>
@@ -420,8 +427,8 @@
               ><b>{{ faultCount() }}</b
               ><small>Faults</small></span
             ><span
-              ><b>{{ images().length }}</b
-              ><small>Images</small></span
+              ><b>{{ assignedImageCount() }}</b
+              ><small>Report images</small></span
             >
           </div>
           <div class="target-list panel">
@@ -475,22 +482,37 @@
                 </div>
               </div>
               <div class="target-image-grid">
-                @for (imageId of target.imageIds; track imageId) {
+                @for (imageId of target.imageIds; track imageId; let imageIndex = $index) {
                   @if (imageById(imageId); as image) {
                     <figure>
                       @if (imageUrls()[imageId]) {
-                        <img [src]="imageUrls()[imageId]" alt="Target evidence" />
+                        <img
+                          [src]="imageUrls()[imageId]"
+                          [alt]="imageLabel(imageId, imageIndex) + ' target evidence'"
+                        />
                       }
                       <figcaption>
                         <span>{{ imageKind(image) === 'thermal' ? 'Infrared' : 'Standard' }}</span
                         ><button
                           type="button"
                           (click)="removeImageFromTarget(imageId)"
-                          aria-label="Remove image"
+                          [attr.aria-label]="'Remove ' + imageLabel(imageId, imageIndex)"
                         >
                           ×
                         </button>
                       </figcaption>
+                      <label class="target-image-description">
+                        Image description (optional)
+                        <textarea
+                          rows="3"
+                          maxlength="500"
+                          [attr.aria-label]="
+                            'Image description (optional) for ' + imageLabel(imageId, imageIndex)
+                          "
+                          [ngModel]="target.imageDescriptions?.[imageId] || ''"
+                          (ngModelChange)="patchTargetImageDescription(imageId, $event)"
+                        ></textarea>
+                      </label>
                     </figure>
                   }
                 }
@@ -672,6 +694,18 @@
               <span class="condition" [class.fault]="target.condition === 'FAULT'">{{
                 target.condition === 'FAULT' ? target.issueSummary : 'No issues'
               }}</span>
+              @if (target.imageDescriptions) {
+                <dl class="review-image-descriptions">
+                  @for (imageId of target.imageIds; track imageId; let imageIndex = $index) {
+                    @if (target.imageDescriptions[imageId]; as description) {
+                      <div>
+                        <dt>{{ imageLabel(imageId, imageIndex) }}</dt>
+                        <dd>{{ description }}</dd>
+                      </div>
+                    }
+                  }
+                </dl>
+              }
             </article>
           }
         </section>

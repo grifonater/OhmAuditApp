@@ -59,12 +59,16 @@ function targetImage(
   image: ThermalCertificatePayload['targets'][number]['images'][number],
   targetName: string,
   index: number,
+  total: number,
 ): string {
   const source = imageSource(image.jpegBase64);
   if (source === undefined) return '';
   return `<figure class="evidence-image">
     <div class="image-frame"><img src="${source}" alt="${text(targetName)} ${text(image.kind)} image ${index + 1}"></div>
-    <figcaption><span>${text(image.kind)}</span><small>IMAGE ${index + 1}</small></figcaption>
+    <figcaption>
+      <div><span>${text(image.kind)}</span><small>IMAGE ${index + 1} OF ${total}</small></div>
+      ${image.description?.trim() ? `<p>${text(image.description, '')}</p>` : ''}
+    </figcaption>
   </figure>`;
 }
 
@@ -78,28 +82,33 @@ function footer(reference: string, page: number, totalPages: number): string {
 
 function targetPage(
   target: ThermalCertificatePayload['targets'][number],
-  index: number,
+  targetIndex: number,
   payload: ThermalCertificatePayload,
+  images: ThermalCertificatePayload['targets'][number]['images'],
+  imageOffset: number,
+  continuation: boolean,
+  page: number,
   totalPages: number,
 ): string {
   const isFault = target.condition.toLocaleUpperCase('en-GB') === 'FAULT';
-  const images = target.images
-    .slice(0, 4)
-    .map((image, imageIndex) => targetImage(image, target.name, imageIndex))
+  const renderedImages = images
+    .map((image, imageIndex) =>
+      targetImage(image, target.name, imageOffset + imageIndex, target.images.length),
+    )
     .join('');
-  const evidence = images
-    ? `<div class="evidence-grid image-count-${Math.min(target.images.length, 4)}">${images}</div>`
+  const evidence = renderedImages
+    ? `<div class="evidence-grid">${renderedImages}</div>`
     : `<div class="empty-evidence">NO REPORT IMAGES WERE AVAILABLE FOR THIS TARGET ITEM.</div>`;
-  return `<section class="report-page target-page">
+  return `<section class="report-page target-page${continuation ? ' continuation-page' : ''}">
     <header class="page-header">
       ${logo(payload)}
-      <div><span>THERMAL IMAGING REPORT</span><strong>TARGET ${index + 1} OF ${payload.targets.length}</strong></div>
+      <div><span>THERMAL IMAGING REPORT</span><strong>TARGET ${targetIndex + 1} OF ${payload.targets.length}${continuation ? ' · EVIDENCE CONTINUATION' : ''}</strong></div>
     </header>
 
     <div class="target-heading">
       <div>
-        <p class="eyebrow">TARGET ITEM</p>
-        <h2>${text(target.name, `TARGET ITEM ${index + 1}`)}</h2>
+        <p class="eyebrow">${continuation ? 'TARGET EVIDENCE CONTINUATION' : 'TARGET ITEM'}</p>
+        <h2>${text(target.name, `TARGET ITEM ${targetIndex + 1}`)}</h2>
         <p>${
           [target.reference, target.location]
             .filter(Boolean)
@@ -116,8 +125,10 @@ function targetPage(
     ${evidence}
 
     ${
-      isFault
-        ? `<div class="fault-summary">
+      continuation
+        ? `<div class="continuation-note">EVIDENCE CONTINUATION · IMAGES ${imageOffset + 1}-${imageOffset + images.length} OF ${target.images.length}</div>`
+        : isFault
+          ? `<div class="fault-summary">
             <div><small>SEVERITY</small><strong>${text(target.severity)}</strong></div>
             <div><small>MAX TEMPERATURE</small><strong>${text(target.maxTemperatureC)}${target.maxTemperatureC ? ' °C' : ''}</strong></div>
             <div><small>TEMPERATURE DIFFERENCE</small><strong>${text(target.deltaTemperatureC)}${target.deltaTemperatureC ? ' °C' : ''}</strong></div>
@@ -127,7 +138,7 @@ function targetPage(
             <article><h3>DETAILED OBSERVATIONS</h3><p>${text(target.observations, 'NONE RECORDED')}</p></article>
             <article class="recommendation"><h3>RECOMMENDED ACTION</h3><p>${text(target.recommendation, 'NONE RECORDED')}</p></article>
           </div>`
-        : `<div class="clear-assessment">
+          : `<div class="clear-assessment">
             <span>✓</span>
             <div><h3>NO ISSUES RECORDED</h3><p>NO THERMAL ANOMALIES OR REPORTABLE ISSUES WERE IDENTIFIED FOR THIS TARGET ITEM AT THE TIME OF INSPECTION.</p></div>
           </div>
@@ -136,9 +147,13 @@ function targetPage(
           </div>`
     }
 
-    <div class="engineer-signoff"><span>INSPECTED BY</span><strong>${text(payload.engineerName)}</strong><span>ON ${text(payload.reportDate)}</span></div>
-    ${footer(payload.reportReference, index + 2, totalPages)}
+    ${continuation ? '' : `<div class="engineer-signoff"><span>INSPECTED BY</span><strong>${text(payload.engineerName)}</strong><span>ON ${text(payload.reportDate)}</span></div>`}
+    ${footer(payload.reportReference, page, totalPages)}
   </section>`;
+}
+
+function targetPageCount(target: ThermalCertificatePayload['targets'][number]): number {
+  return Math.max(1, Math.ceil(target.images.length / 2));
 }
 
 /** Returns a self-contained, print-safe A4 HTML report with no external resources. */
@@ -147,7 +162,8 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     ({ condition }) => condition.toLocaleUpperCase('en-GB') === 'FAULT',
   ).length;
   const noIssueCount = payload.targets.length - faultCount;
-  const totalPages = payload.targets.length + 1;
+  const totalPages =
+    1 + payload.targets.reduce((pages, target) => pages + targetPageCount(target), 0);
   const outcomeClass = faultCount > 0 ? 'fault' : 'clear';
   const details = payload.details;
   return `<!doctype html>
@@ -163,7 +179,7 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     html, body { margin: 0; padding: 0; }
     body { background: ${BRAND.canvas}; font-size: 10pt; line-height: 1.42; }
     .screen-note { width: 210mm; margin: 18px auto 10px; padding: 10px 14px; border: 1px solid ${BRAND.line}; border-radius: 8px; background: #fff; color: ${BRAND.muted}; text-align: center; font-size: 9pt; }
-    .report-page { position: relative; width: 210mm; min-height: 297mm; margin: 10mm auto; padding: 15mm 15mm 17mm; overflow: hidden; background: #fff; box-shadow: 0 10px 34px rgba(7, 27, 52, .12); break-after: page; page-break-after: always; }
+    .report-page { position: relative; width: 210mm; min-height: 297mm; margin: 10mm auto; padding: 15mm 15mm 17mm; background: #fff; box-shadow: 0 10px 34px rgba(7, 27, 52, .12); break-after: page; page-break-after: always; }
     .report-page:last-of-type { break-after: auto; page-break-after: auto; }
     .cover-page::before { content: ''; position: absolute; inset: 0 0 auto; height: 8mm; background: ${BRAND.navy}; }
     .cover-page::after { content: ''; position: absolute; top: 0; right: 15mm; width: 32mm; height: 8mm; background: ${BRAND.amber}; }
@@ -224,11 +240,13 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     .status.fault > span { background: ${BRAND.danger}; }
     .evidence-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 5mm; }
     .evidence-image { min-width: 0; margin: 0; overflow: hidden; border: 1px solid ${BRAND.line}; border-radius: 3mm; break-inside: avoid; }
-    .image-frame { height: 62mm; background: ${BRAND.navy}; }
-    .image-count-3 .image-frame, .image-count-4 .image-frame { height: 35mm; }
+    .image-frame { height: 49mm; background: ${BRAND.navy}; }
+    .continuation-page .image-frame { height: 76mm; }
     .image-frame img { width: 100%; height: 100%; object-fit: contain; }
-    figcaption { display: flex; justify-content: space-between; padding: 2mm 3mm; background: ${BRAND.navy}; color: #fff; font-size: 7pt; font-weight: 700; }
+    figcaption { padding: 2mm 3mm 3mm; background: ${BRAND.navy}; color: #fff; font-size: 7pt; font-weight: 700; overflow-wrap: anywhere; }
+    figcaption div { display: flex; justify-content: space-between; gap: 3mm; }
     figcaption span { color: ${BRAND.amber}; }
+    figcaption p { margin: 2mm 0 0; color: #fff; font-size: 6.5pt; font-weight: 500; line-height: 1.3; white-space: pre-line; }
     .empty-evidence { display: grid; height: 55mm; margin-bottom: 5mm; place-items: center; border: 1px dashed ${BRAND.line}; border-radius: 3mm; background: ${BRAND.canvas}; color: ${BRAND.muted}; font-size: 8pt; }
     .fault-summary { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 4mm; border: 1px solid #edb8be; border-radius: 3mm; overflow: hidden; }
     .fault-summary div { padding: 3mm 4mm; border-right: 1px solid #edb8be; background: #fff7f8; }
@@ -244,6 +262,7 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     .clear-assessment > span { display: grid; width: 11mm; height: 11mm; flex: 0 0 auto; place-items: center; border-radius: 50%; background: ${BRAND.success}; color: #fff; font-size: 15pt; }
     .clear-assessment h3 { margin: 0 0 1mm; color: ${BRAND.success}; font-size: 10pt; }
     .clear-assessment p { margin: 0; font-size: 8pt; }
+    .continuation-note { padding: 3mm 4mm; border-left: 3px solid ${BRAND.blue}; background: ${BRAND.blueTint}; color: ${BRAND.navy}; font-size: 7pt; font-weight: 700; letter-spacing: .08em; }
     .engineer-signoff { position: absolute; left: 15mm; right: 15mm; bottom: 13mm; display: flex; align-items: baseline; gap: 3mm; padding-top: 3mm; border-top: 1px solid ${BRAND.line}; }
     .engineer-signoff strong { margin-right: auto; font-size: 8pt; }
     .report-footer { position: absolute; left: 15mm; right: 15mm; bottom: 5mm; display: flex; justify-content: space-between; gap: 5mm; color: ${BRAND.muted}; font-size: 6.5pt; }
@@ -318,7 +337,31 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     </div>
     ${footer(payload.reportReference, 1, totalPages)}
   </section>
-  ${payload.targets.map((target, index) => targetPage(target, index, payload, totalPages)).join('\n')}
+  ${(() => {
+    let page = 2;
+    return payload.targets
+      .flatMap((target, targetIndex) => {
+        const imageGroups =
+          target.images.length === 0
+            ? [[]]
+            : Array.from({ length: Math.ceil(target.images.length / 2) }, (_, index) =>
+                target.images.slice(index * 2, index * 2 + 2),
+              );
+        return imageGroups.map((images, groupIndex) =>
+          targetPage(
+            target,
+            targetIndex,
+            payload,
+            images,
+            groupIndex * 2,
+            groupIndex > 0,
+            page++,
+            totalPages,
+          ),
+        );
+      })
+      .join('\n');
+  })()}
 </body>
 </html>`;
 }

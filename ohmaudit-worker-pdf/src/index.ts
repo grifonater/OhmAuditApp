@@ -94,7 +94,7 @@ export interface ThermalCertificatePayload {
     deltaTemperatureC: string;
     observations: string;
     recommendation: string;
-    images: Array<{ kind: string; jpegBase64: string }>;
+    images: Array<{ kind: string; jpegBase64: string; description?: string }>;
   }>;
 }
 
@@ -270,6 +270,9 @@ function uppercaseThermalCertificate(
       images: target.images.map((image) => ({
         kind: upperUserText(image.kind),
         jpegBase64: image.jpegBase64,
+        ...(image.description === undefined
+          ? {}
+          : { description: upperUserText(image.description).slice(0, 500) }),
       })),
     })),
   };
@@ -446,7 +449,17 @@ function fitted(value: string, characters: number): string {
 }
 
 function wrapped(value: string, characters: number): string[] {
-  const words = value.trim().split(/\s+/u).filter(Boolean);
+  const words = value
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean)
+    .flatMap((word) =>
+      word.length <= characters
+        ? [word]
+        : Array.from({ length: Math.ceil(word.length / characters) }, (_, index) =>
+            word.slice(index * characters, (index + 1) * characters),
+          ),
+    );
   const lines: string[] = [];
   let current = '';
   for (const word of words) {
@@ -754,6 +767,10 @@ function thermalCertificateContents(
   imagePrefix: string,
 ): { contents: string[]; images: PdfImage[] } {
   const faultCount = payload.targets.filter(({ condition }) => condition === 'FAULT').length;
+  const targetPageCounts = payload.targets.map((target) =>
+    Math.max(1, Math.ceil(target.images.length / 2)),
+  );
+  const totalPages = 2 + targetPageCounts.reduce((total, count) => total + count, 0);
   const logoName = `${imagePrefix}Logo`;
   const images: PdfImage[] = [{ name: logoName, base64: payload.logoJpegBase64 }];
   const cover = [
@@ -807,7 +824,7 @@ function thermalCertificateContents(
     )
       .slice(0, 4)
       .map((line, index) => textAt(line, 42, 186 - index * 13, 8)),
-    textAt(`PAGE 1 OF ${payload.targets.length + 2}`, 475, 25, 7, muted),
+    textAt(`PAGE 1 OF ${totalPages}`, 475, 25, 7, muted),
   ].join('\n');
   const detailLines = (
     title: string,
@@ -864,93 +881,137 @@ function thermalCertificateContents(
     textAt(fitted(payload.details?.additionalNotes || 'NONE RECORDED', 45), 315, 119, 8),
     textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
     textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
-    textAt(`PAGE 2 OF ${payload.targets.length + 2}`, 475, 25, 7, muted),
+    textAt(`PAGE 2 OF ${totalPages}`, 475, 25, 7, muted),
   ].join('\n');
   const contents = [cover, detailsPage];
+  let pageNumber = 3;
   for (const [targetIndex, target] of payload.targets.entries()) {
-    const commands: string[] = [
-      textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
-      textAt(`TARGET ${targetIndex + 1} OF ${payload.targets.length}`, 475, 805, 7, muted),
-      textAt(target.name, 42, 773, 18),
-      textAt([target.reference, target.location].filter(Boolean).join('  |  '), 42, 752, 8, muted),
-    ];
-    const displayedImages = target.images.slice(0, 2);
-    displayedImages.forEach((image, imageIndex) => {
-      const name = `${imagePrefix}Target${targetIndex}Image${imageIndex}`;
-      images.push({ name, base64: image.jpegBase64 });
-      if (jpegDetails(image.jpegBase64) !== undefined) {
-        const x = imageIndex === 0 ? 42 : 303;
+    const imageGroups: Array<typeof target.images> =
+      target.images.length === 0
+        ? [[]]
+        : Array.from({ length: Math.ceil(target.images.length / 2) }, (_, index) =>
+            target.images.slice(index * 2, index * 2 + 2),
+          );
+    for (const [groupIndex, displayedImages] of imageGroups.entries()) {
+      const continuation = groupIndex > 0;
+      const imageOffset = groupIndex * 2;
+      const commands: string[] = [
+        textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
+        textAt(
+          `TARGET ${targetIndex + 1} OF ${payload.targets.length}${continuation ? ' - EVIDENCE CONTINUATION' : ''}`,
+          continuation ? 350 : 475,
+          805,
+          7,
+          muted,
+        ),
+        textAt(target.name, 42, 773, 18),
+        textAt(
+          [target.reference, target.location].filter(Boolean).join('  |  '),
+          42,
+          752,
+          8,
+          muted,
+        ),
+      ];
+      displayedImages.forEach((image, groupImageIndex) => {
+        const imageIndex = imageOffset + groupImageIndex;
+        const name = `${imagePrefix}Target${targetIndex}Image${imageIndex}`;
+        images.push({ name, base64: image.jpegBase64 });
+        const x = groupImageIndex === 0 ? 42 : 303;
+        if (jpegDetails(image.jpegBase64) !== undefined)
+          commands.push(`q 250 0 0 ${continuation ? 95 : 80} ${x} 615 cm /${name} Do Q`);
+        else commands.push(`${lineColour} RG ${x} 615 250 ${continuation ? 95 : 80} re S`);
         commands.push(
-          `q 250 0 0 190 ${x} 535 cm /${name} Do Q`,
-          '0.08 0.08 0.08 rg ' + x + ' 535 250 20 re f',
-          textAt(image.kind, x + 7, 542, 7, '1 1 1'),
+          textAt(image.kind, x, 601, 7, accent),
+          textAt(`IMAGE ${imageIndex + 1} OF ${target.images.length}`, x + 165, 601, 7, muted),
         );
+        if (image.description) {
+          const lines = wrapped(image.description, 60);
+          lines.forEach((line, lineIndex) =>
+            commands.push(textAt(line, x, 583 - lineIndex * 10, 6.5)),
+          );
+        }
+      });
+      if (displayedImages.length === 0)
+        commands.push(
+          '0.95 0.96 0.97 rg 42 535 511 190 re f',
+          textAt('NO JPEG IMAGES AVAILABLE IN THIS REPORT', 170, 625, 9, muted),
+        );
+
+      if (continuation) {
+        commands.push(
+          textAt(
+            `EVIDENCE CONTINUATION - IMAGES ${imageOffset + 1}-${imageOffset + displayedImages.length} OF ${target.images.length}`,
+            42,
+            410,
+            8,
+            accent,
+          ),
+        );
+      } else {
+        const isFault = target.condition === 'FAULT';
+        commands.push(
+          textAt('CONDITION', 42, 420, 7, muted),
+          textAt(
+            isFault ? 'FAULT REPORTED' : 'NO ISSUES',
+            42,
+            400,
+            13,
+            isFault ? '0.78 0.12 0.09' : accent,
+          ),
+        );
+        if (isFault) {
+          commands.push(
+            textAt('SEVERITY', 315, 420, 7, muted),
+            textAt(target.severity || 'NOT RECORDED', 315, 400, 11),
+            textAt('MAX TEMPERATURE', 42, 370, 7, muted),
+            textAt(
+              target.maxTemperatureC ? `${target.maxTemperatureC} C` : 'NOT RECORDED',
+              42,
+              353,
+              10,
+            ),
+            textAt('TEMPERATURE DIFFERENCE', 200, 370, 7, muted),
+            textAt(
+              target.deltaTemperatureC ? `${target.deltaTemperatureC} C` : 'NOT RECORDED',
+              200,
+              353,
+              10,
+            ),
+            textAt('ISSUE SUMMARY', 42, 320, 7, muted),
+          );
+          wrapped(target.issueSummary || 'NOT RECORDED', 92)
+            .slice(0, 3)
+            .forEach((line, index) => commands.push(textAt(line, 42, 303 - index * 12, 8)));
+          commands.push(textAt('OBSERVATIONS', 42, 255, 7, muted));
+          wrapped(target.observations || 'NONE RECORDED', 92)
+            .slice(0, 4)
+            .forEach((line, index) => commands.push(textAt(line, 42, 238 - index * 12, 8)));
+          commands.push(textAt('RECOMMENDATION', 42, 175, 7, muted));
+          wrapped(target.recommendation || 'NONE RECORDED', 92)
+            .slice(0, 5)
+            .forEach((line, index) => commands.push(textAt(line, 42, 158 - index * 12, 8)));
+        } else {
+          commands.push(
+            textAt('ENGINEER ASSESSMENT', 42, 350, 7, muted),
+            ...wrapped(
+              'NO THERMAL ANOMALIES OR REPORTABLE ISSUES WERE RECORDED FOR THIS TARGET ITEM.',
+              92,
+            ).map((line, index) => textAt(line, 42, 330 - index * 13, 9)),
+            textAt('ENGINEER OBSERVATIONS', 42, 285, 7, muted),
+            ...wrapped(target.observations || 'NO ADDITIONAL OBSERVATIONS RECORDED', 92)
+              .slice(0, 5)
+              .map((line, index) => textAt(line, 42, 268 - index * 12, 8)),
+          );
+        }
       }
-    });
-    if (displayedImages.length === 0)
       commands.push(
-        '0.95 0.96 0.97 rg 42 535 511 190 re f',
-        textAt('NO JPEG IMAGES AVAILABLE IN THIS REPORT', 170, 625, 9, muted),
+        textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
+        textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
+        textAt(`PAGE ${pageNumber++} OF ${totalPages}`, 475, 25, 7, muted),
       );
-    const isFault = target.condition === 'FAULT';
-    commands.push(
-      textAt('CONDITION', 42, 500, 7, muted),
-      textAt(
-        isFault ? 'FAULT REPORTED' : 'NO ISSUES',
-        42,
-        480,
-        13,
-        isFault ? '0.78 0.12 0.09' : accent,
-      ),
-    );
-    if (isFault) {
-      commands.push(
-        textAt('SEVERITY', 315, 500, 7, muted),
-        textAt(target.severity || 'NOT RECORDED', 315, 480, 11),
-        textAt('MAX TEMPERATURE', 42, 445, 7, muted),
-        textAt(
-          target.maxTemperatureC ? `${target.maxTemperatureC} C` : 'NOT RECORDED',
-          42,
-          428,
-          10,
-        ),
-        textAt('TEMPERATURE DIFFERENCE', 200, 445, 7, muted),
-        textAt(
-          target.deltaTemperatureC ? `${target.deltaTemperatureC} C` : 'NOT RECORDED',
-          200,
-          428,
-          10,
-        ),
-        textAt('ISSUE SUMMARY', 42, 392, 7, muted),
-      );
-      wrapped(target.issueSummary || 'NOT RECORDED', 92)
-        .slice(0, 3)
-        .forEach((line, index) => commands.push(textAt(line, 42, 375 - index * 13, 9)));
-      commands.push(textAt('OBSERVATIONS', 42, 321, 7, muted));
-      wrapped(target.observations || 'NONE RECORDED', 92)
-        .slice(0, 5)
-        .forEach((line, index) => commands.push(textAt(line, 42, 304 - index * 13, 8)));
-      commands.push(textAt('RECOMMENDATION', 42, 223, 7, muted));
-      wrapped(target.recommendation || 'NONE RECORDED', 92)
-        .slice(0, 5)
-        .forEach((line, index) => commands.push(textAt(line, 42, 206 - index * 13, 8)));
-    } else {
-      commands.push(
-        textAt('ENGINEER ASSESSMENT', 42, 430, 7, muted),
-        textAt(
-          'NO THERMAL ANOMALIES OR REPORTABLE ISSUES WERE RECORDED FOR THIS TARGET ITEM.',
-          42,
-          410,
-          9,
-        ),
-      );
+      contents.push(commands.join('\n'));
     }
-    commands.push(
-      textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
-      textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
-      textAt(`PAGE ${targetIndex + 3} OF ${payload.targets.length + 2}`, 475, 25, 7, muted),
-    );
-    contents.push(commands.join('\n'));
   }
   return { contents, images };
 }
@@ -1033,14 +1094,44 @@ function isPayload(value: unknown): value is CertificatePayload {
 function isThermalCertificatePayload(value: unknown): value is ThermalCertificatePayload {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
-  return (
-    typeof item['organisationName'] === 'string' &&
-    typeof item['customerName'] === 'string' &&
-    typeof item['siteName'] === 'string' &&
-    typeof item['reportReference'] === 'string' &&
-    Array.isArray(item['siteAddress']) &&
-    Array.isArray(item['targets'])
-  );
+  const targets = item['targets'];
+  if (
+    typeof item['organisationName'] !== 'string' ||
+    typeof item['customerName'] !== 'string' ||
+    typeof item['siteName'] !== 'string' ||
+    typeof item['reportReference'] !== 'string' ||
+    typeof item['outcome'] !== 'string' ||
+    !isStringArray(item['siteAddress']) ||
+    !Array.isArray(targets)
+  )
+    return false;
+  const valid = targets.every((target) => {
+    if (!isRecord(target)) return false;
+    if (
+      typeof target['name'] !== 'string' ||
+      typeof target['reference'] !== 'string' ||
+      typeof target['location'] !== 'string' ||
+      typeof target['condition'] !== 'string' ||
+      typeof target['issueSummary'] !== 'string' ||
+      typeof target['severity'] !== 'string' ||
+      typeof target['maxTemperatureC'] !== 'string' ||
+      typeof target['deltaTemperatureC'] !== 'string' ||
+      typeof target['observations'] !== 'string' ||
+      typeof target['recommendation'] !== 'string' ||
+      !Array.isArray(target['images'])
+    )
+      return false;
+    return target['images'].every(
+      (image) =>
+        isRecord(image) &&
+        isString(image['kind']) &&
+        isString(image['jpegBase64']) &&
+        image['jpegBase64'].length > 0 &&
+        (image['description'] === undefined ||
+          (isString(image['description']) && image['description'].length <= 500)),
+    );
+  });
+  return valid;
 }
 
 function isEvCertificatePayload(value: unknown): value is EvCertificatePayload {
@@ -1073,6 +1164,7 @@ function isVisitReportPayload(value: unknown): value is VisitReportPayload {
 
 const RAMS_MAX_REQUEST_BYTES = 1024 * 1024;
 const RAMS_MAX_SIGNATURE_BYTES = 256 * 1024;
+const DOCUMENT_MAX_REQUEST_BYTES = 40 * 1024 * 1024;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1432,6 +1524,61 @@ async function readRamsPayload(request: Request): Promise<RamsRenderPayload | Re
   return payload;
 }
 
+async function readDocumentPayload(
+  request: Request,
+): Promise<{ payload: unknown } | { response: Response }> {
+  const contentLength = request.headers.get('content-length');
+  if (contentLength !== null) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > DOCUMENT_MAX_REQUEST_BYTES)
+      return {
+        response: Response.json(
+          {
+            code: 'DOCUMENT_PAYLOAD_TOO_LARGE',
+            message: 'The document render payload must not exceed 40 MiB.',
+          },
+          { status: 413 },
+        ),
+      };
+  }
+
+  const reader = request.body?.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let json = '';
+  if (reader !== undefined) {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      bytesRead += result.value.byteLength;
+      if (bytesRead > DOCUMENT_MAX_REQUEST_BYTES) {
+        await reader.cancel();
+        return {
+          response: Response.json(
+            {
+              code: 'DOCUMENT_PAYLOAD_TOO_LARGE',
+              message: 'The document render payload must not exceed 40 MiB.',
+            },
+            { status: 413 },
+          ),
+        };
+      }
+      json += decoder.decode(result.value, { stream: true });
+    }
+    json += decoder.decode();
+  }
+  try {
+    return { payload: JSON.parse(json) as unknown };
+  } catch {
+    return {
+      response: Response.json(
+        { code: 'INVALID_DOCUMENT_PAYLOAD', message: 'The document payload is not valid JSON.' },
+        { status: 422 },
+      ),
+    };
+  }
+}
+
 async function renderRamsReportWithBrowser(
   environment: PdfBindings,
   payload: RamsRenderPayload,
@@ -1712,7 +1859,9 @@ export default {
       if (ramsPayload instanceof Response) return ramsPayload;
       return renderRamsReportWithBrowser(env, ramsPayload);
     }
-    const payload: unknown = await request.json();
+    const documentPayload = await readDocumentPayload(request);
+    if ('response' in documentPayload) return documentPayload.response;
+    const { payload } = documentPayload;
     const visitReport = templateId === 'visit-report';
     if (visitReport ? !isVisitReportPayload(payload) : !isPayload(payload))
       return Response.json(

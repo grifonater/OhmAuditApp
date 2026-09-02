@@ -10,6 +10,33 @@ import {
 import pdfWorker from '../src/index';
 
 describe('PDF worker', () => {
+  const jpegBase64 = btoa(
+    String.fromCharCode(
+      0xff,
+      0xd8,
+      0xff,
+      0xc0,
+      0x00,
+      0x11,
+      0x08,
+      0x00,
+      0x01,
+      0x00,
+      0x01,
+      0x03,
+      0x01,
+      0x11,
+      0x00,
+      0x02,
+      0x11,
+      0x00,
+      0x03,
+      0x11,
+      0x00,
+      0xff,
+      0xd9,
+    ),
+  );
   it('accepts bounded template identifiers', () => {
     expect(normaliseDocumentPath(new URL('https://pdf.test/render/ev-certificate-v1'))).toBe(
       'ev-certificate-v1',
@@ -240,6 +267,106 @@ describe('PDF worker', () => {
     expect(html).toContain('PAGE 2 OF 2');
     expect(html).not.toContain('<script');
   });
+  it('paginates all thermal HTML evidence two per page with escaped descriptions', () => {
+    const html = renderThermalReportHtml({
+      organisationName: 'Ohm Audit Electrical Ltd',
+      customerName: 'Apex Facilities',
+      siteName: 'Apex House',
+      siteAddress: [],
+      reportDate: '2026-09-02',
+      engineerName: 'A Engineer',
+      reportReference: 'THERMAL-MULTI',
+      outcome: 'FAULTS_REPORTED',
+      targets: [
+        {
+          name: 'Main board',
+          reference: 'DB-01',
+          location: 'Switch room',
+          condition: 'FAULT',
+          issueSummary: 'Hot termination',
+          severity: 'MAJOR',
+          maxTemperatureC: '80',
+          deltaTemperatureC: '35',
+          observations: 'Heating at L1',
+          recommendation: 'Isolate and repair',
+          images: Array.from({ length: 5 }, (_, index) => ({
+            kind: index % 2 === 0 ? 'Infrared' : 'Standard',
+            jpegBase64,
+            description: index === 4 ? 'Final <evidence> & follow-up' : `Evidence ${index + 1}`,
+          })),
+        },
+      ],
+    });
+
+    expect(html).toContain('PAGE 4 OF 4');
+    expect(html.match(/target-page continuation-page/g)).toHaveLength(2);
+    expect(html).toContain('IMAGE 5 OF 5');
+    expect(html).toContain('FINAL &lt;EVIDENCE&gt; &amp; FOLLOW-UP');
+    expect(html).not.toContain('Final <evidence>');
+  });
+  it('paginates every native thermal image and includes wrapped descriptions', () => {
+    const text = new TextDecoder().decode(
+      renderThermalCertificatePdf({
+        organisationName: 'Ohm Audit Electrical Ltd',
+        customerName: 'Apex Facilities',
+        siteName: 'Apex House',
+        siteAddress: [],
+        reportDate: '2026-09-02',
+        engineerName: 'A Engineer',
+        reportReference: 'THERMAL-MULTI',
+        outcome: 'SATISFACTORY',
+        targets: [
+          {
+            name: 'Main board',
+            reference: 'DB-01',
+            location: 'Switch room',
+            condition: 'NO_ISSUES',
+            issueSummary: '',
+            severity: '',
+            maxTemperatureC: '',
+            deltaTemperatureC: '',
+            observations: 'No anomaly found',
+            recommendation: '',
+            images: Array.from({ length: 5 }, (_, index) => ({
+              kind: 'Infrared',
+              jpegBase64,
+              description:
+                index === 4
+                  ? 'Final evidence description wraps safely onto the continuation page'
+                  : `Evidence ${index + 1}`,
+            })),
+          },
+        ],
+      }),
+    );
+
+    expect(text).toContain('/Count 5');
+    expect(text).toContain('IMAGE 5 OF 5');
+    expect(text).toContain('FINAL EVIDENCE DESCRIPTION WRAPS SAFELY');
+    expect(text).toContain('EVIDENCE CONTINUATION');
+  });
+  it('returns stable errors for oversized and malformed non-RAMS payloads', async () => {
+    const oversized = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/thermal-imaging-report-v1', {
+        method: 'POST',
+        headers: { 'content-length': String(40 * 1024 * 1024 + 1) },
+        body: '{}',
+      }),
+      { APP_ENV: 'local', APP_VERSION: 'test', RENDER_TIMEOUT_MS: '30000' },
+    );
+    const malformed = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/thermal-imaging-report-v1', {
+        method: 'POST',
+        body: '{',
+      }),
+      { APP_ENV: 'local', APP_VERSION: 'test', RENDER_TIMEOUT_MS: '30000' },
+    );
+
+    expect(oversized.status).toBe(413);
+    await expect(oversized.json()).resolves.toMatchObject({ code: 'DOCUMENT_PAYLOAD_TOO_LARGE' });
+    expect(malformed.status).toBe(422);
+    await expect(malformed.json()).resolves.toMatchObject({ code: 'INVALID_DOCUMENT_PAYLOAD' });
+  });
   it('serves the thermal HTML preview with private and restrictive response headers', async () => {
     const response = await pdfWorker.fetch(
       new Request('https://pdf.test/render/thermal-report-html', {
@@ -464,5 +591,149 @@ describe('PDF worker', () => {
     expect(response.headers.get('x-ohmaudit-pdf-renderer')).toBe('native');
     expect(conversions).toBe(1);
     expect(pdf).toContain('/DCTDecode');
+  });
+  it('accepts a thermal certificate with many images across all targets', async () => {
+    const image = { kind: 'Infrared', jpegBase64 };
+    const response = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/thermal-imaging-report-v1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Thermal Imaging Report',
+          organisationName: 'Ohm Audit Electrical Ltd',
+          customerName: 'Apex Facilities Group',
+          siteName: 'Apex House',
+          inspectionType: 'Thermal imaging',
+          effectiveDate: '2026-08-23',
+          revisionNumber: 1,
+          engineerName: 'A Engineer',
+          outcome: 'SATISFACTORY',
+          summaryLines: [],
+          thermalCertificate: {
+            organisationName: 'Ohm Audit Electrical Ltd',
+            customerName: 'Apex Facilities Group',
+            siteName: 'Apex House',
+            siteAddress: [],
+            reportDate: '2026-08-23',
+            engineerName: 'A Engineer',
+            reportReference: 'THERMAL-001',
+            outcome: 'SATISFACTORY',
+            targets: Array.from({ length: 25 }, (_, index) => ({
+              name: `Target ${index}`,
+              reference: '',
+              location: '',
+              condition: 'NO_ISSUES',
+              issueSummary: '',
+              severity: '',
+              maxTemperatureC: '',
+              deltaTemperatureC: '',
+              observations: '',
+              recommendation: '',
+              images: [image, image],
+            })),
+          },
+        }),
+      }),
+      {
+        APP_ENV: 'local',
+        APP_VERSION: 'test',
+        RENDER_TIMEOUT_MS: '30000',
+        BROWSER: {
+          quickAction: () => Promise.resolve(new Response('rate limited', { status: 429 })),
+        } as unknown as BrowserRun,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-ohmaudit-pdf-renderer')).toBe('native-fallback');
+  });
+  it('rejects a thermal certificate with a malformed image entry', async () => {
+    const response = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/thermal-imaging-report-v1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Thermal Imaging Report',
+          organisationName: 'Ohm Audit Electrical Ltd',
+          customerName: 'Apex Facilities Group',
+          siteName: 'Apex House',
+          inspectionType: 'Thermal imaging',
+          effectiveDate: '2026-08-23',
+          revisionNumber: 1,
+          engineerName: 'A Engineer',
+          outcome: 'SATISFACTORY',
+          summaryLines: [],
+          thermalCertificate: {
+            organisationName: 'Ohm Audit Electrical Ltd',
+            customerName: 'Apex Facilities Group',
+            siteName: 'Apex House',
+            siteAddress: [],
+            reportDate: '2026-08-23',
+            engineerName: 'A Engineer',
+            reportReference: 'THERMAL-001',
+            outcome: 'SATISFACTORY',
+            targets: [
+              {
+                name: 'Bad',
+                reference: '',
+                location: '',
+                condition: 'NO_ISSUES',
+                issueSummary: '',
+                severity: '',
+                maxTemperatureC: '',
+                deltaTemperatureC: '',
+                observations: '',
+                recommendation: '',
+                images: [{ kind: 'Infrared', jpegBase64: 12345 }],
+              },
+            ],
+          },
+        }),
+      }),
+      { APP_ENV: 'local', APP_VERSION: 'test', RENDER_TIMEOUT_MS: '30000' },
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ code: 'INVALID_DOCUMENT_PAYLOAD' });
+  });
+  it('renders the complete 500-character description tail in the native thermal PDF', () => {
+    const description = `HOTSPOT DETECTED. ${'X'.repeat(465)} TAIL-WORDS-98327`;
+    const text = new TextDecoder().decode(
+      renderThermalCertificatePdf({
+        organisationName: 'Ohm Audit Electrical Ltd',
+        customerName: 'Apex Facilities',
+        siteName: 'Apex House',
+        siteAddress: [],
+        reportDate: '2026-09-02',
+        engineerName: 'A Engineer',
+        reportReference: 'THERMAL-FULL',
+        outcome: 'FAULTS_REPORTED',
+        targets: [
+          {
+            name: 'Main board',
+            reference: 'DB-01',
+            location: 'Switch room',
+            condition: 'FAULT',
+            issueSummary: 'Hot termination',
+            severity: 'MAJOR',
+            maxTemperatureC: '80',
+            deltaTemperatureC: '35',
+            observations: 'Heating at L1',
+            recommendation: 'Isolate and repair',
+            images: [
+              {
+                kind: 'Infrared',
+                jpegBase64,
+                description,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(description.length).toBeGreaterThanOrEqual(500);
+    expect(text).toContain('TAIL-WORDS-98327');
+    expect(text).toContain('HOTSPOT DETECTED.');
   });
 });

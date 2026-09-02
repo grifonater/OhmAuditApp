@@ -1040,6 +1040,23 @@ function reportText(value: unknown, fallback = ''): string {
     : fallback;
 }
 
+function reportImageDescription(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return [...value]
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 8 ||
+        (code >= 11 && code <= 12) ||
+        (code >= 14 && code <= 31) ||
+        (code >= 127 && code <= 159)
+        ? ' '
+        : character;
+    })
+    .join('')
+    .trim()
+    .slice(0, 500);
+}
+
 function reportProtection(value: unknown): string {
   const key = reportText(value);
   return (
@@ -1186,16 +1203,16 @@ export async function thermalCertificateData(source: {
   const details = reportRecord(data['details']);
   const equipment = reportRecord(data['equipment']);
   const targets = reportArray(data['targets']).map(reportRecord);
-  const requestedIds = [
-    ...new Set(
-      targets.flatMap((target) =>
-        reportArray(target['imageIds'])
-          .map((id) => reportText(id))
-          .filter(Boolean)
-          .slice(0, 2),
-      ),
-    ),
-  ].slice(0, 12);
+  const requestedIds: string[] = [];
+  const requestedIdSet = new Set<string>();
+  for (const target of targets) {
+    for (const id of reportArray(target['imageIds'])) {
+      const mediaId = reportText(id);
+      if (!mediaId || requestedIdSet.has(mediaId)) continue;
+      requestedIdSet.add(mediaId);
+      requestedIds.push(mediaId);
+    }
+  }
   const media =
     requestedIds.length === 0
       ? []
@@ -1210,6 +1227,14 @@ export async function thermalCertificateData(source: {
             status: 'AVAILABLE',
           },
         });
+  const resolvedIds = new Set(media.map((image) => image.id));
+  const missingFromDb = requestedIds.filter((id) => !resolvedIds.has(id));
+  if (missingFromDb.length > 0)
+    throw new DomainError(
+      'THERMAL_REPORT_IMAGE_UNAVAILABLE',
+      'One or more images could not be found. Please re-upload the missing image(s) and try again.',
+      422,
+    );
   const base64Entries = await Promise.all(
     media.map(
       async (image) =>
@@ -1224,6 +1249,15 @@ export async function thermalCertificateData(source: {
         ] as const,
     ),
   );
+  const missingFromStorage = base64Entries
+    .filter((entry) => entry[1] === undefined)
+    .map((entry) => entry[0]);
+  if (missingFromStorage.length > 0)
+    throw new DomainError(
+      'THERMAL_REPORT_IMAGE_UNAVAILABLE',
+      'One or more images could not be loaded from storage. Please re-upload the missing image(s) and try again.',
+      422,
+    );
   const base64ById = new Map(base64Entries);
   const mediaById = new Map(media.map((image) => [image.id, image]));
   return {
@@ -1259,26 +1293,36 @@ export async function thermalCertificateData(source: {
         .join(' · '),
     },
     ...reportLogoFields(source.logoImage),
-    targets: targets.map((target, index) => ({
-      name: reportText(target['name'], `Target item ${index + 1}`),
-      reference: reportText(target['reference']),
-      location: reportText(target['location']),
-      condition: reportText(target['condition'], 'NO_ISSUES'),
-      issueSummary: reportText(target['issueSummary']),
-      severity: reportText(target['severity']),
-      maxTemperatureC: reportText(target['maxTemperatureC']),
-      deltaTemperatureC: reportText(target['deltaTemperatureC']),
-      observations: reportText(target['observations']),
-      recommendation: reportText(target['recommendation']),
-      images: reportArray(target['imageIds']).flatMap((id) => {
-        const mediaId = reportText(id);
-        const image = mediaById.get(mediaId);
-        const jpegBase64 = base64ById.get(mediaId);
-        return image === undefined || jpegBase64 === undefined
-          ? []
-          : [{ kind: image.category === 'thermal-image' ? 'Infrared' : 'Standard', jpegBase64 }];
-      }),
-    })),
+    targets: targets.map((target, index) => {
+      const imageDescriptions = reportRecord(target['imageDescriptions']);
+      return {
+        name: reportText(target['name'], `Target item ${index + 1}`),
+        reference: reportText(target['reference']),
+        location: reportText(target['location']),
+        condition: reportText(target['condition'], 'NO_ISSUES'),
+        issueSummary: reportText(target['issueSummary']),
+        severity: reportText(target['severity']),
+        maxTemperatureC: reportText(target['maxTemperatureC']),
+        deltaTemperatureC: reportText(target['deltaTemperatureC']),
+        observations: reportText(target['observations']),
+        recommendation: reportText(target['recommendation']),
+        images: reportArray(target['imageIds']).flatMap((id) => {
+          const mediaId = reportText(id);
+          if (!requestedIdSet.has(mediaId)) return [];
+          const image = mediaById.get(mediaId);
+          const jpegBase64 = base64ById.get(mediaId);
+          if (image === undefined || jpegBase64 === undefined) return [];
+          const description = reportImageDescription(imageDescriptions[mediaId]);
+          return [
+            {
+              kind: image.category === 'thermal-image' ? 'Infrared' : 'Standard',
+              jpegBase64,
+              ...(description ? { description } : {}),
+            },
+          ];
+        }),
+      };
+    }),
   };
 }
 

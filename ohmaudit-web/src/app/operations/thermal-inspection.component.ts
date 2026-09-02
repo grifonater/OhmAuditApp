@@ -23,6 +23,10 @@ import {
   buildThermalInspectionReport,
   canReviewThermalPdf,
   metadataFailureAction,
+  normalizeImageDescriptions,
+  normalizeThermalTarget,
+  patchImageDescription,
+  remapThermalTargetIds,
   thermalImageLimitError,
   thermalPreviewBody,
   thermalPreviewSignerError,
@@ -124,6 +128,7 @@ export class ThermalInspectionComponent {
   protected readonly assignedImageIds = computed(
     () => new Set(this.targets().flatMap(({ imageIds }) => imageIds)),
   );
+  protected readonly assignedImageCount = computed(() => this.assignedImageIds().size);
   protected readonly availableImages = computed(() =>
     this.filteredImages().filter(({ id }) => !this.assignedImageIds().has(id)),
   );
@@ -329,6 +334,7 @@ export class ThermalInspectionComponent {
       const image = this.imageById(id);
       return image && this.imageKind(image) !== 'unclassified';
     });
+    this.error.set('');
     const target: ThermalTarget = {
       id: crypto.randomUUID(),
       name: `Target item ${this.targets().length + 1}`,
@@ -351,6 +357,7 @@ export class ThermalInspectionComponent {
   protected addSelectedToTarget(): void {
     const selected = this.selectedTarget();
     if (!selected) return;
+    this.error.set('');
     this.patchTarget({
       imageIds: [...new Set([...selected.imageIds, ...this.selectedImageIds()])],
     });
@@ -369,8 +376,20 @@ export class ThermalInspectionComponent {
   }
   protected removeImageFromTarget(id: string): void {
     const selected = this.selectedTarget();
-    if (selected)
-      this.patchTarget({ imageIds: selected.imageIds.filter((imageId) => imageId !== id) });
+    if (selected) {
+      const imageIds = selected.imageIds.filter((imageId) => imageId !== id);
+      this.patchTarget({
+        imageIds,
+        imageDescriptions: normalizeImageDescriptions(imageIds, selected.imageDescriptions),
+      });
+    }
+  }
+  protected patchTargetImageDescription(imageId: string, value: string): void {
+    const selected = this.selectedTarget();
+    if (!selected) return;
+    this.patchTarget({
+      imageDescriptions: patchImageDescription(selected, imageId, value),
+    });
   }
   protected patchTarget(patch: Partial<ThermalTarget>): void {
     const id = this.selectedTarget()?.id;
@@ -411,6 +430,10 @@ export class ThermalInspectionComponent {
   }
   protected imageById(id: string): AssetMedia | undefined {
     return this.images().find((image) => image.id === id);
+  }
+  protected imageLabel(id: string, index: number): string {
+    const image = this.imageById(id);
+    return image?.caption || image?.originalFilename || `Image ${index + 1}`;
   }
   protected imageCount(kind: ImageKind): number {
     return this.images().filter((image) => this.imageKind(image) === kind).length;
@@ -764,10 +787,7 @@ export class ThermalInspectionComponent {
     }
   }
   private buildReport(mediaIds: Record<string, string> = {}) {
-    const targets = this.targets().map((target) => ({
-      ...target,
-      imageIds: target.imageIds.map((id) => mediaIds[id] ?? id),
-    }));
+    const targets = this.targets().map((target) => remapThermalTargetIds(target, mediaIds));
     return buildThermalInspectionReport({
       details: this.details(),
       targets,
@@ -784,7 +804,10 @@ export class ThermalInspectionComponent {
         : 'unclassified-image';
   }
   private restore(data: Record<string, unknown>): void {
-    const targets = (Array.isArray(data['targets']) ? data['targets'] : []).filter(this.isTarget);
+    const targets = (Array.isArray(data['targets']) ? data['targets'] : []).flatMap((target) => {
+      const normalized = normalizeThermalTarget(target);
+      return normalized === undefined ? [] : [normalized];
+    });
     this.targets.set(targets);
     this.selectedTargetId.set(targets[0]?.id ?? '');
     const details = data['details'];
@@ -792,16 +815,6 @@ export class ThermalInspectionComponent {
       this.details.set({ ...emptyDetails(), ...(details as Partial<ThermalDetails>) });
     if (typeof data['signerName'] === 'string') this.signerName = data['signerName'];
   }
-  private readonly isTarget = (value: unknown): value is ThermalTarget => {
-    if (typeof value !== 'object' || value === null) return false;
-    const item = value as Partial<ThermalTarget>;
-    return (
-      typeof item.id === 'string' &&
-      typeof item.name === 'string' &&
-      Array.isArray(item.imageIds) &&
-      (item.condition === 'NO_ISSUES' || item.condition === 'FAULT')
-    );
-  };
   private scheduleDraft(): void {
     if (this.draftTimer !== undefined) clearTimeout(this.draftTimer);
     this.draftTimer = setTimeout(() => {
