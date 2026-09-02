@@ -449,11 +449,15 @@
                 (click)="selectedTargetId.set(target.id)"
               >
                 <span class="target-thumbs">
-                  @for (imageId of target.imageIds.slice(0, 2); track imageId) {
+                  @for (imageId of target.imageIds.slice(0, 4); track imageId) {
                     @if (imageUrls()[imageId]) {
                       <img [src]="imageUrls()[imageId]" alt="" />
                     }
-                  }</span
+                  }
+                  @if (target.imageIds.length > 4) {
+                    <span class="thumb-more">+{{ target.imageIds.length - 4 }}</span>
+                  }
+                </span
                 ><span class="target-copy"
                   ><b>{{ target.name }}</b
                   ><small

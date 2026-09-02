@@ -551,6 +551,23 @@
   object-fit: cover;
   border-radius: 4px;
 }
+.target-thumbs img + img,
+.target-thumbs img + .thumb-more {
+  margin-left: -30px;
+}
+.target-thumbs .thumb-more {
+  position: relative;
+  display: inline-grid;
+  min-width: 50px;
+  height: 50px;
+  place-items: center;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: rgba(7, 27, 52, 0.72);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
 .target-copy b,
 .target-copy small {
   display: block;
