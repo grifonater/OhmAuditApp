@@ -432,6 +432,39 @@
                 Guest link
               </button>
             }
+            @if (canGenerate()) {
+              <details class="job-pack-menu" #jobPack>
+                <summary class="button secondary compact">
+                  @if (jobSheetDownload()?.visitId === visit.id) {
+                    <span class="oa-spinner small" aria-hidden="true"></span> Preparing…
+                  } @else {
+                    Job pack <span aria-hidden="true">▾</span>
+                  }
+                </summary>
+                <div class="job-pack-options">
+                  <button
+                    type="button"
+                    [disabled]="jobSheetDownload() !== undefined"
+                    (click)="jobPack.open = false; downloadJobSheet(visit, false)"
+                  >
+                    <strong>Job sheet</strong>
+                    <small>Job details, scope, site, tasks and assets</small>
+                  </button>
+                  <button
+                    type="button"
+                    [disabled]="jobSheetDownload() !== undefined || !canReadRams()"
+                    (click)="jobPack.open = false; downloadJobSheet(visit, true)"
+                  >
+                    <strong>Job sheet with RAMS</strong>
+                    <small>{{
+                      canReadRams()
+                        ? 'Job sheet followed by all linked RAMS'
+                        : 'RAMS access is required for this option'
+                    }}</small>
+                  </button>
+                </div>
+              </details>
+            }
           </div>
         </article>
       } @empty {

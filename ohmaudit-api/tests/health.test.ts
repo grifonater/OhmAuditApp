@@ -56,4 +56,24 @@ describe('API foundation', () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ code: 'AUTHENTICATION_REQUIRED' });
   });
+
+  it.each(['job-sheet.pdf', 'job-sheet-with-rams.pdf'])(
+    'requires authentication for the %s route',
+    async (report) => {
+      const response = await createApp().request(
+        `/api/v1/visits/2f06d49d-798b-47cd-a0b9-f837afbeed91/${report}?organisationId=c61af703-b384-4c1d-ac2b-adc4d2d8a8eb`,
+        {},
+        {
+          APP_ENV: 'local',
+          APP_VERSION: '0.2.0',
+          SUPABASE_URL: 'https://example.supabase.co',
+          SUPABASE_JWT_AUDIENCE: 'authenticated',
+          ALLOWED_ORIGINS: 'http://localhost:4200',
+        },
+      );
+
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toMatchObject({ code: 'AUTHENTICATION_REQUIRED' });
+    },
+  );
 });

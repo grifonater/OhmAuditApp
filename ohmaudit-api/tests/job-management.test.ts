@@ -30,6 +30,41 @@ describe('Job management', () => {
     });
   });
 
+  it('loads a tenant-scoped job sheet source with deterministic task and RAMS order', async () => {
+    let query: unknown;
+    const prisma = {
+      visit: {
+        findFirst: (input: unknown) => {
+          query = input;
+          return Promise.resolve({ id: 'visit-a' });
+        },
+      },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).jobSheetSource('organisation-a', 'visit-a'),
+    ).resolves.toEqual({ id: 'visit-a' });
+    expect(query).toMatchObject({
+      where: { id: 'visit-a', organisationId: 'organisation-a', archivedAt: null },
+      include: {
+        organisation: { include: { brandProfile: true } },
+        site: { include: { contacts: { orderBy: [{ primary: 'desc' }, { name: 'asc' }] } } },
+        tasks: { orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
+        rams: { orderBy: { linkedAt: 'asc' } },
+      },
+    });
+  });
+
+  it('rejects missing or archived jobs when creating a job sheet source', async () => {
+    const prisma = {
+      visit: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).jobSheetSource('organisation-a', 'visit-a'),
+    ).rejects.toMatchObject({ code: 'VISIT_NOT_FOUND', status: 404 });
+  });
+
   it('lists only active system and current-organisation categories', async () => {
     let where: unknown;
     const prisma = {

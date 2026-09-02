@@ -1,8 +1,10 @@
 import { renderThermalReportHtml } from './thermal-report-html';
 import { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
+import { renderJobSheetReportHtml, type JobSheetRenderPayload } from './job-sheet-report-html';
 
 export { renderThermalReportHtml } from './thermal-report-html';
 export { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
+export { renderJobSheetReportHtml, type JobSheetRenderPayload } from './job-sheet-report-html';
 
 export interface PdfBindings {
   APP_ENV: 'local' | 'development' | 'staging' | 'production';
@@ -1491,6 +1493,129 @@ function isRamsRenderPayload(value: unknown): value is RamsRenderPayload {
   );
 }
 
+function isJobSheetImage(value: unknown): boolean {
+  const base64 = isRecord(value) && isString(value['base64']) ? value['base64'] : '';
+  const encoded = base64.replaceAll(/\s/gu, '');
+  return (
+    isRecord(value) &&
+    encoded.length > 0 &&
+    encoded.length % 4 === 0 &&
+    /^[A-Za-z0-9+/]+={0,2}$/u.test(encoded) &&
+    ['image/jpeg', 'image/png', 'image/webp'].includes(String(value['mimeType']))
+  );
+}
+
+function isJobSheetContact(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['name']) &&
+    ['role', 'email', 'telephone', 'mobile'].every((key) => isNullableString(value[key])) &&
+    typeof value['primary'] === 'boolean'
+  );
+}
+
+function isJobSheetTask(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const asset = value['asset'];
+  const inspection = value['inspection'];
+  return (
+    typeof value['order'] === 'number' &&
+    Number.isInteger(value['order']) &&
+    isString(value['title']) &&
+    isString(value['moduleKey']) &&
+    isString(value['status']) &&
+    (asset === null ||
+      (isRecord(asset) &&
+        ['reference', 'displayName', 'type'].every((key) => isString(asset[key])) &&
+        ['manufacturer', 'model', 'serialNumber'].every((key) => isNullableString(asset[key])))) &&
+    (inspection === null ||
+      (isRecord(inspection) &&
+        isString(inspection['status']) &&
+        typeof inspection['currentRevisionNumber'] === 'number' &&
+        Number.isInteger(inspection['currentRevisionNumber']) &&
+        inspection['currentRevisionNumber'] >= 0))
+  );
+}
+
+function isAttachedRams(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value['reference']) &&
+    isString(value['title']) &&
+    ['DRAFT', 'UNDER_REVIEW', 'APPROVED'].includes(String(value['documentState'])) &&
+    (value['revisionNumber'] === null ||
+      (typeof value['revisionNumber'] === 'number' &&
+        Number.isInteger(value['revisionNumber']) &&
+        value['revisionNumber'] >= 0))
+  );
+}
+
+function isJobSheetRenderPayload(
+  value: unknown,
+  requireRams: boolean,
+): value is JobSheetRenderPayload {
+  if (!isRecord(value) || value['templateVersion'] !== 'job-sheet-a4-v1') return false;
+  const organisation = value['organisation'];
+  const job = value['job'];
+  const customer = value['customer'];
+  const site = value['site'];
+  const assignment = value['assignment'];
+  const contacts = value['contacts'];
+  const tasks = value['tasks'];
+  const attachedRams = value['attachedRams'];
+  const rams = value['rams'];
+  if (
+    !isRecord(organisation) ||
+    !isRecord(job) ||
+    !isRecord(customer) ||
+    !isRecord(site) ||
+    !isRecord(assignment) ||
+    !Array.isArray(contacts) ||
+    !Array.isArray(tasks) ||
+    !Array.isArray(attachedRams)
+  )
+    return false;
+  return (
+    isString(value['generatedAt']) &&
+    isString(organisation['name']) &&
+    isStringArray(organisation['addressLines']) &&
+    ['telephone', 'email', 'website'].every((key) => isNullableString(organisation[key])) &&
+    (organisation['logoImage'] === undefined || isJobSheetImage(organisation['logoImage'])) &&
+    isString(job['id']) &&
+    [
+      'reference',
+      'externalReference',
+      'description',
+      'exclusions',
+      'jobType',
+      'category',
+      'scheduledEnd',
+      'engineerNotes',
+    ].every((key) => isNullableString(job[key])) &&
+    ['title', 'status', 'scheduledStart'].every((key) => isString(job[key])) &&
+    isString(customer['name']) &&
+    isNullableString(customer['reference']) &&
+    isString(site['name']) &&
+    isNullableString(site['reference']) &&
+    isStringArray(site['addressLines']) &&
+    [
+      'accessInstructions',
+      'parkingInformation',
+      'openingTimes',
+      'ppeRequirements',
+      'inductionInformation',
+    ].every((key) => isNullableString(site[key])) &&
+    isString(assignment['name']) &&
+    isNullableString(assignment['email']) &&
+    isNullableString(assignment['mobile']) &&
+    ['MEMBER', 'GUEST', 'UNASSIGNED'].includes(String(assignment['kind'])) &&
+    contacts.every(isJobSheetContact) &&
+    tasks.every(isJobSheetTask) &&
+    attachedRams.every(isAttachedRams) &&
+    (rams === undefined ? !requireRams : Array.isArray(rams) && rams.every(isRamsRenderPayload))
+  );
+}
+
 function ramsJsonError(status: 413 | 422 | 502 | 503, code: string, message: string): Response {
   return Response.json(
     { code, message },
@@ -1592,6 +1717,96 @@ async function readDocumentPayload(
         { status: 422 },
       ),
     };
+  }
+}
+
+function jobSheetJsonError(status: 413 | 422 | 502 | 503, code: string, message: string): Response {
+  return Response.json(
+    { code, message },
+    {
+      status,
+      headers: {
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    },
+  );
+}
+
+function jobSheetFooterTemplate(payload: JobSheetRenderPayload): string {
+  return `<div style="box-sizing:border-box;width:100%;height:14mm;padding:0 12mm 2mm;color:#53647b;font-family:Arial,Helvetica,sans-serif;font-size:7pt;line-height:1.2;overflow:hidden">
+    <div style="box-sizing:border-box;display:grid;grid-template-columns:1fr auto;width:100%;height:100%;gap:5mm;padding-top:2mm;border-top:1px solid #9ba9ba;overflow:hidden">
+      <div style="min-width:0;overflow:hidden;overflow-wrap:anywhere">Job ${escapeHtml(payload.job.reference ?? payload.job.id)}</div>
+      <div style="white-space:nowrap">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
+    </div>
+  </div>`;
+}
+
+async function renderJobSheetWithBrowser(
+  environment: PdfBindings,
+  payload: JobSheetRenderPayload,
+): Promise<Response> {
+  if (environment.BROWSER === undefined)
+    return jobSheetJsonError(
+      503,
+      'JOB_SHEET_RENDERER_UNAVAILABLE',
+      'The browser PDF renderer is unavailable.',
+    );
+  const configuredTimeout = Number.parseInt(environment.RENDER_TIMEOUT_MS, 10);
+  const timeout = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(configuredTimeout, 5_000), 120_000)
+    : 30_000;
+  try {
+    const rendered = await environment.BROWSER.quickAction('pdf', {
+      html: renderJobSheetReportHtml(payload),
+      emulateMediaType: 'print',
+      setJavaScriptEnabled: false,
+      actionTimeout: timeout,
+      pdfOptions: {
+        format: 'a4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        displayHeaderFooter: true,
+        headerTemplate: '<div></div>',
+        footerTemplate: jobSheetFooterTemplate(payload),
+        tagged: true,
+        outline: true,
+        timeout,
+      },
+    });
+    if (!rendered.ok) {
+      console.error(
+        JSON.stringify({ event: 'pdf.job_sheet_browser_run_failed', status: rendered.status }),
+      );
+      return jobSheetJsonError(
+        502,
+        'JOB_SHEET_RENDER_FAILED',
+        'The job sheet PDF could not be rendered.',
+      );
+    }
+    const headers = new Headers({
+      'content-type': 'application/pdf',
+      'content-disposition': 'inline; filename="job-sheet.pdf"',
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
+      'x-ohmaudit-pdf-renderer': 'browser-run',
+    });
+    const browserTime = rendered.headers.get('x-browser-ms-used');
+    if (browserTime !== null) headers.set('x-ohmaudit-browser-ms-used', browserTime);
+    return new Response(rendered.body, { headers });
+  } catch (error: unknown) {
+    console.error(
+      JSON.stringify({
+        event: 'pdf.job_sheet_browser_run_unavailable',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : 'Unknown Browser Run error',
+      }),
+    );
+    return jobSheetJsonError(
+      503,
+      'JOB_SHEET_RENDERER_UNAVAILABLE',
+      'The browser PDF renderer is unavailable.',
+    );
   }
 }
 
@@ -1874,6 +2089,41 @@ export default {
       const ramsPayload = await readRamsPayload(request);
       if (ramsPayload instanceof Response) return ramsPayload;
       return renderRamsReportWithBrowser(env, ramsPayload);
+    }
+    if (templateId === 'job-sheet-a4-v1' || templateId === 'job-sheet-with-rams-a4-v1') {
+      if (!request.headers.get('content-type')?.toLowerCase().includes('application/json'))
+        return jobSheetJsonError(
+          422,
+          'INVALID_JOB_SHEET_PAYLOAD',
+          'A JSON job sheet render payload is required.',
+        );
+      const documentPayload = await readDocumentPayload(request);
+      if ('response' in documentPayload) {
+        const status = documentPayload.response.status;
+        return status === 413
+          ? jobSheetJsonError(
+              413,
+              'JOB_SHEET_PAYLOAD_TOO_LARGE',
+              'The job sheet render payload must not exceed 40 MiB.',
+            )
+          : jobSheetJsonError(
+              422,
+              'INVALID_JOB_SHEET_PAYLOAD',
+              'The job sheet render payload is not valid JSON.',
+            );
+      }
+      if (
+        !isJobSheetRenderPayload(
+          documentPayload.payload,
+          templateId === 'job-sheet-with-rams-a4-v1',
+        )
+      )
+        return jobSheetJsonError(
+          422,
+          'INVALID_JOB_SHEET_PAYLOAD',
+          'The job sheet render payload is incomplete or invalid.',
+        );
+      return renderJobSheetWithBrowser(env, documentPayload.payload);
     }
     const documentPayload = await readDocumentPayload(request);
     if ('response' in documentPayload) return documentPayload.response;

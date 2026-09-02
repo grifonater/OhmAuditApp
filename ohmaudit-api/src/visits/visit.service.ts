@@ -266,6 +266,48 @@ export class VisitService {
     };
   }
 
+  async jobSheetSource(organisationId: string, visitId: string) {
+    const visit = await this.prisma.visit.findFirst({
+      where: { id: visitId, organisationId, archivedAt: null },
+      include: {
+        organisation: { include: { brandProfile: true } },
+        customer: true,
+        site: {
+          include: {
+            contacts: { orderBy: [{ primary: 'desc' }, { name: 'asc' }] },
+          },
+        },
+        jobCategory: true,
+        assignedUser: { select: { displayName: true, email: true } },
+        tasks: {
+          orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            asset: true,
+            inspection: {
+              select: { status: true, currentRevisionNumber: true },
+            },
+          },
+        },
+        rams: {
+          orderBy: { linkedAt: 'asc' },
+          include: {
+            rams: {
+              select: {
+                id: true,
+                reference: true,
+                title: true,
+                status: true,
+                currentRevisionNumber: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    return visit;
+  }
+
   async update(
     organisationId: string,
     visitId: string,

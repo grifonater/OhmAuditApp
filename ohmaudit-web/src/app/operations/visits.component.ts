@@ -53,6 +53,9 @@ export class VisitsComponent {
   protected readonly visitPageSize = signal(20);
   protected readonly visitPagination = signal({ page: 1, pageSize: 20, total: 0, pageCount: 1 });
   protected readonly listBusy = signal(false);
+  protected readonly jobSheetDownload = signal<
+    { visitId: string; includeRams: boolean } | undefined
+  >(undefined);
   private siteSearchTimer: ReturnType<typeof setTimeout> | undefined;
   private siteSearchRequest = 0;
   private visitSearchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -114,6 +117,10 @@ export class VisitsComponent {
   );
   protected readonly canCreate = computed(() => this.capabilities().includes('visits.create'));
   protected readonly canAssign = computed(() => this.capabilities().includes('visits.assign'));
+  protected readonly canGenerate = computed(() =>
+    this.capabilities().includes('certificates.generate'),
+  );
+  protected readonly canReadRams = computed(() => this.capabilities().includes('rams.read'));
   protected readonly canManageCategories = computed(() =>
     this.capabilities().includes('organisation.manage'),
   );
@@ -264,6 +271,28 @@ export class VisitsComponent {
       this.guestLink.set(url);
       await navigator.clipboard.writeText(url);
     });
+  }
+
+  protected async downloadJobSheet(visit: VisitSummary, includeRams: boolean): Promise<void> {
+    if (
+      !this.canGenerate() ||
+      (includeRams && !this.canReadRams()) ||
+      this.jobSheetDownload() !== undefined
+    )
+      return;
+    this.jobSheetDownload.set({ visitId: visit.id, includeRams });
+    this.error.set('');
+    try {
+      const blob = await this.api.downloadJobSheetPdf(this.organisationId, visit.id, includeRams);
+      this.saveBlob(
+        blob,
+        `${this.slug(visit.reference || visit.title)}-${includeRams ? 'job-pack-with-rams' : 'job-sheet'}.pdf`,
+      );
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to generate the job sheet.');
+    } finally {
+      this.jobSheetDownload.set(undefined);
+    }
   }
 
   protected async createCategory(): Promise<void> {
@@ -441,6 +470,27 @@ export class VisitsComponent {
     const date = new Date(Date.now() + 86400000);
     date.setMinutes(0, 0, 0);
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
+  private saveBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  private slug(value: string): string {
+    return (
+      value
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]+/giu, '-')
+        .replace(/^-+|-+$/gu, '')
+        .toLowerCase() || 'job'
+    );
   }
 
   private async run(operation: () => Promise<unknown>): Promise<void> {

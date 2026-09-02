@@ -1024,6 +1024,16 @@ export async function requestPdfRender(
   }
 }
 
+function safePdfFilename(value: string, fallback: string): string {
+  return (
+    value
+      .normalize('NFKD')
+      .replace(/[^A-Za-z0-9._-]+/gu, '-')
+      .replace(/^-+|-+$/gu, '')
+      .slice(0, 100) || fallback
+  );
+}
+
 function reportRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -3259,14 +3269,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       },
       body,
     });
-    const filenameReference = payload.reference
-      .normalize('NFKD')
-      .replace(/[^A-Za-z0-9._-]+/gu, '-')
-      .replace(/^-+|-+$/gu, '')
-      .slice(0, 100);
+    const filenameReference = safePdfFilename(payload.reference, 'rams-report');
     const headers = new Headers({
       'content-type': rendered.headers.get('content-type') ?? 'application/pdf',
-      'content-disposition': `attachment; filename="${filenameReference || 'rams-report'}.pdf"`,
+      'content-disposition': `attachment; filename="${filenameReference}.pdf"`,
       'cache-control': 'private, no-store',
       'x-content-type-options': 'nosniff',
     });
@@ -4489,6 +4495,185 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       documents: await new InspectionService(prisma).listDocuments(organisationId, visitId),
     });
   });
+  const renderJobSheetPdf = async (
+    context: Context<AppEnvironment>,
+    includeRams: boolean,
+  ): Promise<Response> => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const identity = identityService(environment, options);
+    await identity.requireMembership(context.get('actor'), organisationId, 'certificates.generate');
+    if (includeRams)
+      await identity.requireMembership(context.get('actor'), organisationId, 'rams.read');
+    if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
+      throw new DomainError(
+        'PDF_RENDERER_UNAVAILABLE',
+        'PDF rendering is not configured for this environment.',
+        503,
+      );
+
+    const prisma = prismaFor(environment);
+    await requireVisitModules(prisma, organisationId, visitId);
+    const source = await new VisitService(prisma).jobSheetSource(organisationId, visitId);
+    const brand = source.organisation.brandProfile;
+    const logoImage = await mediaImageForReport(
+      environment,
+      prisma,
+      organisationId,
+      brand?.logoMediaId,
+      400_000,
+    );
+    const linkedRams = source.rams.map(({ rams }) => rams);
+    const ramsService = new RamsService(prisma);
+    const rams = includeRams
+      ? await Promise.all(
+          linkedRams.map(({ id }) => ramsService.renderSource(organisationId, id, visitId)),
+        )
+      : undefined;
+    const documentState = (status: (typeof linkedRams)[number]['status']) =>
+      status === 'APPROVED'
+        ? ('APPROVED' as const)
+        : status === 'UNDER_REVIEW'
+          ? ('UNDER_REVIEW' as const)
+          : ('DRAFT' as const);
+    const assignment = source.assignedUser
+      ? {
+          name: source.assignedUser.displayName?.trim() || source.assignedUser.email,
+          email: source.assignedUser.email,
+          mobile: null,
+          kind: 'MEMBER' as const,
+        }
+      : source.guestEngineerName || source.guestEmail || source.guestMobile
+        ? {
+            name: source.guestEngineerName?.trim() || source.guestEmail?.trim() || 'Guest engineer',
+            email: source.guestEmail,
+            mobile: source.guestMobile,
+            kind: 'GUEST' as const,
+          }
+        : { name: 'Unassigned', email: null, mobile: null, kind: 'UNASSIGNED' as const };
+    const payload = {
+      templateVersion: 'job-sheet-a4-v1' as const,
+      generatedAt: new Date().toISOString(),
+      organisation: {
+        name: brand?.tradingName ?? brand?.registeredName ?? source.organisation.name,
+        addressLines: [
+          brand?.addressLine1,
+          brand?.addressLine2,
+          brand?.city,
+          brand?.county,
+          brand?.postcode,
+          brand?.countryCode,
+        ].filter((value): value is string => Boolean(value)),
+        telephone: brand?.telephone ?? null,
+        email: brand?.email ?? null,
+        website: brand?.website ?? null,
+        ...(logoImage === undefined ? {} : { logoImage }),
+      },
+      job: {
+        id: source.id,
+        reference: source.reference,
+        externalReference: source.externalReference,
+        title: source.title,
+        description: source.description,
+        exclusions: source.exclusions,
+        jobType: source.jobType,
+        category: source.jobCategory?.name ?? null,
+        status: source.status,
+        scheduledStart: source.scheduledStart.toISOString(),
+        scheduledEnd: source.scheduledEnd?.toISOString() ?? null,
+        engineerNotes: source.engineerNotes,
+      },
+      customer: { name: source.customer.name, reference: source.customer.reference },
+      site: {
+        name: source.site.name,
+        reference: source.site.reference,
+        addressLines: [
+          source.site.addressLine1,
+          source.site.addressLine2,
+          source.site.city,
+          source.site.county,
+          source.site.postcode,
+          source.site.countryCode,
+        ].filter((value): value is string => Boolean(value)),
+        accessInstructions: source.site.accessInstructions,
+        parkingInformation: source.site.parkingInformation,
+        openingTimes: source.site.openingTimes,
+        ppeRequirements: source.site.ppeRequirements,
+        inductionInformation: source.site.inductionInformation,
+      },
+      contacts: source.site.contacts.map((contact) => ({
+        name: contact.name,
+        role: contact.role,
+        email: contact.email,
+        telephone: contact.telephone,
+        mobile: contact.mobile,
+        primary: contact.primary,
+      })),
+      assignment,
+      tasks: source.tasks.map((task, index) => ({
+        order: index + 1,
+        title: task.title,
+        moduleKey: task.moduleKey,
+        status: task.status,
+        asset:
+          task.asset === null
+            ? null
+            : {
+                reference: task.asset.assetReference,
+                displayName: task.asset.displayName,
+                type: task.asset.assetType,
+                manufacturer: task.asset.manufacturer,
+                model: task.asset.model,
+                serialNumber: task.asset.serialNumber,
+              },
+        inspection:
+          task.inspection === null
+            ? null
+            : {
+                status: task.inspection.status,
+                currentRevisionNumber: task.inspection.currentRevisionNumber,
+              },
+      })),
+      attachedRams: linkedRams.map((item) => ({
+        reference: item.reference,
+        title: item.title,
+        documentState: documentState(item.status),
+        revisionNumber: item.currentRevisionNumber > 0 ? item.currentRevisionNumber : null,
+      })),
+      ...(rams === undefined ? {} : { rams }),
+    };
+    const rendered = await requestPdfRender(
+      environment,
+      includeRams ? '/render/job-sheet-with-rams-a4-v1' : '/render/job-sheet-a4-v1',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-correlation-id': context.get('correlationId'),
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    const filename = `${safePdfFilename(source.reference ?? source.title, 'job')}-${
+      includeRams ? 'job-pack-with-rams' : 'job-sheet'
+    }.pdf`;
+    const headers = new Headers({
+      'content-type': rendered.headers.get('content-type') ?? 'application/pdf',
+      'content-disposition': `attachment; filename="${filename}"`,
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
+    });
+    for (const name of ['x-ohmaudit-pdf-renderer', 'x-ohmaudit-browser-ms-used']) {
+      const value = rendered.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    return new Response(rendered.body, { status: rendered.status, headers });
+  };
+  app.get('/api/v1/visits/:visitId/job-sheet.pdf', (context) => renderJobSheetPdf(context, false));
+  app.get('/api/v1/visits/:visitId/job-sheet-with-rams.pdf', (context) =>
+    renderJobSheetPdf(context, true),
+  );
   app.get('/api/v1/visits/:visitId/report.pdf', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';

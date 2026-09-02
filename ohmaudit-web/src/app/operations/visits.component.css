@@ -187,6 +187,74 @@
   white-space: nowrap;
 }
 
+.job-pack-menu {
+  position: relative;
+}
+
+.job-pack-menu > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  list-style: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.job-pack-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.job-pack-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  width: min(19rem, calc(100vw - 2rem));
+  overflow: hidden;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.7rem;
+  background: #fff;
+  box-shadow: 0 1rem 2.5rem rgb(16 24 40 / 18%);
+}
+
+.job-pack-options button {
+  width: 100%;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem 0.9rem;
+  border: 0;
+  border-bottom: 1px solid var(--oa-line-soft);
+  background: #fff;
+  color: var(--oa-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.job-pack-options button:last-child {
+  border-bottom: 0;
+}
+
+.job-pack-options button:hover:not(:disabled) {
+  background: var(--oa-teal-50);
+}
+
+.job-pack-options button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.job-pack-options strong {
+  color: var(--oa-navy-950);
+  font-size: 0.76rem;
+}
+
+.job-pack-options small {
+  color: var(--oa-ink-muted);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
 .visit-pagination {
   display: flex;
   align-items: center;
@@ -276,6 +344,16 @@
 
   .visit-actions .button {
     width: 100%;
+  }
+
+  .job-pack-menu,
+  .job-pack-menu > summary {
+    width: 100%;
+  }
+
+  .job-pack-options {
+    right: auto;
+    left: 0;
   }
 
   .visit-pagination {
