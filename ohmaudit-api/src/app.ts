@@ -1198,6 +1198,7 @@ export async function thermalCertificateData(source: {
   reportDate: Date;
   engineerName: string;
   logoImage?: ReportMediaImage | undefined;
+  buildReference?: string | undefined;
 }) {
   const data = reportRecord(source.revisionData);
   const details = reportRecord(data['details']);
@@ -1293,6 +1294,7 @@ export async function thermalCertificateData(source: {
         .join(' · '),
     },
     ...reportLogoFields(source.logoImage),
+    ...(source.buildReference === undefined ? {} : { buildReference: source.buildReference }),
     targets: targets.map((target, index) => {
       const imageDescriptions = reportRecord(target['imageDescriptions']);
       return {
@@ -4129,8 +4131,15 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         engineerName: input.signature.signerName,
         outcome: reportText(input.data['outcome'], 'Recorded'),
         summaryLines: [
+          `Draft build: api v${environment.APP_VERSION}`,
           'Report status: Draft',
           `Targets: ${reportArray(input.data['targets']).length}`,
+          ...reportArray(input.data['targets']).map(
+            (target) =>
+              `  ${reportText(reportRecord(target)['name'], 'Target')}: ${reportArray(
+                reportRecord(target)['imageIds'],
+              ).length} image(s)`,
+          ),
         ],
         thermalCertificate: await thermalCertificateData({
           environment,
@@ -4151,6 +4160,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           reportDate,
           engineerName: input.signature.signerName,
           ...(logoImage === undefined ? {} : { logoImage }),
+          buildReference: `api-v${environment.APP_VERSION}-${Date.now()}`,
         }),
       }),
     });
@@ -4639,6 +4649,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                       reportDate: inspection.effectiveDate ?? revision.createdAt,
                       engineerName: revision.signatures[0]?.signerName ?? 'Engineer',
                       ...(companyLogoImage === undefined ? {} : { logoImage: companyLogoImage }),
+                      buildReference: `api-v${environment.APP_VERSION}-${revision.createdAt.getTime()}`,
                     }),
                   }),
               ...(revision.evData === null || inspection.moduleKey !== 'ev-charging'
@@ -4859,6 +4870,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 reportDate: inspection.effectiveDate ?? revision.createdAt,
                 engineerName: revision.signatures[0]?.signerName ?? 'Engineer',
                 ...(companyLogoImage === undefined ? {} : { logoImage: companyLogoImage }),
+                buildReference: `api-v${environment.APP_VERSION}-${revision.createdAt.getTime()}`,
               }),
             }),
         ...(revision.evData === null || inspection.moduleKey !== 'ev-charging'

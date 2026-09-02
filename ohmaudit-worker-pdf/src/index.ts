@@ -96,6 +96,7 @@ export interface ThermalCertificatePayload {
     recommendation: string;
     images: Array<{ kind: string; jpegBase64: string; description?: string }>;
   }>;
+  buildReference?: string;
 }
 
 export interface EvCertificatePayload {
@@ -882,6 +883,7 @@ function thermalCertificateContents(
     textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
     textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
     textAt(`PAGE 2 OF ${totalPages}`, 475, 25, 7, muted),
+    ...(payload.buildReference ? [textAt(`BUILD ${payload.buildReference}`, 475, 45, 6, muted)] : []),
   ].join('\n');
   const contents = [cover, detailsPage];
   let pageNumber = 3;
@@ -1009,6 +1011,9 @@ function thermalCertificateContents(
         textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
         textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
         textAt(`PAGE ${pageNumber++} OF ${totalPages}`, 475, 25, 7, muted),
+        ...(payload.buildReference
+          ? [textAt(`BUILD ${payload.buildReference}`, 475, 45, 6, muted)]
+          : []),
       );
       contents.push(commands.join('\n'));
     }
