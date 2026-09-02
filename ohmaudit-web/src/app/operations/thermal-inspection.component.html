@@ -456,8 +456,7 @@
                   }
                   @if (target.imageIds.length > 4) {
                     <span class="thumb-more">+{{ target.imageIds.length - 4 }}</span>
-                  }
-                </span
+                  }</span
                 ><span class="target-copy"
                   ><b>{{ target.name }}</b
                   ><small
@@ -515,14 +514,15 @@
                             <button
                               type="button"
                               (click)="moveImageInTarget(imageId, 1)"
-                              [attr.aria-label]="'Move ' + imageLabel(imageId, imageIndex) + ' down'"
+                              [attr.aria-label]="
+                                'Move ' + imageLabel(imageId, imageIndex) + ' down'
+                              "
                             >
                               ↓
                             </button>
                           } @else {
                             <span class="target-image-order-placeholder"></span>
-                          }
-                        </span
+                          }</span
                         ><span class="target-image-index">{{ imageIndex + 1 }}</span
                         ><button
                           type="button"
@@ -756,6 +756,27 @@
             (ngModelChange)="patchSignerName($event)"
             placeholder="Enter full name"
         /></label>
+      </section>
+      <section class="panel declaration">
+        <div>
+          <h3>Report details</h3>
+          <p>Optional fields. Leave blank to use the job reference and auto outcome.</p>
+        </div>
+        <label
+          >Job reference<input
+            [ngModel]="reportReference"
+            (ngModelChange)="patchReportReference($event)"
+            placeholder="Defaults to the job reference"
+        /></label>
+        <label
+          >Overall outcome<textarea
+            rows="6"
+            maxlength="4000"
+            [ngModel]="overallOutcome"
+            (ngModelChange)="patchOverallOutcome($event)"
+            placeholder="Summarise the condition of the installation, significant observations and recommended next steps…"
+          ></textarea>
+        </label>
       </section>
       <footer class="step-actions">
         <button

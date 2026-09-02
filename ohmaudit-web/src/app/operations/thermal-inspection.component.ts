@@ -96,6 +96,8 @@ export class ThermalInspectionComponent {
   protected readonly saved = signal('');
   protected readonly details = signal<ThermalDetails>(emptyDetails());
   protected signerName = '';
+  protected reportReference = '';
+  protected overallOutcome = '';
   private draggedImageId = '';
   private draftTimer: ReturnType<typeof setTimeout> | undefined;
   private draftWrite: Promise<void> = Promise.resolve();
@@ -419,6 +421,14 @@ export class ThermalInspectionComponent {
     this.signerName = value;
     this.scheduleDraft();
   }
+  protected patchReportReference(value: string): void {
+    this.reportReference = value;
+    this.scheduleDraft();
+  }
+  protected patchOverallOutcome(value: string): void {
+    this.overallOutcome = value;
+    this.scheduleDraft();
+  }
   protected setCondition(condition: ThermalCondition): void {
     this.patchTarget(
       condition === 'NO_ISSUES'
@@ -572,6 +582,8 @@ export class ThermalInspectionComponent {
       details: this.details(),
       targets: this.targets(),
       signerName: this.signerName,
+      reportReference: this.reportReference,
+      overallOutcome: this.overallOutcome,
     };
     const write = () =>
       this.offline.saveDraft(visit.organisationId, visit.id, inspection.id, snapshot);
@@ -806,6 +818,10 @@ export class ThermalInspectionComponent {
       images: this.images(),
       ...(this.selectedEquipment() === undefined ? {} : { equipment: this.selectedEquipment()! }),
       signerName: this.signerName,
+      ...(this.reportReference.trim() === ''
+        ? {}
+        : { reportReference: this.reportReference.trim() }),
+      ...(this.overallOutcome.trim() === '' ? {} : { overallOutcome: this.overallOutcome.trim() }),
     });
   }
   private categoryFor(kind: ImageKind): ImageCategory {
@@ -826,6 +842,8 @@ export class ThermalInspectionComponent {
     if (typeof details === 'object' && details !== null)
       this.details.set({ ...emptyDetails(), ...(details as Partial<ThermalDetails>) });
     if (typeof data['signerName'] === 'string') this.signerName = data['signerName'];
+    if (typeof data['reportReference'] === 'string') this.reportReference = data['reportReference'];
+    if (typeof data['overallOutcome'] === 'string') this.overallOutcome = data['overallOutcome'];
   }
   private scheduleDraft(): void {
     if (this.draftTimer !== undefined) clearTimeout(this.draftTimer);

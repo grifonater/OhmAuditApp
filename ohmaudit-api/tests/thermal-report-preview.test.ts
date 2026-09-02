@@ -326,6 +326,68 @@ describe('Thermal draft report preview', () => {
     });
   });
 
+  it('prioritises an issued-document outcome override and enriches the equipment traceability line', async () => {
+    const prisma = {
+      media: { findMany: vi.fn(() => Promise.resolve([])) },
+    } as unknown as PrismaClient;
+
+    const result = await thermalCertificateData({
+      environment,
+      prisma,
+      organisationId: 'organisation-a',
+      inspectionId: 'inspection-a',
+      revisionData: {
+        outcome: 'FAULTS_REPORTED',
+        equipment: {
+          name: 'FLIR E8-XT',
+          equipmentType: 'Thermal imaging camera',
+          manufacturer: 'FLIR',
+          model: 'E8-XT',
+          serialNumber: 'SN-8812',
+          calibrationDueAt: '2027-03-15T00:00:00.000Z',
+        },
+      },
+      reportReference: 'THERMAL-001',
+      organisationName: 'Test Organisation',
+      customerName: 'Test Customer',
+      siteName: 'Test Site',
+      siteAddress: [],
+      reportDate: new Date('2026-09-02T00:00:00.000Z'),
+      engineerName: 'Test Engineer',
+      outcome: '  Board and terminations found in satisfactory condition.  ',
+    });
+
+    expect(result.outcome).toBe('Board and terminations found in satisfactory condition.');
+    expect(result.details.equipment).toContain('FLIR E8-XT');
+    expect(result.details.equipment).toContain('Thermal imaging camera');
+    expect(result.details.equipment).toContain('FLIR E8-XT');
+    expect(result.details.equipment).toContain('S/N SN-8812');
+    expect(result.details.equipment).toContain('Calibration due 2027-03-15');
+  });
+
+  it('falls back to the draft outcome when no issued-document override is provided', async () => {
+    const prisma = {
+      media: { findMany: vi.fn(() => Promise.resolve([])) },
+    } as unknown as PrismaClient;
+
+    const result = await thermalCertificateData({
+      environment,
+      prisma,
+      organisationId: 'organisation-a',
+      inspectionId: 'inspection-a',
+      revisionData: { outcome: 'FAULTS_REPORTED' },
+      reportReference: 'THERMAL-001',
+      organisationName: 'Test Organisation',
+      customerName: 'Test Customer',
+      siteName: 'Test Site',
+      siteAddress: [],
+      reportDate: new Date('2026-09-02T00:00:00.000Z'),
+      engineerName: 'Test Engineer',
+    });
+
+    expect(result.outcome).toBe('FAULTS_REPORTED');
+  });
+
   it('requires member authentication and exposes no guest preview route', async () => {
     const inspectionId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const organisationId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

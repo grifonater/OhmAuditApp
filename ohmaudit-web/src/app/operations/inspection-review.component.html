@@ -151,13 +151,14 @@
                 </label>
                 <label
                   ><span>Overall outcome (optional)</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. RECOMMENDED FOR REPAIR"
+                  <textarea
+                    rows="5"
+                    maxlength="4000"
+                    placeholder="Summarise the condition of the installation and recommended next steps…"
                     [value]="overallOutcome()"
                     (input)="setOverallOutcome($event)"
                     [readonly]="busy()"
-                  />
+                  ></textarea>
                 </label>
               </div>
               @if (item.moduleKey === 'thermal-imaging') {

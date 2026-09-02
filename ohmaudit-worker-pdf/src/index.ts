@@ -475,6 +475,14 @@ function wrapped(value: string, characters: number): string[] {
   return lines.length === 0 ? [''] : lines;
 }
 
+function wrappedParagraphs(value: string, characters: number): string[] {
+  const paragraphs = value.replaceAll('\r\n', '\n').split('\n');
+  return paragraphs.flatMap((paragraph, index) => [
+    ...(paragraph.trim() ? wrapped(paragraph, characters) : ['']),
+    ...(index < paragraphs.length - 1 ? [''] : []),
+  ]);
+}
+
 function evCertificateContents(
   payload: EvCertificatePayload,
   imagePrefix: string,
@@ -787,7 +795,7 @@ function thermalCertificateContents(
   const targetPageCounts = payload.targets.map((target) =>
     Math.max(1, thermalImagePageGroups(target.images).length),
   );
-  const totalPages = 2 + targetPageCounts.reduce((total, count) => total + count, 0);
+  const totalPages = 3 + targetPageCounts.reduce((total, count) => total + count, 0);
   const logoName = `${imagePrefix}Logo`;
   const images: PdfImage[] = [{ name: logoName, base64: payload.logoJpegBase64 }];
   const cover = [
@@ -816,95 +824,97 @@ function thermalCertificateContents(
     textAt(String(faultCount), 435, 525, 20, faultCount > 0 ? '0.78 0.12 0.09' : accent),
     textAt('FAULTS', 421, 503, 7, muted),
     textAt('OVERALL OUTCOME', 42, 452, 7, muted),
-    textAt(
-      payload.outcome.replaceAll('_', ' '),
-      42,
-      433,
-      13,
-      faultCount > 0 ? '0.78 0.12 0.09' : accent,
-    ),
-    textAt('SCOPE OF INSPECTION', 42, 398, 7, muted),
-    ...wrapped(payload.details?.scope || 'NOT RECORDED', 92)
-      .slice(0, 4)
-      .map((line, index) => textAt(line, 42, 381 - index * 13, 8)),
-    textAt('INSPECTION EQUIPMENT', 42, 316, 7, muted),
-    textAt(payload.details?.equipment || 'NOT RECORDED', 42, 299, 8),
-    textAt('METHOD', 42, 269, 7, muted),
-    ...wrapped(payload.details?.inspectionMethod || 'NOT RECORDED', 92)
-      .slice(0, 3)
-      .map((line, index) => textAt(line, 42, 252 - index * 13, 8)),
-    textAt('LIMITATIONS / EXCLUSIONS', 42, 203, 7, muted),
+    ...wrappedParagraphs(payload.outcome.replaceAll('_', ' ') || 'NOT RECORDED', 92)
+      .slice(0, 14)
+      .map((line, index) =>
+        textAt(line, 42, 430 - index * 14, 9, faultCount > 0 ? '0.78 0.12 0.09' : accent),
+      ),
+    textAt('REPORT CONTENTS', 42, 205, 7, muted),
     ...wrapped(
-      [payload.details?.limitations, payload.details?.areasExcluded].filter(Boolean).join(' · ') ||
-        'NONE RECORDED',
+      'THE FOLLOWING PAGES RECORD THE INSPECTION SCOPE, SURVEY CONDITIONS, EQUIPMENT, TARGET EVIDENCE, OBSERVATIONS AND RECOMMENDED ACTIONS.',
       92,
-    )
-      .slice(0, 4)
-      .map((line, index) => textAt(line, 42, 186 - index * 13, 8)),
+    ).map((line, index) => textAt(line, 42, 188 - index * 13, 8)),
     textAt(`PAGE 1 OF ${totalPages}`, 475, 25, 7, muted),
   ].join('\n');
   const detailLines = (
     title: string,
     value: string | undefined,
+    x: number,
     y: number,
+    width: number,
     maxLines: number,
   ): string[] => [
-    textAt(title, 42, y, 7, muted),
-    ...wrapped(value || 'NOT RECORDED', 92)
+    textAt(title, x, y, 7, muted),
+    ...wrappedParagraphs(value || 'NOT RECORDED', width)
       .slice(0, maxLines)
-      .map((line, index) => textAt(line, 42, y - 17 - index * 12, 8)),
+      .map((line, index) => textAt(line, x, y - 17 - index * 12, 8)),
   ];
-  const detailsPage = [
+  const inspectionDetailsPage = [
     textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
-    textAt('SURVEY DETAILS', 475, 805, 7, muted),
-    textAt('INSPECTION SCOPE AND CONDITIONS', 42, 772, 18),
+    textAt('INSPECTION DETAILS', 455, 805, 7, muted),
+    textAt('INSPECTION SCOPE', 42, 772, 18),
     `${accent} RG 42 758 m 553 758 l S`,
-    ...detailLines('SCOPE OF INSPECTION', payload.details?.scope, 730, 4),
-    ...detailLines('PURPOSE', payload.details?.purpose, 650, 3),
-    ...detailLines('INSPECTION METHOD', payload.details?.inspectionMethod, 584, 3),
-    ...detailLines('AREAS INSPECTED', payload.details?.areasInspected, 518, 3),
-    ...detailLines('AREAS EXCLUDED', payload.details?.areasExcluded, 452, 3),
-    ...detailLines('LIMITATIONS', payload.details?.limitations, 386, 3),
-    textAt('SURVEY CONDITIONS', 42, 320, 10, accent),
-    textAt('ENVIRONMENT', 42, 292, 7, muted),
-    textAt(fitted(payload.details?.environmentalConditions || 'NOT RECORDED', 50), 42, 275, 8),
-    textAt('LOAD CONDITION', 315, 292, 7, muted),
-    textAt(fitted(payload.details?.loadCondition || 'NOT RECORDED', 45), 315, 275, 8),
-    textAt('AMBIENT TEMPERATURE', 42, 240, 7, muted),
+    ...detailLines('SCOPE OF INSPECTION', payload.details?.scope, 42, 730, 44, 12),
+    ...detailLines('PURPOSE', payload.details?.purpose, 315, 730, 42, 12),
+    ...detailLines('INSPECTION METHOD', payload.details?.inspectionMethod, 42, 530, 44, 10),
+    ...detailLines('AREAS INSPECTED', payload.details?.areasInspected, 315, 530, 42, 10),
+    ...detailLines('AREAS EXCLUDED', payload.details?.areasExcluded, 42, 360, 44, 10),
+    ...detailLines('LIMITATIONS', payload.details?.limitations, 315, 360, 42, 10),
+    textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
+    textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
+    textAt(`PAGE 2 OF ${totalPages}`, 475, 25, 7, muted),
+  ].join('\n');
+  const surveyConditionsPage = [
+    textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
+    textAt('SURVEY CONDITIONS', 455, 805, 7, muted),
+    textAt('SURVEY CONDITIONS AND EQUIPMENT', 42, 772, 18),
+    `${accent} RG 42 758 m 553 758 l S`,
+    ...detailLines(
+      'ENVIRONMENTAL CONDITIONS',
+      payload.details?.environmentalConditions,
+      42,
+      730,
+      44,
+      8,
+    ),
+    ...detailLines('LOAD / OPERATING CONDITION', payload.details?.loadCondition, 315, 730, 42, 8),
+    textAt('AMBIENT TEMPERATURE', 42, 600, 7, muted),
     textAt(
       payload.details?.ambientTemperatureC
         ? `${payload.details.ambientTemperatureC} C`
         : 'NOT RECORDED',
       42,
-      223,
+      583,
       8,
     ),
-    textAt('REFLECTED TEMPERATURE', 200, 240, 7, muted),
+    textAt('REFLECTED TEMPERATURE', 200, 600, 7, muted),
     textAt(
       payload.details?.reflectedTemperatureC
         ? `${payload.details.reflectedTemperatureC} C`
         : 'NOT RECORDED',
       200,
-      223,
+      583,
       8,
     ),
-    textAt('EMISSIVITY', 395, 240, 7, muted),
-    textAt(payload.details?.emissivity || 'NOT RECORDED', 395, 223, 8),
-    textAt('INSPECTION EQUIPMENT', 42, 188, 7, muted),
-    textAt(fitted(payload.details?.equipment || 'NOT RECORDED', 88), 42, 171, 8),
-    textAt('CLIENT REPRESENTATIVE', 42, 136, 7, muted),
-    textAt(fitted(payload.details?.clientRepresentative || 'NOT RECORDED', 46), 42, 119, 8),
-    textAt('ADDITIONAL NOTES', 315, 136, 7, muted),
-    textAt(fitted(payload.details?.additionalNotes || 'NONE RECORDED', 45), 315, 119, 8),
+    textAt('EMISSIVITY', 395, 600, 7, muted),
+    textAt(payload.details?.emissivity || 'NOT RECORDED', 395, 583, 8),
+    ...detailLines('INSPECTION EQUIPMENT', payload.details?.equipment, 42, 535, 92, 8),
+    ...detailLines('CLIENT REPRESENTATIVE', payload.details?.clientRepresentative, 42, 405, 92, 5),
+    ...detailLines('ADDITIONAL NOTES', payload.details?.additionalNotes, 42, 315, 92, 10),
+    textAt('REPORT INTERPRETATION', 42, 155, 8, accent),
+    ...wrapped(
+      'THIS REPORT RECORDS CONDITIONS OBSERVED AT THE TIME OF THE SURVEY. THERMAL PATTERNS CAN CHANGE WITH LOAD, AMBIENT CONDITIONS AND EQUIPMENT OPERATION. RECOMMENDATIONS SHOULD BE REVIEWED BY A COMPETENT PERSON BEFORE REMEDIAL WORK.',
+      92,
+    ).map((line, index) => textAt(line, 42, 136 - index * 12, 7, muted)),
     textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
     textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
-    textAt(`PAGE 2 OF ${totalPages}`, 475, 25, 7, muted),
+    textAt(`PAGE 3 OF ${totalPages}`, 475, 25, 7, muted),
     ...(payload.buildReference
       ? [textAt(`BUILD ${payload.buildReference}`, 475, 45, 6, muted)]
       : []),
   ].join('\n');
-  const contents = [cover, detailsPage];
-  let pageNumber = 3;
+  const contents = [cover, inspectionDetailsPage, surveyConditionsPage];
+  let pageNumber = 4;
   for (const [targetIndex, target] of payload.targets.entries()) {
     for (const [
       groupIndex,

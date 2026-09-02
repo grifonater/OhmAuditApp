@@ -204,8 +204,12 @@ describe('PDF worker', () => {
       }),
     );
     expect(text.startsWith('%PDF-1.4')).toBe(true);
-    expect(text).toContain('/Count 4');
+    expect(text).toContain('/Count 5');
     expect(text).toContain('THERMAL IMAGING REPORT');
+    expect(text).toContain('INSPECTION DETAILS');
+    expect(text).toContain('SURVEY CONDITIONS AND EQUIPMENT');
+    expect(text).toContain('REPORT INTERPRETATION');
+    expect(text).toContain('REVIEWED BY A COMPETENT PERSON');
     expect(text).toContain('DB-01 MAIN DISTRIBUTION BOARD');
     expect(text).toContain('ELEVATED TEMPERATURE AT OUTGOING BREAKER L3');
     expect(text).toContain('NO THERMAL ANOMALIES OR REPORTABLE ISSUES');
@@ -264,7 +268,10 @@ describe('PDF worker', () => {
     expect(html).not.toContain('Apex <Facilities>');
     expect(html).toContain('INSPECT AND RETORQUE BEFORE RETURN TO SERVICE');
     expect(html).toContain('data:image/png;base64,iVBOR');
-    expect(html).toContain('PAGE 2 OF 2');
+    expect(html).toContain('PAGE 2 OF 4');
+    expect(html).toContain('PAGE 4 OF 4');
+    expect(html).toContain('REPORT INTERPRETATION');
+    expect(html).toContain('RECOMMENDATIONS SHOULD BE REVIEWED BY A COMPETENT PERSON');
     expect(html).not.toContain('<script');
   });
   it('paginates thermal HTML evidence two per page then four per continuation with escaped descriptions', () => {
@@ -298,7 +305,8 @@ describe('PDF worker', () => {
       ],
     });
 
-    expect(html).toContain('PAGE 3 OF 3');
+    expect(html).toContain('PAGE 5 OF 5');
+    expect(html).toContain('SURVEY CONDITIONS &amp; EQUIPMENT');
     expect(html.match(/target-page continuation-page/g)).toHaveLength(1);
     expect(html).toContain('IMAGE 5 OF 5');
     expect(html).toContain('FINAL &lt;EVIDENCE&gt; &amp; FOLLOW-UP');
@@ -340,7 +348,7 @@ describe('PDF worker', () => {
       }),
     );
 
-    expect(text).toContain('/Count 4');
+    expect(text).toContain('/Count 5');
     expect(text).toContain('IMAGE 5 OF 5');
     expect(text).toContain('FINAL EVIDENCE DESCRIPTION WRAPS SAFELY');
     expect(text).toContain('EVIDENCE CONTINUATION');
@@ -378,7 +386,7 @@ describe('PDF worker', () => {
       }),
     );
 
-    expect(text).toContain('/Count 5');
+    expect(text).toContain('/Count 6');
     expect(text).toContain('IMAGE 1 OF 10');
     expect(text).toContain('IMAGE 2 OF 10');
     expect(text).toContain('EVIDENCE CONTINUATION - IMAGES 3-6 OF 10');

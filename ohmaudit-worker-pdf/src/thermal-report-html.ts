@@ -152,7 +152,9 @@ function targetPage(
   </section>`;
 }
 
-function thermalImagePageGroups(images: readonly unknown[]): Array<{ offset: number; images: readonly unknown[] }> {
+function thermalImagePageGroups(
+  images: readonly unknown[],
+): Array<{ offset: number; images: readonly unknown[] }> {
   if (images.length === 0) return [{ offset: 0, images: images }];
   const groups: Array<{ offset: number; images: readonly unknown[] }> = [];
   groups.push({ offset: 0, images: images.slice(0, 2) });
@@ -175,7 +177,7 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
   ).length;
   const noIssueCount = payload.targets.length - faultCount;
   const totalPages =
-    1 + payload.targets.reduce((pages, target) => pages + targetPageCount(target), 0);
+    3 + payload.targets.reduce((pages, target) => pages + targetPageCount(target), 0);
   const outcomeClass = faultCount > 0 ? 'fault' : 'clear';
   const details = payload.details;
   return `<!doctype html>
@@ -217,13 +219,16 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     .report-identifiers div { display: flex; justify-content: space-between; gap: 5mm; border-bottom: 1px solid ${BRAND.line}; padding-bottom: 2mm; }
     .report-identifiers span { color: ${BRAND.muted}; font-size: 7pt; font-weight: 700; }
     .report-identifiers strong { text-align: right; font-size: 8.5pt; }
-    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 5mm; border: 1px solid ${BRAND.line}; border-radius: 3mm; overflow: hidden; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 6mm; border: 1px solid ${BRAND.line}; border-radius: 3mm; overflow: hidden; }
     .metric { padding: 3mm; border-right: 1px solid ${BRAND.line}; background: #fff; }
     .metric:last-child { border-right: 0; }
     .metric span { display: block; color: ${BRAND.muted}; font-size: 7pt; font-weight: 700; }
     .metric strong { display: block; margin-top: 1mm; color: ${BRAND.navy}; font-size: 17pt; }
-    .metric.outcome strong { color: ${BRAND.success}; font-size: 11pt; }
-    .metric.outcome.fault strong { color: ${BRAND.danger}; }
+    .overall-outcome { min-height: 82mm; padding: 7mm; border: 1px solid ${BRAND.line}; border-left: 4px solid ${BRAND.success}; border-radius: 3mm; background: #f8fcfa; }
+    .overall-outcome.fault { border-left-color: ${BRAND.danger}; background: #fff8f8; }
+    .overall-outcome h2 { margin: 0 0 4mm; color: ${BRAND.navy}; font-size: 14pt; letter-spacing: .02em; }
+    .overall-outcome p { margin: 0; overflow-wrap: anywhere; font-size: 10pt; line-height: 1.55; white-space: pre-line; }
+    .cover-direction { margin-top: 6mm; padding: 4mm 5mm; border: 1px solid ${BRAND.line}; border-radius: 3mm; color: ${BRAND.muted}; font-size: 8pt; }
     .cover-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
     .report-card { border: 1px solid ${BRAND.line}; border-radius: 3mm; overflow: hidden; break-inside: avoid; }
     .report-card h2 { margin: 0; padding: 2.5mm 4mm; background: ${BRAND.blueTint}; color: ${BRAND.navy}; font-size: 10pt; }
@@ -235,6 +240,14 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     dd { margin: 0; overflow-wrap: anywhere; font-size: 8.2pt; font-weight: 600; white-space: pre-line; }
     .declaration { grid-column: 1 / -1; padding: 4mm; border-left: 3px solid ${BRAND.amber}; background: #fff9e8; color: ${BRAND.muted}; font-size: 8pt; }
     .declaration strong { display: block; margin-bottom: 1mm; color: ${BRAND.ink}; }
+    .details-heading { margin: 8mm 0 5mm; }
+    .details-heading .eyebrow { margin: 0 0 2mm; color: ${BRAND.blue}; }
+    .details-heading h2 { margin: 0; color: ${BRAND.navy}; font-size: 21pt; line-height: 1.1; }
+    .details-page .report-card { margin-top: 5mm; }
+    .details-page .details-list { padding-top: 2mm; }
+    .details-page .detail { padding: 3mm 2mm; }
+    .details-page .detail.wide dd { font-size: 8.6pt; line-height: 1.45; }
+    .details-page .declaration { margin-top: 6mm; }
     .page-header { padding-bottom: 4mm; border-bottom: 1px solid ${BRAND.line}; }
     .page-header .company-logo { max-height: 12mm; max-width: 38mm; }
     .page-header > div:last-child { display: flex; flex-direction: column; align-items: flex-end; gap: 1mm; }
@@ -318,39 +331,57 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
       <div class="metric"><span>TARGET ITEMS</span><strong>${payload.targets.length}</strong></div>
       <div class="metric"><span>NO ISSUES</span><strong>${noIssueCount}</strong></div>
       <div class="metric"><span>FAULTS</span><strong>${faultCount}</strong></div>
-      <div class="metric outcome ${outcomeClass}"><span>OVERALL OUTCOME</span><strong>${text(payload.outcome.replaceAll('_', ' '), faultCount > 0 ? 'ACTION REQUIRED' : 'SATISFACTORY')}</strong></div>
     </div>
-    <div class="cover-grid">
-      <section class="report-card">
-        <h2>INSPECTION DETAILS</h2>
-        <dl class="details-list">
-          ${detail('SCOPE', details?.scope, 'wide')}
-          ${detail('PURPOSE', details?.purpose, 'wide')}
-          ${detail('METHOD', details?.inspectionMethod, 'wide')}
-          ${detail('AREAS INSPECTED', details?.areasInspected)}
-          ${detail('AREAS EXCLUDED', details?.areasExcluded)}
-          ${detail('LIMITATIONS', details?.limitations, 'wide')}
-        </dl>
-      </section>
-      <section class="report-card">
-        <h2>SURVEY CONDITIONS &amp; EQUIPMENT</h2>
-        <dl class="details-list">
-          ${detail('EQUIPMENT', details?.equipment, 'wide')}
-          ${detail('LOAD CONDITION', details?.loadCondition)}
-          ${detail('ENVIRONMENT', details?.environmentalConditions)}
-          ${detail('AMBIENT TEMPERATURE', details?.ambientTemperatureC ? `${details.ambientTemperatureC} °C` : undefined)}
-          ${detail('REFLECTED TEMPERATURE', details?.reflectedTemperatureC ? `${details.reflectedTemperatureC} °C` : undefined)}
-          ${detail('EMISSIVITY', details?.emissivity)}
-          ${detail('CLIENT REPRESENTATIVE', details?.clientRepresentative)}
-          ${detail('ADDITIONAL NOTES', details?.additionalNotes, 'wide')}
-        </dl>
-      </section>
-      <div class="declaration"><strong>REPORT INTERPRETATION</strong>THIS REPORT RECORDS CONDITIONS OBSERVED AT THE TIME OF THE SURVEY. THERMAL PATTERNS CAN CHANGE WITH LOAD, AMBIENT CONDITIONS AND EQUIPMENT OPERATION. RECOMMENDATIONS SHOULD BE REVIEWED BY A COMPETENT PERSON BEFORE REMEDIAL WORK.</div>
-    </div>
+    <section class="overall-outcome ${outcomeClass}">
+      <h2>OVERALL OUTCOME</h2>
+      <p>${text(payload.outcome.replaceAll('_', ' '), faultCount > 0 ? 'ACTION REQUIRED' : 'SATISFACTORY')}</p>
+    </section>
+    <div class="cover-direction">THE FOLLOWING PAGES RECORD THE INSPECTION SCOPE, SURVEY CONDITIONS, EQUIPMENT, TARGET EVIDENCE, OBSERVATIONS AND RECOMMENDED ACTIONS.</div>
     ${footer(payload.reportReference, 1, totalPages)}
   </section>
+  <section class="report-page details-page inspection-details-page">
+    <header class="page-header">
+      ${logo(payload)}
+      <div><span>THERMAL IMAGING REPORT</span><strong>INSPECTION DETAILS</strong></div>
+    </header>
+    <div class="details-heading"><p class="eyebrow">SURVEY RECORD</p><h2>INSPECTION DETAILS</h2></div>
+    <section class="report-card">
+      <h2>INSPECTION SCOPE</h2>
+      <dl class="details-list">
+        ${detail('SCOPE OF INSPECTION', details?.scope, 'wide')}
+        ${detail('PURPOSE', details?.purpose, 'wide')}
+        ${detail('INSPECTION METHOD', details?.inspectionMethod, 'wide')}
+        ${detail('AREAS INSPECTED', details?.areasInspected, 'wide')}
+        ${detail('AREAS EXCLUDED', details?.areasExcluded, 'wide')}
+        ${detail('LIMITATIONS', details?.limitations, 'wide')}
+      </dl>
+    </section>
+    ${footer(payload.reportReference, 2, totalPages)}
+  </section>
+  <section class="report-page details-page survey-conditions-page">
+    <header class="page-header">
+      ${logo(payload)}
+      <div><span>THERMAL IMAGING REPORT</span><strong>SURVEY CONDITIONS &amp; EQUIPMENT</strong></div>
+    </header>
+    <div class="details-heading"><p class="eyebrow">SURVEY RECORD</p><h2>SURVEY CONDITIONS &amp; EQUIPMENT</h2></div>
+    <section class="report-card">
+      <h2>CONDITIONS AND TRACEABILITY</h2>
+      <dl class="details-list">
+        ${detail('INSPECTION EQUIPMENT', details?.equipment, 'wide')}
+        ${detail('LOAD / OPERATING CONDITION', details?.loadCondition)}
+        ${detail('ENVIRONMENTAL CONDITIONS', details?.environmentalConditions)}
+        ${detail('AMBIENT TEMPERATURE', details?.ambientTemperatureC ? `${details.ambientTemperatureC} °C` : undefined)}
+        ${detail('REFLECTED TEMPERATURE', details?.reflectedTemperatureC ? `${details.reflectedTemperatureC} °C` : undefined)}
+        ${detail('EMISSIVITY', details?.emissivity)}
+        ${detail('CLIENT REPRESENTATIVE', details?.clientRepresentative)}
+        ${detail('ADDITIONAL NOTES', details?.additionalNotes, 'wide')}
+      </dl>
+    </section>
+    <div class="declaration"><strong>REPORT INTERPRETATION</strong>THIS REPORT RECORDS CONDITIONS OBSERVED AT THE TIME OF THE SURVEY. THERMAL PATTERNS CAN CHANGE WITH LOAD, AMBIENT CONDITIONS AND EQUIPMENT OPERATION. RECOMMENDATIONS SHOULD BE REVIEWED BY A COMPETENT PERSON BEFORE REMEDIAL WORK.</div>
+    ${footer(payload.reportReference, 3, totalPages)}
+  </section>
   ${(() => {
-    let page = 2;
+    let page = 4;
     return payload.targets
       .flatMap((target, targetIndex) =>
         thermalImagePageGroups(target.images).map(({ offset, images }, groupIndex) =>

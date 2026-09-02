@@ -227,6 +227,8 @@ export function buildThermalInspectionReport(input: {
   equipment?: OrganisationEquipment;
   signerName: string;
   signedAt?: string;
+  reportReference?: string;
+  overallOutcome?: string;
 }) {
   const defects = input.targets
     .filter(({ condition }) => condition === 'FAULT')
@@ -242,7 +244,8 @@ export function buildThermalInspectionReport(input: {
   return {
     data: {
       reportType: 'THERMAL_IMAGING',
-      outcome: defects.length ? 'FAULTS_REPORTED' : 'NO_ISSUES',
+      outcome: input.overallOutcome?.trim() || (defects.length ? 'FAULTS_REPORTED' : 'NO_ISSUES'),
+      ...(input.reportReference === undefined ? {} : { reportReference: input.reportReference }),
       targetCount: input.targets.length,
       imageCount: input.images.length,
       details: input.details,

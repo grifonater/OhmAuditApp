@@ -188,13 +188,14 @@ export class InspectionReviewComponent {
   }
 
   protected setOverallOutcome(event: Event): void {
-    this.overallOutcome.set(this.eventValue(event).trim());
+    this.overallOutcome.set(this.eventValue(event));
   }
 
   private overriding(): { reportReference?: string; overallOutcome?: string } {
+    const overallOutcome = this.overallOutcome().trim();
     return {
       ...(this.reportReference() === '' ? {} : { reportReference: this.reportReference() }),
-      ...(this.overallOutcome() === '' ? {} : { overallOutcome: this.overallOutcome() }),
+      ...(overallOutcome === '' ? {} : { overallOutcome }),
     };
   }
 
@@ -398,9 +399,9 @@ export class InspectionReviewComponent {
         })),
       });
       this.success.set('Administrator correction saved as a new audited revision.');
-this.overrideDraft.set(undefined);
-    this.reportReference.set('');
-    this.overallOutcome.set('');
+      this.overrideDraft.set(undefined);
+      this.reportReference.set('');
+      this.overallOutcome.set('');
       await this.refreshSelected();
       await this.refreshSummaries();
     });
@@ -722,8 +723,8 @@ this.overrideDraft.set(undefined);
       try {
         const document =
           this.latest(item)?.documents?.[0] ??
-(await this.api.issueInspectionDocument(this.organisationId, item.id, this.overriding()))
-        .document;
+          (await this.api.issueInspectionDocument(this.organisationId, item.id, this.overriding()))
+            .document;
         const blob = await this.api.previewDocumentHtml(this.organisationId, document.id);
         const url = URL.createObjectURL(blob);
         if (previewWindow === null) window.open(url, '_blank', 'noopener,noreferrer');

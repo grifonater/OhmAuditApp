@@ -1207,6 +1207,7 @@ export async function thermalCertificateData(source: {
   siteAddress: string[];
   reportDate: Date;
   engineerName: string;
+  outcome?: string | undefined;
   logoImage?: ReportMediaImage | undefined;
   buildReference?: string | undefined;
 }) {
@@ -1279,7 +1280,7 @@ export async function thermalCertificateData(source: {
     reportDate: source.reportDate.toISOString().slice(0, 10),
     engineerName: source.engineerName,
     reportReference: source.reportReference,
-    outcome: reportText(data['outcome'], 'Recorded'),
+    outcome: source.outcome?.trim() || reportText(data['outcome'], 'Recorded'),
     details: {
       scope: reportText(details['scope']),
       purpose: reportText(details['purpose']),
@@ -1296,9 +1297,14 @@ export async function thermalCertificateData(source: {
       additionalNotes: reportText(details['additionalNotes']),
       equipment: [
         reportText(equipment['name']),
-        reportText(equipment['manufacturer']),
-        reportText(equipment['model']),
+        reportText(equipment['equipmentType']),
+        [reportText(equipment['manufacturer']), reportText(equipment['model'])]
+          .filter(Boolean)
+          .join(' '),
         reportText(equipment['serialNumber']) ? `S/N ${reportText(equipment['serialNumber'])}` : '',
+        reportText(equipment['calibrationDueAt'])
+          ? `Calibration due ${reportText(equipment['calibrationDueAt']).slice(0, 10)}`
+          : '',
       ]
         .filter(Boolean)
         .join(' · '),
@@ -4153,7 +4159,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           organisationId,
           inspectionId,
           revisionData: input.data,
-          reportReference: `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+          reportReference:
+            reportText(input.data['reportReference']) ||
+            `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
           organisationName,
           customerName: inspection.customer.name,
           siteName: inspection.site.name,
@@ -4820,7 +4828,16 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                       organisationId,
                       inspectionId: inspection.id,
                       revisionData: revision.data,
-                      reportReference: document.reportReference ?? document.id,
+                      outcome:
+                        document.overallOutcome?.trim() ||
+                        reportText(
+                          (revision.data as Record<string, unknown>)['outcome'],
+                          'Recorded',
+                        ),
+                      reportReference:
+                        document.reportReference?.trim() ||
+                        reportText((revision.data as Record<string, unknown>)['reportReference']) ||
+                        document.id,
                       organisationName:
                         brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                       customerName: inspection.customer.name,
@@ -5046,8 +5063,14 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 organisationId,
                 inspectionId: inspection.id,
                 revisionData: revision.data,
+                outcome:
+                  document.overallOutcome?.trim() ||
+                  reportText((revision.data as Record<string, unknown>)['outcome'], 'Recorded'),
                 reportReference:
-                  document.reportReference ?? inspection.visit?.reference ?? document.id,
+                  document.reportReference?.trim() ||
+                  reportText((revision.data as Record<string, unknown>)['reportReference']) ||
+                  inspection.visit?.reference ||
+                  document.id,
                 organisationName:
                   brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                 customerName: inspection.customer.name,
