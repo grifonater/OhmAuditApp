@@ -180,7 +180,7 @@ export class InspectionService {
               ],
             },
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-            take: 100,
+            take: 500,
           });
     const seenDefects = new Set<string>();
     const defects = inspection.defects.filter((defect) => {

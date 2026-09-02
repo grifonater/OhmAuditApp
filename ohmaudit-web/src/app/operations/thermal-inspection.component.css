@@ -97,6 +97,15 @@
   border: 1px solid #ffc9c5;
   color: #b42318;
 }
+.loading-state {
+  padding: 16px;
+  margin-bottom: 14px;
+  border: 1px solid #dce3ed;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #53647d;
+  text-align: center;
+}
 .progress-strip {
   display: flex;
   align-items: center;
@@ -735,6 +744,26 @@
 .submit-button {
   min-width: 240px;
 }
+.issue-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.submit-button:has(.button-spinner) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+.button-spinner {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid rgba(17, 24, 39, 0.35);
+  border-top-color: #111827;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -826,6 +855,11 @@
     display: grid;
     justify-items: end;
   }
+  .step-actions .issue-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
   .classification-warning {
     font-size: 11px;
   }
@@ -862,6 +896,13 @@
   }
   .step-actions .button {
     padding: 0 10px;
+  }
+  .issue-actions {
+    width: 100%;
+  }
+  .issue-actions .button {
+    flex: 1;
+    min-width: 0;
   }
   .review-target {
     align-items: flex-start;

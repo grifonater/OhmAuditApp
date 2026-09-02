@@ -204,14 +204,28 @@ const mediaInput = z.object({
   size: z.number().int().positive().max(2_000_000),
   clientUploadId: z.string().trim().min(1).max(200).optional(),
 });
+const mediaUpdateShape = {
+  caption: z.string().trim().max(500).optional(),
+  category: z.enum(['unclassified-image', 'thermal-image', 'standard-image']).optional(),
+  tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+  sortOrder: z.number().int().min(0).max(100_000).optional(),
+};
 const mediaUpdateInput = z
-  .object({
-    caption: z.string().trim().max(500).optional(),
-    category: z.enum(['unclassified-image', 'thermal-image', 'standard-image']).optional(),
-    tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
-    sortOrder: z.number().int().min(0).max(100_000).optional(),
-  })
+  .object(mediaUpdateShape)
   .refine((input) => Object.keys(input).length > 0);
+export const bulkMediaUpdateInput = z.object({
+  updates: z
+    .array(
+      z
+        .object({ mediaId: z.uuid(), ...mediaUpdateShape })
+        .refine((input) => Object.keys(input).some((key) => key !== 'mediaId')),
+    )
+    .min(1)
+    .max(500)
+    .refine((updates) => new Set(updates.map(({ mediaId }) => mediaId)).size === updates.length, {
+      message: 'Media IDs must be unique.',
+    }),
+});
 const equipmentInput = z.object({
   name: z.string().trim().min(2).max(160),
   equipmentType: z.string().trim().min(2).max(100),
@@ -610,6 +624,51 @@ const inspectionSubmissionInput = z.object({
     .optional(),
   proposedAssetChanges: z.record(z.string(), z.unknown()).optional(),
 });
+export const thermalReportPreviewInput = inspectionSubmissionInput
+  .pick({ data: true, signature: true })
+  .strict();
+const thermalReportPreviewMaximumBytes = 512 * 1024;
+
+export async function readBoundedJson(request: Request, maximumBytes: number): Promise<unknown> {
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength !== null) {
+    const bytes = Number(declaredLength);
+    if (Number.isSafeInteger(bytes) && bytes > maximumBytes)
+      throw new DomainError(
+        'REQUEST_TOO_LARGE',
+        `The request body must be ${maximumBytes} bytes or smaller.`,
+        413,
+      );
+  }
+
+  const reader = request.body?.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let json = '';
+  if (reader !== undefined) {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      bytesRead += result.value.byteLength;
+      if (bytesRead > maximumBytes) {
+        await reader.cancel();
+        throw new DomainError(
+          'REQUEST_TOO_LARGE',
+          `The request body must be ${maximumBytes} bytes or smaller.`,
+          413,
+        );
+      }
+      json += decoder.decode(result.value, { stream: true });
+    }
+    json += decoder.decode();
+  }
+
+  try {
+    return JSON.parse(json) as unknown;
+  } catch {
+    throw new DomainError('VALIDATION_FAILED', 'The request contains invalid data.', 422);
+  }
+}
 const evChargePointInput = z.object({
   chargePointId: optionalTrimmed(120),
   operatorName: optionalTrimmed(160),
@@ -1108,10 +1167,11 @@ function evCertificateData(source: {
   };
 }
 
-async function thermalCertificateData(source: {
+export async function thermalCertificateData(source: {
   environment: ApiBindings;
   prisma: ReturnType<typeof prismaFor>;
   organisationId: string;
+  inspectionId: string;
   revisionData: unknown;
   reportReference: string;
   organisationName: string;
@@ -1144,6 +1204,7 @@ async function thermalCertificateData(source: {
             organisationId: source.organisationId,
             id: { in: requestedIds },
             entityType: 'Inspection',
+            entityId: source.inspectionId,
             category: { in: ['thermal-image', 'standard-image'] },
             mimeType: 'image/jpeg',
             status: 'AVAILABLE',
@@ -2252,6 +2313,34 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         organisationId,
         mediaId,
         mediaUpdateInput.parse(await context.req.json()),
+      ),
+    });
+  });
+  app.patch('/api/v1/inspections/:inspectionId/media', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const prisma = prismaFor(environment);
+    const moduleKey = await requireInspectionModule(prisma, organisationId, inspectionId);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      moduleKey,
+      'perform',
+    );
+    const input = bulkMediaUpdateInput.parse(await context.req.json());
+    return context.json({
+      media: await new PortfolioService(prisma).bulkUpdateInspectionMedia(
+        organisationId,
+        inspectionId,
+        input.updates,
       ),
     });
   });
@@ -3633,6 +3722,35 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ),
     });
   });
+  app.patch('/api/v1/guest/visits/:token/inspections/:inspectionId/media', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    if (
+      !visit.tasks.some(
+        (task) =>
+          task.inspection?.id === inspectionId &&
+          task.inspection.visitId === visit.id &&
+          task.moduleKey === 'thermal-imaging',
+      )
+    )
+      throw new DomainError(
+        'INSPECTION_NOT_FOUND',
+        'The thermal inspection is not assigned to this job.',
+        404,
+      );
+    await requireModuleForKey(prisma, visit.organisationId, 'thermal-imaging');
+    const input = bulkMediaUpdateInput.parse(await context.req.json());
+    return context.json({
+      media: await new PortfolioService(prisma).bulkUpdateInspectionMedia(
+        visit.organisationId,
+        inspectionId,
+        input.updates,
+        true,
+      ),
+    });
+  });
   app.get('/api/v1/guest/visits/:token/assets/:assetId/display-image', async (context) => {
     const environment = parseEnvironment(context.env);
     if (environment.MEDIA_BUCKET === undefined)
@@ -3893,6 +4011,105 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         organisationId,
         context.req.param('inspectionId'),
       ),
+    });
+  });
+  app.post('/api/v1/inspections/:inspectionId/report-preview.pdf', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const prisma = prismaFor(environment);
+    const moduleKey = await requireInspectionModule(prisma, organisationId, inspectionId);
+    if (moduleKey !== 'thermal-imaging')
+      throw new DomainError(
+        'THERMAL_REPORT_PREVIEW_UNAVAILABLE',
+        'Draft report preview is only available for thermal imaging inspections.',
+        422,
+      );
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      moduleKey,
+      'perform',
+    );
+    if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
+      throw new DomainError(
+        'PDF_RENDERER_UNAVAILABLE',
+        'PDF rendering is not configured for this environment.',
+        503,
+      );
+    const input = thermalReportPreviewInput.parse(
+      await readBoundedJson(context.req.raw, thermalReportPreviewMaximumBytes),
+    );
+    const [inspection, brand] = await Promise.all([
+      prisma.inspection.findFirst({
+        where: { id: inspectionId, organisationId },
+        include: { customer: true, site: true },
+      }),
+      prisma.organisationBrandProfile.findUnique({ where: { organisationId } }),
+    ]);
+    if (inspection === null)
+      throw new DomainError('INSPECTION_NOT_FOUND', 'The inspection was not found.', 404);
+    const logoImage = await mediaImageForReport(
+      environment,
+      prisma,
+      organisationId,
+      brand?.logoMediaId,
+    );
+    const organisationName =
+      brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation';
+    const reportDate = inspection.effectiveDate ?? new Date();
+    const effectiveDate = reportDate.toISOString().slice(0, 10);
+    const rendered = await requestPdfRender(environment, '/render/thermal-imaging-certificate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: `${inspection.inspectionType} - Draft`,
+        organisationName,
+        customerName: inspection.customer.name,
+        siteName: inspection.site.name,
+        inspectionType: inspection.inspectionType,
+        effectiveDate,
+        revisionNumber: 0,
+        engineerName: input.signature.signerName,
+        outcome: reportText(input.data['outcome'], 'Recorded'),
+        thermalCertificate: await thermalCertificateData({
+          environment,
+          prisma,
+          organisationId,
+          inspectionId,
+          revisionData: input.data,
+          reportReference: `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+          organisationName,
+          customerName: inspection.customer.name,
+          siteName: inspection.site.name,
+          siteAddress: [
+            inspection.site.addressLine1 ?? '',
+            [inspection.site.addressLine2, inspection.site.city, inspection.site.postcode]
+              .filter(Boolean)
+              .join(', '),
+          ].filter(Boolean),
+          reportDate,
+          engineerName: input.signature.signerName,
+          ...(logoImage === undefined ? {} : { logoImage }),
+        }),
+      }),
+    });
+    return new Response(rendered.body, {
+      status: rendered.status,
+      statusText: rendered.statusText,
+      headers: {
+        'content-type': 'application/pdf',
+        'content-disposition': `inline; filename="thermal-imaging-draft-${inspectionId}.pdf"`,
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+      },
     });
   });
   app.post('/api/v1/inspections/:inspectionId/data-plate-analysis', async (context) => {
@@ -4349,6 +4566,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                       environment,
                       prisma,
                       organisationId,
+                      inspectionId: inspection.id,
                       revisionData: revision.data,
                       reportReference: document.id,
                       organisationName:
@@ -4572,6 +4790,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 environment,
                 prisma,
                 organisationId,
+                inspectionId: inspection.id,
                 revisionData: revision.data,
                 reportReference: document.id,
                 organisationName:

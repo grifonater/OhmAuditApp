@@ -8,6 +8,7 @@ import {
   type VisitSummary,
 } from './api.service';
 import { AuthService } from './auth.service';
+import { buildMediaMetadataUpdateBody } from '../operations/thermal-inspection.helpers';
 
 export interface StoredVisitPack {
   visitId: string;
@@ -452,6 +453,19 @@ export class OfflineVisitService {
       }
     });
   }
+  async markThermalImageMetadataClean(
+    updates: Array<{ id: string; media: AssetMedia }>,
+  ): Promise<void> {
+    await this.database.transaction('rw', this.database.thermalImages, async () => {
+      for (const update of updates) {
+        if ((await this.database.thermalImages.get(update.id)) !== undefined)
+          await this.database.thermalImages.update(update.id, {
+            media: update.media,
+            metadataDirty: false,
+          });
+      }
+    });
+  }
   async uploadInspectionPhotos(inspectionId: string): Promise<string[]> {
     if (!this.online()) return [];
     const faultMediaIds: string[] = [];
@@ -489,10 +503,18 @@ export class OfflineVisitService {
   async uploadThermalImages(inspectionId: string): Promise<Record<string, string>> {
     if (!this.online()) return {};
     const ids: Record<string, string> = {};
-    for (const image of await this.database.thermalImages
+    const images = await this.database.thermalImages
       .where('inspectionId')
       .equals(inspectionId)
-      .toArray()) {
+      .toArray();
+    const pendingMetadata: Array<{
+      localId: string;
+      mediaId: string;
+      media: AssetMedia;
+      guestToken?: string;
+      organisationId: string;
+    }> = [];
+    for (const image of images) {
       let serverMediaId = image.serverMediaId;
       if (serverMediaId === undefined) {
         const kind =
@@ -511,11 +533,12 @@ export class OfflineVisitService {
             image.id,
           );
           serverMediaId = uploaded.media.id;
-          await this.api.updateGuestMedia(image.guestToken, serverMediaId, {
-            category: image.media.category,
-            ...(image.media.caption === undefined ? {} : { caption: image.media.caption }),
-            ...(image.media.tags === undefined ? {} : { tags: image.media.tags }),
-            ...(image.media.sortOrder === undefined ? {} : { sortOrder: image.media.sortOrder }),
+          pendingMetadata.push({
+            localId: image.id,
+            mediaId: serverMediaId,
+            media: image.media,
+            guestToken: image.guestToken,
+            organisationId: image.organisationId,
           });
         } else {
           const registered = await this.api.registerMedia(image.organisationId, {
@@ -538,21 +561,31 @@ export class OfflineVisitService {
         }
         await this.database.thermalImages.update(image.id, {
           serverMediaId,
-          metadataDirty: false,
+          metadataDirty: image.guestToken !== undefined,
         });
       } else if (image.metadataDirty) {
-        const metadata = {
-          category: image.media.category,
-          ...(image.media.caption === undefined ? {} : { caption: image.media.caption }),
-          ...(image.media.tags === undefined ? {} : { tags: image.media.tags }),
-          ...(image.media.sortOrder === undefined ? {} : { sortOrder: image.media.sortOrder }),
-        };
-        if (image.guestToken !== undefined)
-          await this.api.updateGuestMedia(image.guestToken, serverMediaId, metadata);
-        else await this.api.updateMedia(image.organisationId, serverMediaId, metadata);
-        await this.database.thermalImages.update(image.id, { metadataDirty: false });
+        pendingMetadata.push({
+          localId: image.id,
+          mediaId: serverMediaId,
+          media: image.media,
+          ...(image.guestToken === undefined ? {} : { guestToken: image.guestToken }),
+          organisationId: image.organisationId,
+        });
       }
       ids[image.id] = serverMediaId;
+    }
+    if (pendingMetadata.length) {
+      const context = pendingMetadata[0]!;
+      const updates = buildMediaMetadataUpdateBody(pendingMetadata).updates;
+      const result = context.guestToken
+        ? await this.api.updateGuestInspectionMediaBulk(context.guestToken, inspectionId, updates)
+        : await this.api.updateInspectionMediaBulk(context.organisationId, inspectionId, updates);
+      await this.markThermalImageMetadataClean(
+        pendingMetadata.map((item, index) => ({
+          id: item.localId,
+          media: { ...(result.media[index] ?? item.media), id: item.media.id },
+        })),
+      );
     }
     return ids;
   }

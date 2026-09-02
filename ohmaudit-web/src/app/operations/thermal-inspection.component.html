@@ -18,7 +18,12 @@
       @if (saved()) {
         <span class="saved-state">✓ {{ saved() }}</span>
       }
-      <button class="button secondary" type="button" (click)="saveDraft('Draft saved')">
+      <button
+        class="button secondary"
+        type="button"
+        (click)="saveDraft('Draft saved')"
+        [disabled]="submitting() || previewing() || loading()"
+      >
         Save draft
       </button>
     </div>
@@ -26,25 +31,43 @@
   @if (error()) {
     <div class="alert error" role="alert">{{ error() }}</div>
   }
+  @if (previewError()) {
+    <div class="alert error" role="alert">PDF preview failed: {{ previewError() }}</div>
+  }
+  @if (loading()) {
+    <div class="loading-state" role="status">Loading inspection draft…</div>
+  }
   <nav class="progress-strip" aria-label="Report progress">
     <button
       type="button"
       [class.current]="currentStep() === 'details'"
       (click)="goToStep('details')"
+      [disabled]="submitting() || previewing()"
     >
       <b>1</b><span>Details</span></button
     ><i></i>
-    <button type="button" [class.current]="currentStep() === 'images'" (click)="goToStep('images')">
+    <button
+      type="button"
+      [class.current]="currentStep() === 'images'"
+      (click)="goToStep('images')"
+      [disabled]="submitting() || previewing()"
+    >
       <b>2</b><span>Image gallery</span></button
     ><i></i>
     <button
       type="button"
       [class.current]="currentStep() === 'targets'"
       (click)="goToStep('targets')"
+      [disabled]="submitting() || previewing()"
     >
       <b>3</b><span>Target items</span></button
     ><i></i>
-    <button type="button" [class.current]="currentStep() === 'review'" (click)="goToStep('review')">
+    <button
+      type="button"
+      [class.current]="currentStep() === 'review'"
+      (click)="goToStep('review')"
+      [disabled]="submitting() || previewing()"
+    >
       <b>4</b><span>Review & issue</span>
     </button>
   </nav>
@@ -669,22 +692,39 @@
         /></label>
       </section>
       <footer class="step-actions">
-        <button class="button secondary" type="button" (click)="goToStep('targets')">
-          ← Target items</button
-        ><button
-          class="button primary submit-button"
+        <button
+          class="button secondary"
           type="button"
-          (click)="submit()"
-          [disabled]="busy()"
+          (click)="goToStep('targets')"
+          [disabled]="submitting() || previewing()"
         >
-          {{
-            busy()
-              ? 'Submitting…'
-              : offline.online()
-                ? 'Submit for office review →'
-                : 'Queue for sync →'
-          }}
+          ← Target items
         </button>
+        <div class="issue-actions">
+          @if (canReviewPdf()) {
+            <button
+              class="button secondary preview-button"
+              type="button"
+              (click)="reviewPdf()"
+              [disabled]="previewing() || submitting()"
+            >
+              {{ previewing() ? 'Generating PDF…' : 'Review PDF' }}
+            </button>
+          }
+          <button
+            class="button primary submit-button"
+            type="button"
+            (click)="submit()"
+            [disabled]="submitting() || previewing()"
+          >
+            @if (submitting()) {
+              <span class="button-spinner" aria-hidden="true"></span>
+              <span>Submitting report…</span>
+            } @else {
+              {{ offline.online() ? 'Submit for office review →' : 'Queue for sync →' }}
+            }
+          </button>
+        </div>
       </footer>
     </section>
   }

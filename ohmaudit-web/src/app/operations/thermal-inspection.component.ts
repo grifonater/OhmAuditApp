@@ -18,42 +18,23 @@ import {
 } from '../core/api.service';
 import { compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
+import {
+  buildMediaMetadataUpdateBody,
+  buildThermalInspectionReport,
+  canReviewThermalPdf,
+  metadataFailureAction,
+  thermalImageLimitError,
+  thermalPreviewBody,
+  thermalPreviewSignerError,
+  type MediaMetadata,
+  type ThermalCondition,
+  type ThermalDetails,
+  type ThermalTarget,
+} from './thermal-inspection.helpers';
 
-type ThermalCondition = 'NO_ISSUES' | 'FAULT';
-type ThermalSeverity = 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
 type ThermalStep = 'details' | 'images' | 'targets' | 'review';
 type ImageKind = 'unclassified' | 'thermal' | 'standard';
 type ImageCategory = 'unclassified-image' | 'thermal-image' | 'standard-image';
-interface ThermalDetails {
-  scope: string;
-  purpose: string;
-  inspectionMethod: string;
-  areasInspected: string;
-  areasExcluded: string;
-  limitations: string;
-  environmentalConditions: string;
-  loadCondition: string;
-  clientRepresentative: string;
-  ambientTemperatureC: number | null;
-  emissivity: number | null;
-  reflectedTemperatureC: number | null;
-  equipmentId: string;
-  additionalNotes: string;
-}
-interface ThermalTarget {
-  id: string;
-  name: string;
-  reference: string;
-  location: string;
-  imageIds: string[];
-  condition: ThermalCondition;
-  issueSummary: string;
-  severity: ThermalSeverity;
-  maxTemperatureC: number | null;
-  deltaTemperatureC: number | null;
-  observations: string;
-  recommendation: string;
-}
 const emptyDetails = (): ThermalDetails => ({
   scope: '',
   purpose: 'Thermal imaging inspection of electrical equipment under normal operating load.',
@@ -101,7 +82,10 @@ export class ThermalInspectionComponent {
   protected readonly currentStep = signal<ThermalStep>('details');
   protected readonly filter = signal<ImageKind | 'all'>('all');
   protected readonly search = signal('');
-  protected readonly busy = signal(false);
+  protected readonly loading = signal(false);
+  protected readonly submitting = signal(false);
+  protected readonly previewing = signal(false);
+  protected readonly previewError = signal('');
   protected readonly uploading = signal(false);
   protected readonly uploadProgress = signal('');
   protected readonly error = signal('');
@@ -111,6 +95,9 @@ export class ThermalInspectionComponent {
   private draggedImageId = '';
   private draftTimer: ReturnType<typeof setTimeout> | undefined;
   private draftWrite: Promise<void> = Promise.resolve();
+  private metadataWrite: Promise<void> = Promise.resolve();
+  private metadataWriteError: Error | undefined;
+  private readonly failedMetadataIds = new Set<string>();
   protected readonly selectedTarget = computed(
     () => this.targets().find(({ id }) => id === this.selectedTargetId()) ?? this.targets()[0],
   );
@@ -139,6 +126,13 @@ export class ThermalInspectionComponent {
   );
   protected readonly availableImages = computed(() =>
     this.filteredImages().filter(({ id }) => !this.assignedImageIds().has(id)),
+  );
+  protected readonly canReviewPdf = computed(() =>
+    canReviewThermalPdf({
+      guestToken: this.guestToken,
+      online: this.offline.online(),
+      hasInspection: this.inspection() !== undefined,
+    }),
   );
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -176,6 +170,12 @@ export class ThermalInspectionComponent {
     const files = [...(input.files ?? [])];
     const inspection = this.inspection();
     if (!inspection || !files.length) return;
+    const limitError = thermalImageLimitError(this.images().length, files.length);
+    if (limitError) {
+      this.error.set(limitError);
+      input.value = '';
+      return;
+    }
     const invalid = files.find(
       ({ type, size }) =>
         !['image/jpeg', 'image/png', 'image/webp'].includes(type) || size < 1 || size > 25_000_000,
@@ -418,7 +418,7 @@ export class ThermalInspectionComponent {
   protected async submit(): Promise<void> {
     const inspection = this.inspection(),
       visit = this.visit();
-    if (!inspection || !visit || this.busy()) return;
+    if (!inspection || !visit || this.submitting() || this.previewing()) return;
     if (this.signerName.trim().length < 2) {
       this.error.set('Enter the engineer name before submitting.');
       return;
@@ -443,49 +443,15 @@ export class ThermalInspectionComponent {
       );
       return;
     }
-    const defects = this.targets()
-      .filter(({ condition }) => condition === 'FAULT')
-      .map((target) => ({
-        title: target.issueSummary,
-        description: [target.name, target.location, target.observations, target.recommendation]
-          .filter(Boolean)
-          .join(' — '),
-        severity: target.severity,
-        photoMediaIds: target.imageIds,
-      }));
-    const equipment = this.selectedEquipment();
-    const submission = {
-      data: {
-        reportType: 'THERMAL_IMAGING',
-        outcome: defects.length ? 'FAULTS_REPORTED' : 'NO_ISSUES',
-        targetCount: this.targets().length,
-        imageCount: this.images().length,
-        details: this.details(),
-        equipment: equipment
-          ? {
-              id: equipment.id,
-              name: equipment.name,
-              equipmentType: equipment.equipmentType,
-              manufacturer: equipment.manufacturer,
-              model: equipment.model,
-              serialNumber: equipment.serialNumber,
-              calibrationDueAt: equipment.calibrationDueAt,
-            }
-          : undefined,
-        targets: this.targets(),
-      },
-      validation: { valid: true, faultCount: defects.length },
-      signature: {
-        signerName: this.signerName.trim(),
-        signerRole: 'Engineer',
-        signatureData: `typed:${this.signerName.trim()}:${new Date().toISOString()}`,
-      },
-      defects,
-    };
-    this.busy.set(true);
+    this.submitting.set(true);
     this.error.set('');
     try {
       await this.saveDraft();
+      await this.awaitMetadataWrites();
+      const mediaIds = this.offline.online()
+        ? await this.offline.uploadThermalImages(inspection.id)
+        : {};
+      const submission = this.buildReport(mediaIds);
       if (this.guestToken)
         await this.offline.queueGuest(
           this.guestToken,
@@ -512,7 +478,43 @@ export class ThermalInspectionComponent {
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'The report could not be submitted.');
     } finally {
-      this.busy.set(false);
+      this.submitting.set(false);
+    }
+  }
+  protected async reviewPdf(): Promise<void> {
+    const inspection = this.inspection();
+    if (!this.canReviewPdf() || inspection === undefined || this.previewing() || this.submitting())
+      return;
+    const signerError = thermalPreviewSignerError(this.signerName);
+    if (signerError) {
+      this.previewError.set(signerError);
+      return;
+    }
+    const previewWindow = window.open('about:blank', '_blank');
+    if (previewWindow !== null) previewWindow.opener = null;
+    this.previewing.set(true);
+    this.previewError.set('');
+    this.error.set('');
+    try {
+      await this.saveDraft();
+      await this.awaitMetadataWrites();
+      const mediaIds = await this.offline.uploadThermalImages(inspection.id);
+      const blob = await this.api.previewThermalInspectionPdf(
+        this.organisationId,
+        inspection.id,
+        thermalPreviewBody(this.buildReport(mediaIds)),
+      );
+      const url = URL.createObjectURL(blob);
+      if (previewWindow === null) window.open(url, '_blank', 'noopener,noreferrer');
+      else previewWindow.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
+    } catch (error: unknown) {
+      previewWindow?.close();
+      this.previewError.set(
+        error instanceof Error ? error.message : 'The report preview could not be generated.',
+      );
+    } finally {
+      this.previewing.set(false);
     }
   }
   protected async back(): Promise<void> {
@@ -543,7 +545,7 @@ export class ThermalInspectionComponent {
     if (message) this.saved.set(message);
   }
   private async load(): Promise<void> {
-    this.busy.set(true);
+    this.loading.set(true);
     try {
       const cached = await this.offline.pack(this.visitId, this.guestToken || undefined);
       let visit: VisitSummary;
@@ -607,7 +609,7 @@ export class ThermalInspectionComponent {
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'The report could not be opened.');
     } finally {
-      this.busy.set(false);
+      this.loading.set(false);
     }
   }
   private async refreshInspection(id = this.inspection()?.id): Promise<void> {
@@ -672,11 +674,11 @@ export class ThermalInspectionComponent {
   }
   private async updateManyImages(
     ids: string[],
-    patch?: Partial<Pick<AssetMedia, 'caption' | 'category' | 'tags' | 'sortOrder'>>,
+    patch?: MediaMetadata,
     ordered?: AssetMedia[],
   ): Promise<void> {
-    try {
-      const intended = ids.map((id, index) => {
+    const intended = ids
+      .map((id, index) => {
         const current = this.images().find((image) => image.id === id);
         const orderedImage = ordered?.[index];
         if (!current) return undefined;
@@ -689,36 +691,90 @@ export class ThermalInspectionComponent {
               }
             : (patch ?? {})),
         };
-      });
-      await this.offline.updateThermalImages(
-        intended
-          .filter((media): media is AssetMedia => media !== undefined)
-          .map((media) => ({ id: media.id, media })),
+      })
+      .filter((media): media is AssetMedia => media !== undefined);
+    const byId = new Map(intended.map((media) => [media.id, media]));
+    this.images.update((items) => items.map((item) => byId.get(item.id) ?? item));
+    const write = async () => {
+      await this.offline.updateThermalImages(intended.map((media) => ({ id: media.id, media })));
+      const serverIds = new Set(
+        [...ids, ...this.failedMetadataIds].filter((id) => !id.startsWith('offline:')),
       );
-      const updates = await Promise.all(
-        ids.map((id, index) => {
-          const orderedImage = ordered?.[index];
-          const input = ordered
-            ? {
-                sortOrder: index,
-                ...(orderedImage?.id === id ? { category: orderedImage.category } : {}),
-              }
-            : (patch ?? {});
-          if (!this.offline.online() || id.startsWith('offline:'))
-            return Promise.resolve({ media: intended[index]! });
-          return this.guestToken
-            ? this.api.updateGuestMedia(this.guestToken, id, input)
-            : this.api.updateMedia(this.organisationId, id, input);
-        }),
-      );
-      const byId = new Map(updates.map(({ media }) => [media.id, media]));
-      this.images.update((items) => items.map((item) => byId.get(item.id) ?? item));
-      this.saved.set('Image gallery updated');
-    } catch (error: unknown) {
+      if (!this.offline.online() || serverIds.size === 0) return;
+      await this.syncServerMetadata(serverIds);
+    };
+    const operation = this.metadataWrite.then(write);
+    this.metadataWrite = operation.catch((error: unknown) => {
       this.error.set(
         error instanceof Error ? error.message : 'The image changes could not be saved.',
       );
+    });
+    await this.metadataWrite;
+    if (this.metadataWriteError === undefined) this.saved.set('Image gallery updated');
+  }
+  private async awaitMetadataWrites(): Promise<void> {
+    await this.metadataWrite;
+    if (this.metadataWriteError === undefined) return;
+    const action = metadataFailureAction(this.offline.online(), this.failedMetadataIds.size);
+    if (action === 'defer') return;
+    if (action === 'retry') {
+      try {
+        await this.syncServerMetadata(new Set(this.failedMetadataIds));
+        return;
+      } catch {
+        // This is the single automatic retry. Keep the dirty state for a later attempt.
+      }
     }
+    throw new Error(`Image metadata is not saved: ${this.metadataWriteError.message}`);
+  }
+  private async syncServerMetadata(serverIds: Set<string>): Promise<void> {
+    const inspection = this.inspection();
+    const serverMedia = this.images()
+      .filter(({ id }) => serverIds.has(id))
+      .map((media) => ({ mediaId: media.id, media }));
+    if (inspection === undefined || serverMedia.length === 0)
+      throw new Error('The image metadata could not be prepared for saving.');
+    try {
+      const body = buildMediaMetadataUpdateBody(serverMedia);
+      const result = this.guestToken
+        ? await this.api.updateGuestInspectionMediaBulk(
+            this.guestToken,
+            inspection.id,
+            body.updates,
+          )
+        : await this.api.updateInspectionMediaBulk(
+            this.organisationId,
+            inspection.id,
+            body.updates,
+          );
+      this.failedMetadataIds.clear();
+      this.metadataWriteError = undefined;
+      const clean = serverMedia.map((item, index) => ({
+        id: item.mediaId,
+        media: result.media[index] ?? item.media,
+      }));
+      await this.offline.markThermalImageMetadataClean(clean);
+      const cleanById = new Map(clean.map(({ id, media }) => [id, media]));
+      this.images.update((items) => items.map((item) => cleanById.get(item.id) ?? item));
+    } catch (error: unknown) {
+      for (const id of serverIds) this.failedMetadataIds.add(id);
+      this.metadataWriteError =
+        error instanceof Error ? error : new Error('The image changes could not be saved.');
+      throw this.metadataWriteError;
+    }
+  }
+  private buildReport(mediaIds: Record<string, string> = {}) {
+    const targets = this.targets().map((target) => ({
+      ...target,
+      imageIds: target.imageIds.map((id) => mediaIds[id] ?? id),
+    }));
+    return buildThermalInspectionReport({
+      details: this.details(),
+      targets,
+      images: this.images(),
+      ...(this.selectedEquipment() === undefined ? {} : { equipment: this.selectedEquipment()! }),
+      signerName: this.signerName,
+    });
   }
   private categoryFor(kind: ImageKind): ImageCategory {
     return kind === 'thermal'

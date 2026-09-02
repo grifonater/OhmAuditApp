@@ -230,6 +230,9 @@ export interface AssetMedia {
   mimeType: string;
   createdAt?: string;
 }
+export type AssetMediaMetadataUpdate = { mediaId: string } & Partial<
+  Pick<AssetMedia, 'caption' | 'category' | 'tags' | 'sortOrder'>
+>;
 export interface OrganisationEquipment {
   id: string;
   organisationId: string;
@@ -2018,6 +2021,16 @@ export class ApiService {
       { method: 'PATCH', body: JSON.stringify(input) },
     );
   }
+  updateGuestInspectionMediaBulk(
+    token: string,
+    inspectionId: string,
+    updates: AssetMediaMetadataUpdate[],
+  ) {
+    return this.publicRequest<{ media: AssetMedia[] }>(
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/media`,
+      { method: 'PATCH', body: JSON.stringify({ updates }) },
+    );
+  }
   startInspection(organisationId: string, visitTaskId: string) {
     return this.request<{ inspection: InspectionSummary }>('/inspections/start', {
       method: 'POST',
@@ -2067,6 +2080,36 @@ export class ApiService {
     return this.request<{ inspection: InspectionSummary }>(
       `/inspections/${inspectionId}?organisationId=${encodeURIComponent(organisationId)}`,
     );
+  }
+  updateInspectionMediaBulk(
+    organisationId: string,
+    inspectionId: string,
+    updates: AssetMediaMetadataUpdate[],
+  ) {
+    return this.request<{ media: AssetMedia[] }>(
+      `/inspections/${inspectionId}/media?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PATCH', body: JSON.stringify({ updates }) },
+    );
+  }
+  async previewThermalInspectionPdf(
+    organisationId: string,
+    inspectionId: string,
+    input: { data: Record<string, unknown>; signature: Record<string, unknown> },
+  ): Promise<Blob> {
+    const accessToken = this.auth.session()?.access_token;
+    if (accessToken === undefined) throw new Error('Sign in to continue.');
+    const headers = this.authenticatedHeaders(accessToken);
+    headers.set('content-type', 'application/json');
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}/inspections/${inspectionId}/report-preview.pdf?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', headers, body: JSON.stringify(input), cache: 'no-store' },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as
+        { message?: string } | undefined;
+      throw new Error(body?.message ?? 'The report preview could not be generated.');
+    }
+    return response.blob();
   }
   submitInspection(organisationId: string, inspectionId: string, input: Record<string, unknown>) {
     return this.request(

@@ -1,6 +1,23 @@
 import type { PrismaClient } from '../generated/prisma/client';
 import { DomainError } from '../shared/domain-error';
 
+export interface InspectionMediaUpdate {
+  mediaId: string;
+  caption?: string | undefined;
+  category?: string | undefined;
+  tags?: string[] | undefined;
+  sortOrder?: number | undefined;
+}
+
+function inspectionMediaUpdateData(input: Omit<InspectionMediaUpdate, 'mediaId'>) {
+  return {
+    ...(input.caption === undefined ? {} : { caption: input.caption }),
+    ...(input.category === undefined ? {} : { category: input.category }),
+    ...(input.tags === undefined ? {} : { tags: input.tags }),
+    ...(input.sortOrder === undefined ? {} : { sortOrder: input.sortOrder }),
+  };
+}
+
 function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
@@ -687,12 +704,43 @@ export class PortfolioService {
       );
     return this.prisma.media.update({
       where: { id: media.id },
-      data: {
-        ...(input.caption === undefined ? {} : { caption: input.caption }),
-        ...(input.category === undefined ? {} : { category: input.category }),
-        ...(input.tags === undefined ? {} : { tags: input.tags }),
-        ...(input.sortOrder === undefined ? {} : { sortOrder: input.sortOrder }),
-      },
+      data: inspectionMediaUpdateData(input),
+    });
+  }
+
+  async bulkUpdateInspectionMedia(
+    organisationId: string,
+    inspectionId: string,
+    updates: InspectionMediaUpdate[],
+    requireAvailable = false,
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      const ids = updates.map(({ mediaId }) => mediaId);
+      const scope = {
+        organisationId,
+        entityType: 'Inspection',
+        entityId: inspectionId,
+        id: { in: ids },
+        ...(requireAvailable ? { status: 'AVAILABLE' as const } : {}),
+      };
+      const existing = await transaction.media.findMany({ where: scope });
+      if (existing.length !== updates.length)
+        throw new DomainError('MEDIA_NOT_FOUND', 'The media was not found.', 404);
+
+      for (const { mediaId, ...input } of updates) {
+        const result = await transaction.media.updateMany({
+          where: { ...scope, id: mediaId },
+          data: inspectionMediaUpdateData(input),
+        });
+        if (result.count !== 1)
+          throw new DomainError('MEDIA_NOT_FOUND', 'The media was not found.', 404);
+      }
+
+      const media = await transaction.media.findMany({ where: scope });
+      if (media.length !== updates.length)
+        throw new DomainError('MEDIA_NOT_FOUND', 'The media was not found.', 404);
+      const mediaById = new Map(media.map((item) => [item.id, item]));
+      return updates.map(({ mediaId }) => mediaById.get(mediaId)!);
     });
   }
 

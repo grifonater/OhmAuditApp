@@ -79,6 +79,7 @@ describe('inspection resubmission consistency', () => {
       status: 'OPEN',
       photoMediaIds: ['media-a'],
     };
+    const findMany = vi.fn().mockResolvedValue([]);
     const prisma = {
       inspection: {
         findFirst: vi
@@ -91,12 +92,13 @@ describe('inspection resubmission consistency', () => {
             ]),
           ),
       },
-      media: { findMany: vi.fn().mockResolvedValue([]) },
+      media: { findMany },
     } as unknown as PrismaClient;
 
     const detail = await new InspectionService(prisma).detail('organisation-a', 'inspection-a');
 
     expect(detail.defects).toHaveLength(1);
     expect(detail.defects[0]?.id).toBe('defect-a');
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 500 }));
   });
 });
