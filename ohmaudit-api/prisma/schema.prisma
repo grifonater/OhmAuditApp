@@ -542,6 +542,8 @@ model Document {
   templateKey          String?             @map("template_key")
   templateVersion      Int?                @map("template_version")
   snapshot             Json?
+  reportReference      String?             @map("report_reference")
+  overallOutcome       String?             @map("overall_outcome")
   inspectionRevision   InspectionRevision? @relation(fields: [inspectionRevisionId], references: [id])
 
   @@index([organisationId, entityType, entityId])

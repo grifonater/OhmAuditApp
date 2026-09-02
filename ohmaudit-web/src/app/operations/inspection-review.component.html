@@ -138,6 +138,28 @@
           </div>
           <div class="unit-hero-actions">
             @if (item.status === 'APPROVED') {
+              <div class="report-metadata">
+                <label
+                  ><span>Job reference</span>
+                  <input
+                    type="text"
+                    placeholder="Defaults to the job reference"
+                    [value]="reportReference()"
+                    (input)="setReportReference($event)"
+                    [readonly]="busy()"
+                  />
+                </label>
+                <label
+                  ><span>Overall outcome (optional)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. RECOMMENDED FOR REPAIR"
+                    [value]="overallOutcome()"
+                    (input)="setOverallOutcome($event)"
+                    [readonly]="busy()"
+                  />
+                </label>
+              </div>
               @if (item.moduleKey === 'thermal-imaging') {
                 <button
                   class="button"

@@ -313,6 +313,31 @@
 .unit-result strong {
   font-size: 1.5rem;
 }
+.report-metadata {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 0.6rem;
+}
+.report-metadata label {
+  display: grid;
+  gap: 0.25rem;
+}
+.report-metadata label span {
+  font-size: 0.62rem;
+  font-weight: 750;
+  color: var(--oa-ink-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.report-metadata input {
+  min-width: 13rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--oa-navy-950);
+  background: white;
+}
 .review-tabs {
   display: flex;
   gap: 0.2rem;
@@ -1026,6 +1051,14 @@ blockquote,
   .unit-hero-actions {
     width: 100%;
     justify-content: space-between;
+  }
+  .report-metadata {
+    width: 100%;
+    grid-auto-flow: row;
+  }
+  .report-metadata input {
+    min-width: 0;
+    width: 100%;
   }
   .download-pack {
     width: 100%;

@@ -4430,6 +4430,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           context.req.param('inspectionId'),
           user.id,
           context.get('correlationId'),
+          (await context.req.json().catch(() => ({}))) as {
+            reportReference?: string | undefined;
+            overallOutcome?: string | undefined;
+          },
         ),
       },
       201,
@@ -4616,9 +4620,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 .slice(0, 10),
               revisionNumber: revision.revisionNumber,
               engineerName: revision.signatures[0]?.signerName ?? 'Engineer',
-              outcome: printableValue(
-                (revision.data as Record<string, unknown>)['outcome'] ?? 'Recorded',
-              ),
+              outcome:
+                document.overallOutcome?.trim() ||
+                printableValue((revision.data as Record<string, unknown>)['outcome'] ?? 'Recorded'),
               summaryLines: Object.entries(revision.data as Record<string, unknown>)
                 .slice(0, 25)
                 .map(([key, value]) => `${key}: ${printableValue(value)}`),
@@ -4631,7 +4635,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                       organisationId,
                       inspectionId: inspection.id,
                       revisionData: revision.data,
-                      reportReference: document.id,
+                      reportReference: document.reportReference ?? document.id,
                       organisationName:
                         brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                       customerName: inspection.customer.name,
@@ -4755,6 +4759,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 site: true,
                 asset: { include: { evChargePoint: true } },
                 defects: true,
+                visit: true,
               },
             },
             signatures: true,
@@ -4842,7 +4847,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         effectiveDate: (inspection.effectiveDate ?? revision.createdAt).toISOString().slice(0, 10),
         revisionNumber: revision.revisionNumber,
         engineerName: revision.signatures[0]?.signerName ?? 'Engineer',
-        outcome: printableValue(
+        outcome: document.overallOutcome?.trim() || printableValue(
           (revision.data as Record<string, unknown>)['outcome'] ?? 'Recorded',
         ),
         summaryLines,
@@ -4856,7 +4861,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 organisationId,
                 inspectionId: inspection.id,
                 revisionData: revision.data,
-                reportReference: document.id,
+                reportReference: document.reportReference ?? inspection.visit?.reference ?? document.id,
                 organisationName:
                   brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                 customerName: inspection.customer.name,

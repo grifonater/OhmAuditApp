@@ -84,6 +84,8 @@ export class InspectionReviewComponent {
   protected readonly activeSection = signal<ReviewSection>('overview');
   protected readonly unitSearch = signal('');
   protected readonly overrideDraft = signal<OverrideDraft | undefined>(undefined);
+  protected readonly reportReference = signal('');
+  protected readonly overallOutcome = signal('');
   protected readonly decisions = signal<Record<string, ChangeDecision>>({});
   protected readonly imageUrls = signal<Record<string, string>>({});
   protected readonly busy = signal(false);
@@ -179,6 +181,21 @@ export class InspectionReviewComponent {
 
   protected setUnitSearch(event: Event): void {
     this.unitSearch.set(this.eventValue(event));
+  }
+
+  protected setReportReference(event: Event): void {
+    this.reportReference.set(this.eventValue(event).trim());
+  }
+
+  protected setOverallOutcome(event: Event): void {
+    this.overallOutcome.set(this.eventValue(event).trim());
+  }
+
+  private overriding(): { reportReference?: string; overallOutcome?: string } {
+    return {
+      ...(this.reportReference() === '' ? {} : { reportReference: this.reportReference() }),
+      ...(this.overallOutcome() === '' ? {} : { overallOutcome: this.overallOutcome() }),
+    };
   }
 
   protected result(item: InspectionSummary): string {
@@ -381,7 +398,9 @@ export class InspectionReviewComponent {
         })),
       });
       this.success.set('Administrator correction saved as a new audited revision.');
-      this.overrideDraft.set(undefined);
+this.overrideDraft.set(undefined);
+    this.reportReference.set('');
+    this.overallOutcome.set('');
       await this.refreshSelected();
       await this.refreshSummaries();
     });
@@ -673,7 +692,8 @@ export class InspectionReviewComponent {
     await this.run(async () => {
       const document =
         this.latest(item)?.documents?.[0] ??
-        (await this.api.issueInspectionDocument(this.organisationId, item.id)).document;
+        (await this.api.issueInspectionDocument(this.organisationId, item.id, this.overriding()))
+          .document;
       const blob = await this.api.downloadDocumentPdf(this.organisationId, document.id);
       this.saveBlob(
         blob,
@@ -702,7 +722,8 @@ export class InspectionReviewComponent {
       try {
         const document =
           this.latest(item)?.documents?.[0] ??
-          (await this.api.issueInspectionDocument(this.organisationId, item.id)).document;
+(await this.api.issueInspectionDocument(this.organisationId, item.id, this.overriding()))
+        .document;
         const blob = await this.api.previewDocumentHtml(this.organisationId, document.id);
         const url = URL.createObjectURL(blob);
         if (previewWindow === null) window.open(url, '_blank', 'noopener,noreferrer');

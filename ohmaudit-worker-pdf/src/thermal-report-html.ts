@@ -318,7 +318,7 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
       <div class="metric"><span>TARGET ITEMS</span><strong>${payload.targets.length}</strong></div>
       <div class="metric"><span>NO ISSUES</span><strong>${noIssueCount}</strong></div>
       <div class="metric"><span>FAULTS</span><strong>${faultCount}</strong></div>
-      <div class="metric outcome ${outcomeClass}"><span>OVERALL OUTCOME</span><strong>${text(payload.outcome, faultCount > 0 ? 'ACTION REQUIRED' : 'SATISFACTORY')}</strong></div>
+      <div class="metric outcome ${outcomeClass}"><span>OVERALL OUTCOME</span><strong>${text(payload.outcome.replaceAll('_', ' '), faultCount > 0 ? 'ACTION REQUIRED' : 'SATISFACTORY')}</strong></div>
     </div>
     <div class="cover-grid">
       <section class="report-card">

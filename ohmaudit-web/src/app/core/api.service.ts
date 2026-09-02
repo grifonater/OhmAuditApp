@@ -2196,10 +2196,19 @@ export class ApiService {
       },
     );
   }
-  issueInspectionDocument(organisationId: string, inspectionId: string) {
+  issueInspectionDocument(
+    organisationId: string,
+    inspectionId: string,
+    body?: { reportReference?: string; overallOutcome?: string },
+  ) {
     return this.request<{ document: ReportSummary }>(
       `/inspections/${inspectionId}/documents?organisationId=${encodeURIComponent(organisationId)}`,
-      { method: 'POST' },
+      {
+        method: 'POST',
+        ...(body === undefined || Object.keys(body).length === 0
+          ? {}
+          : { body: JSON.stringify(body) }),
+      },
     );
   }
   issueVisitDocuments(organisationId: string, visitId: string) {

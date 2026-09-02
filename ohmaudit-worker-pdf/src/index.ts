@@ -345,7 +345,7 @@ function certificateLines(payload: CertificatePayload): string[] {
     `Effective date: ${payload.effectiveDate}`,
     `Revision: ${payload.revisionNumber}`,
     `Engineer: ${payload.engineerName}`,
-    `Outcome: ${payload.outcome}`,
+    `Outcome: ${payload.outcome.replaceAll('_', ' ')}`,
     '',
     ...payload.summaryLines,
   ].slice(0, 38);

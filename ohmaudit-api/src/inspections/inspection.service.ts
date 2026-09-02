@@ -836,6 +836,7 @@ export class InspectionService {
     inspectionId: string,
     actorUserId: string,
     correlationId: string,
+    overrides?: { reportReference?: string | undefined; overallOutcome?: string | undefined },
   ) {
     const inspection = await this.detail(organisationId, inspectionId);
     if (inspection.status !== 'APPROVED')
@@ -852,7 +853,27 @@ export class InspectionService {
         409,
       );
     const existing = revision.documents[0];
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      if (
+        (overrides?.reportReference !== undefined &&
+          overrides.reportReference !== existing.reportReference) ||
+        (overrides?.overallOutcome !== undefined &&
+          overrides.overallOutcome !== existing.overallOutcome)
+      ) {
+        await this.prisma.document.update({
+          where: { id: existing.id },
+          data: {
+            ...(overrides?.reportReference === undefined
+              ? {}
+              : { reportReference: overrides.reportReference }),
+            ...(overrides?.overallOutcome === undefined
+              ? {}
+              : { overallOutcome: overrides.overallOutcome }),
+          },
+        });
+      }
+      return existing;
+    }
     const reportName =
       inspection.moduleKey === 'ev-charging'
         ? 'EV Charging Inspection Certificate'
@@ -877,6 +898,12 @@ export class InspectionService {
         templateKey: `${inspection.moduleKey}-certificate`,
         templateVersion: 1,
         snapshot: revision.snapshots as Prisma.InputJsonValue,
+        ...(overrides?.reportReference === undefined
+          ? {}
+          : { reportReference: overrides.reportReference }),
+        ...(overrides?.overallOutcome === undefined
+          ? {}
+          : { overallOutcome: overrides.overallOutcome }),
       },
     });
     await this.prisma.auditEvent.create({
