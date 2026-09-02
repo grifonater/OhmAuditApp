@@ -4079,6 +4079,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         revisionNumber: 0,
         engineerName: input.signature.signerName,
         outcome: reportText(input.data['outcome'], 'Recorded'),
+        summaryLines: [
+          'Report status: Draft',
+          `Targets: ${reportArray(input.data['targets']).length}`,
+        ],
         thermalCertificate: await thermalCertificateData({
           environment,
           prisma,
