@@ -381,6 +381,21 @@ export class ThermalInspectionComponent {
       });
     }
   }
+  protected moveImageInTarget(id: string, direction: -1 | 1): void {
+    const selected = this.selectedTarget();
+    if (!selected) return;
+    const imageIds = [...selected.imageIds];
+    const from = imageIds.indexOf(id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= imageIds.length) return;
+    const moved = imageIds[from] as string;
+    imageIds[from] = imageIds[to] as string;
+    imageIds[to] = moved;
+    this.patchTarget({
+      imageIds,
+      imageDescriptions: normalizeImageDescriptions(imageIds, selected.imageDescriptions),
+    });
+  }
   protected patchTargetImageDescription(imageId: string, value: string): void {
     const selected = this.selectedTarget();
     if (!selected) return;

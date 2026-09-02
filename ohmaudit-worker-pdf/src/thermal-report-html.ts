@@ -152,8 +152,20 @@ function targetPage(
   </section>`;
 }
 
+function thermalImagePageGroups(images: readonly unknown[]): Array<{ offset: number; images: readonly unknown[] }> {
+  if (images.length === 0) return [{ offset: 0, images: images }];
+  const groups: Array<{ offset: number; images: readonly unknown[] }> = [];
+  groups.push({ offset: 0, images: images.slice(0, 2) });
+  let offset = 2;
+  while (offset < images.length) {
+    groups.push({ offset, images: images.slice(offset, offset + 4) });
+    offset += 4;
+  }
+  return groups;
+}
+
 function targetPageCount(target: ThermalCertificatePayload['targets'][number]): number {
-  return Math.max(1, Math.ceil(target.images.length / 2));
+  return Math.max(1, thermalImagePageGroups(target.images).length);
 }
 
 /** Returns a self-contained, print-safe A4 HTML report with no external resources. */
@@ -340,26 +352,20 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
   ${(() => {
     let page = 2;
     return payload.targets
-      .flatMap((target, targetIndex) => {
-        const imageGroups =
-          target.images.length === 0
-            ? [[]]
-            : Array.from({ length: Math.ceil(target.images.length / 2) }, (_, index) =>
-                target.images.slice(index * 2, index * 2 + 2),
-              );
-        return imageGroups.map((images, groupIndex) =>
+      .flatMap((target, targetIndex) =>
+        thermalImagePageGroups(target.images).map(({ offset, images }, groupIndex) =>
           targetPage(
             target,
             targetIndex,
             payload,
-            images,
-            groupIndex * 2,
+            images as Array<ThermalCertificatePayload['targets'][number]['images'][number]>,
+            offset,
             groupIndex > 0,
             page++,
             totalPages,
           ),
-        );
-      })
+        ),
+      )
       .join('\n');
   })()}
 </body>

@@ -267,7 +267,7 @@ describe('PDF worker', () => {
     expect(html).toContain('PAGE 2 OF 2');
     expect(html).not.toContain('<script');
   });
-  it('paginates all thermal HTML evidence two per page with escaped descriptions', () => {
+  it('paginates thermal HTML evidence two per page then four per continuation with escaped descriptions', () => {
     const html = renderThermalReportHtml({
       organisationName: 'Ohm Audit Electrical Ltd',
       customerName: 'Apex Facilities',
@@ -298,13 +298,13 @@ describe('PDF worker', () => {
       ],
     });
 
-    expect(html).toContain('PAGE 4 OF 4');
-    expect(html.match(/target-page continuation-page/g)).toHaveLength(2);
+    expect(html).toContain('PAGE 3 OF 3');
+    expect(html.match(/target-page continuation-page/g)).toHaveLength(1);
     expect(html).toContain('IMAGE 5 OF 5');
     expect(html).toContain('FINAL &lt;EVIDENCE&gt; &amp; FOLLOW-UP');
     expect(html).not.toContain('Final <evidence>');
   });
-  it('paginates every native thermal image and includes wrapped descriptions', () => {
+  it('paginates meta-evidence two per first page and four per continuation with wrapped descriptions', () => {
     const text = new TextDecoder().decode(
       renderThermalCertificatePdf({
         organisationName: 'Ohm Audit Electrical Ltd',
@@ -340,10 +340,50 @@ describe('PDF worker', () => {
       }),
     );
 
-    expect(text).toContain('/Count 5');
+    expect(text).toContain('/Count 4');
     expect(text).toContain('IMAGE 5 OF 5');
     expect(text).toContain('FINAL EVIDENCE DESCRIPTION WRAPS SAFELY');
     expect(text).toContain('EVIDENCE CONTINUATION');
+  });
+  it('paginates the first target page with two images then four per continuation page in the native PDF', () => {
+    const text = new TextDecoder().decode(
+      renderThermalCertificatePdf({
+        organisationName: 'Ohm Audit Electrical Ltd',
+        customerName: 'Apex Facilities',
+        siteName: 'Apex House',
+        siteAddress: [],
+        reportDate: '2026-09-02',
+        engineerName: 'A Engineer',
+        reportReference: 'THERMAL-MANY',
+        outcome: 'SATISFACTORY',
+        targets: [
+          {
+            name: 'Machine room',
+            reference: 'MR-01',
+            location: 'Plant area',
+            condition: 'NO_ISSUES',
+            issueSummary: '',
+            severity: '',
+            maxTemperatureC: '',
+            deltaTemperatureC: '',
+            observations: 'All clear',
+            recommendation: '',
+            images: Array.from({ length: 10 }, (_, index) => ({
+              kind: index % 2 === 0 ? 'Infrared' : 'Standard',
+              jpegBase64,
+              description: `Evidence ${index + 1}`,
+            })),
+          },
+        ],
+      }),
+    );
+
+    expect(text).toContain('/Count 5');
+    expect(text).toContain('IMAGE 1 OF 10');
+    expect(text).toContain('IMAGE 2 OF 10');
+    expect(text).toContain('EVIDENCE CONTINUATION - IMAGES 3-6 OF 10');
+    expect(text).toContain('EVIDENCE CONTINUATION - IMAGES 7-10 OF 10');
+    expect(text).toContain('IMAGE 10 OF 10');
   });
   it('returns stable errors for oversized and malformed non-RAMS payloads', async () => {
     const oversized = await pdfWorker.fetch(

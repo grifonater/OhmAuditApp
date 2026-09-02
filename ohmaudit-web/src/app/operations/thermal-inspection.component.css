@@ -626,14 +626,45 @@
   display: block;
 }
 .target-image-grid figcaption {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 6px;
   padding: 6px 8px;
 }
 .target-image-grid figcaption button {
   border: 0;
   background: none;
   font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+.target-image-grid .target-image-kind {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.target-image-grid .target-image-order {
+  display: flex;
+  gap: 2px;
+}
+.target-image-grid .target-image-order button {
+  font-size: 16px;
+  padding: 0 2px;
+}
+.target-image-grid .target-image-order-placeholder {
+  width: 16px;
+}
+.target-image-grid .target-image-index {
+  color: #17233a;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 16px;
+  text-align: center;
+}
+.target-image-grid figcaption .target-image-remove {
+  color: #c5291e;
+  font-size: 20px;
 }
 .details-panel {
   position: sticky;

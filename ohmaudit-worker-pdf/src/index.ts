@@ -763,13 +763,25 @@ export function renderEvCertificatePdf(payload: EvCertificatePayload): Uint8Arra
   return renderPageContents(built.contents, built.images);
 }
 
+function thermalImagePageGroups<T>(images: readonly T[]): Array<{ offset: number; images: readonly T[] }> {
+  if (images.length === 0) return [{ offset: 0, images: images }];
+  const groups: Array<{ offset: number; images: readonly T[] }> = [];
+  groups.push({ offset: 0, images: images.slice(0, 2) });
+  let offset = 2;
+  while (offset < images.length) {
+    groups.push({ offset, images: images.slice(offset, offset + 4) });
+    offset += 4;
+  }
+  return groups;
+}
+
 function thermalCertificateContents(
   payload: ThermalCertificatePayload,
   imagePrefix: string,
 ): { contents: string[]; images: PdfImage[] } {
   const faultCount = payload.targets.filter(({ condition }) => condition === 'FAULT').length;
   const targetPageCounts = payload.targets.map((target) =>
-    Math.max(1, Math.ceil(target.images.length / 2)),
+    Math.max(1, thermalImagePageGroups(target.images).length),
   );
   const totalPages = 2 + targetPageCounts.reduce((total, count) => total + count, 0);
   const logoName = `${imagePrefix}Logo`;
@@ -888,15 +900,10 @@ function thermalCertificateContents(
   const contents = [cover, detailsPage];
   let pageNumber = 3;
   for (const [targetIndex, target] of payload.targets.entries()) {
-    const imageGroups: Array<typeof target.images> =
-      target.images.length === 0
-        ? [[]]
-        : Array.from({ length: Math.ceil(target.images.length / 2) }, (_, index) =>
-            target.images.slice(index * 2, index * 2 + 2),
-          );
-    for (const [groupIndex, displayedImages] of imageGroups.entries()) {
+    for (const [groupIndex, { offset: imageOffset, images: displayedImages }] of thermalImagePageGroups(
+      target.images,
+    ).entries()) {
       const continuation = groupIndex > 0;
-      const imageOffset = groupIndex * 2;
       const commands: string[] = [
         textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
         textAt(
@@ -919,18 +926,22 @@ function thermalCertificateContents(
         const imageIndex = imageOffset + groupImageIndex;
         const name = `${imagePrefix}Target${targetIndex}Image${imageIndex}`;
         images.push({ name, base64: image.jpegBase64 });
-        const x = groupImageIndex === 0 ? 42 : 303;
+        const column = groupImageIndex % 2;
+        const secondRow = continuation && groupImageIndex >= 2;
+        const x = column === 0 ? 42 : 303;
+        const imageHeight = continuation ? 108 : 80;
+        const imageY = secondRow ? 470 : 615;
         if (jpegDetails(image.jpegBase64) !== undefined)
-          commands.push(`q 250 0 0 ${continuation ? 95 : 80} ${x} 615 cm /${name} Do Q`);
-        else commands.push(`${lineColour} RG ${x} 615 250 ${continuation ? 95 : 80} re S`);
+          commands.push(`q 250 0 0 ${imageHeight} ${x} ${imageY} cm /${name} Do Q`);
+        else commands.push(`${lineColour} RG ${x} ${imageY} 250 ${imageHeight} re S`);
         commands.push(
-          textAt(image.kind, x, 601, 7, accent),
-          textAt(`IMAGE ${imageIndex + 1} OF ${target.images.length}`, x + 165, 601, 7, muted),
+          textAt(image.kind, x, imageY - 14, 7, accent),
+          textAt(`IMAGE ${imageIndex + 1} OF ${target.images.length}`, x + 165, imageY - 14, 7, muted),
         );
         if (image.description) {
           const lines = wrapped(image.description, 60);
           lines.forEach((line, lineIndex) =>
-            commands.push(textAt(line, x, 583 - lineIndex * 10, 6.5)),
+            commands.push(textAt(line, x, imageY - 32 - lineIndex * 10, 6.5)),
           );
         }
       });

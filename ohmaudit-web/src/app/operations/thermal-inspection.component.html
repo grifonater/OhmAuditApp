@@ -496,9 +496,37 @@
                         />
                       }
                       <figcaption>
-                        <span>{{ imageKind(image) === 'thermal' ? 'Infrared' : 'Standard' }}</span
+                        <span class="target-image-kind">{{
+                          imageKind(image) === 'thermal' ? 'Infrared' : 'Standard'
+                        }}</span
+                        ><span class="target-image-order">
+                          @if (imageIndex > 0) {
+                            <button
+                              type="button"
+                              (click)="moveImageInTarget(imageId, -1)"
+                              [attr.aria-label]="'Move ' + imageLabel(imageId, imageIndex) + ' up'"
+                            >
+                              ↑
+                            </button>
+                          } @else {
+                            <span class="target-image-order-placeholder"></span>
+                          }
+                          @if (imageIndex < target.imageIds.length - 1) {
+                            <button
+                              type="button"
+                              (click)="moveImageInTarget(imageId, 1)"
+                              [attr.aria-label]="'Move ' + imageLabel(imageId, imageIndex) + ' down'"
+                            >
+                              ↓
+                            </button>
+                          } @else {
+                            <span class="target-image-order-placeholder"></span>
+                          }
+                        </span
+                        ><span class="target-image-index">{{ imageIndex + 1 }}</span
                         ><button
                           type="button"
+                          class="target-image-remove"
                           (click)="removeImageFromTarget(imageId)"
                           [attr.aria-label]="'Remove ' + imageLabel(imageId, imageIndex)"
                         >
