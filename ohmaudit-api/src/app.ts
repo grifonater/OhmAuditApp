@@ -4142,9 +4142,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           `Targets: ${reportArray(input.data['targets']).length}`,
           ...reportArray(input.data['targets']).map(
             (target) =>
-              `  ${reportText(reportRecord(target)['name'], 'Target')}: ${reportArray(
-                reportRecord(target)['imageIds'],
-              ).length} image(s)`,
+              `  ${reportText(reportRecord(target)['name'], 'Target')}: ${
+                reportArray(reportRecord(target)['imageIds']).length
+              } image(s)`,
           ),
         ],
         thermalCertificate: await thermalCertificateData({
@@ -5032,9 +5032,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         effectiveDate: (inspection.effectiveDate ?? revision.createdAt).toISOString().slice(0, 10),
         revisionNumber: revision.revisionNumber,
         engineerName: revision.signatures[0]?.signerName ?? 'Engineer',
-        outcome: document.overallOutcome?.trim() || printableValue(
-          (revision.data as Record<string, unknown>)['outcome'] ?? 'Recorded',
-        ),
+        outcome:
+          document.overallOutcome?.trim() ||
+          printableValue((revision.data as Record<string, unknown>)['outcome'] ?? 'Recorded'),
         summaryLines,
         ...reportLogoFields(locationLogoImage),
         ...(inspection.moduleKey !== 'thermal-imaging'
@@ -5046,7 +5046,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 organisationId,
                 inspectionId: inspection.id,
                 revisionData: revision.data,
-                reportReference: document.reportReference ?? inspection.visit?.reference ?? document.id,
+                reportReference:
+                  document.reportReference ?? inspection.visit?.reference ?? document.id,
                 organisationName:
                   brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                 customerName: inspection.customer.name,

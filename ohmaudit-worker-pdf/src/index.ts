@@ -765,7 +765,9 @@ export function renderEvCertificatePdf(payload: EvCertificatePayload): Uint8Arra
   return renderPageContents(built.contents, built.images);
 }
 
-function thermalImagePageGroups<T>(images: readonly T[]): Array<{ offset: number; images: readonly T[] }> {
+function thermalImagePageGroups<T>(
+  images: readonly T[],
+): Array<{ offset: number; images: readonly T[] }> {
   if (images.length === 0) return [{ offset: 0, images: images }];
   const groups: Array<{ offset: number; images: readonly T[] }> = [];
   groups.push({ offset: 0, images: images.slice(0, 2) });
@@ -897,14 +899,17 @@ function thermalCertificateContents(
     textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
     textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
     textAt(`PAGE 2 OF ${totalPages}`, 475, 25, 7, muted),
-    ...(payload.buildReference ? [textAt(`BUILD ${payload.buildReference}`, 475, 45, 6, muted)] : []),
+    ...(payload.buildReference
+      ? [textAt(`BUILD ${payload.buildReference}`, 475, 45, 6, muted)]
+      : []),
   ].join('\n');
   const contents = [cover, detailsPage];
   let pageNumber = 3;
   for (const [targetIndex, target] of payload.targets.entries()) {
-    for (const [groupIndex, { offset: imageOffset, images: displayedImages }] of thermalImagePageGroups(
-      target.images,
-    ).entries()) {
+    for (const [
+      groupIndex,
+      { offset: imageOffset, images: displayedImages },
+    ] of thermalImagePageGroups(target.images).entries()) {
       const continuation = groupIndex > 0;
       const commands: string[] = [
         textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
@@ -938,7 +943,13 @@ function thermalCertificateContents(
         else commands.push(`${lineColour} RG ${x} ${imageY} 250 ${imageHeight} re S`);
         commands.push(
           textAt(image.kind, x, imageY - 14, 7, accent),
-          textAt(`IMAGE ${imageIndex + 1} OF ${target.images.length}`, x + 165, imageY - 14, 7, muted),
+          textAt(
+            `IMAGE ${imageIndex + 1} OF ${target.images.length}`,
+            x + 165,
+            imageY - 14,
+            7,
+            muted,
+          ),
         );
         if (image.description) {
           const lines = wrapped(image.description, 60);
