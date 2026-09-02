@@ -1222,7 +1222,7 @@ export async function thermalCertificateData(source: {
             id: { in: requestedIds },
             entityType: 'Inspection',
             entityId: source.inspectionId,
-            category: { in: ['thermal-image', 'standard-image'] },
+            category: { in: ['thermal-image', 'standard-image', 'unclassified-image'] },
             mimeType: 'image/jpeg',
             status: 'AVAILABLE',
           },
@@ -1315,7 +1315,12 @@ export async function thermalCertificateData(source: {
           const description = reportImageDescription(imageDescriptions[mediaId]);
           return [
             {
-              kind: image.category === 'thermal-image' ? 'Infrared' : 'Standard',
+              kind:
+                image.category === 'thermal-image'
+                  ? 'Infrared'
+                  : image.category === 'standard-image'
+                    ? 'Standard'
+                    : 'Visual',
               jpegBase64,
               ...(description ? { description } : {}),
             },

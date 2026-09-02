@@ -148,7 +148,8 @@ describe('Thermal draft report preview', () => {
       organisationId: 'organisation-a',
       entityType: 'Inspection',
       entityId: 'inspection-a',
-      category: index % 2 === 0 ? 'thermal-image' : 'standard-image',
+      category:
+        index === 0 ? 'unclassified-image' : index % 2 === 0 ? 'thermal-image' : 'standard-image',
       mimeType: 'image/jpeg',
       status: 'AVAILABLE',
       storageKey: `inspection-a/${id}.jpg`,
@@ -213,7 +214,7 @@ describe('Thermal draft report preview', () => {
     expect(requestedIds).toEqual(ids.slice(0, 24));
     expect(result.targets[0]?.images).toHaveLength(13);
     expect(result.targets[1]?.images.map(({ kind }) => kind)).toEqual([
-      'Infrared',
+      'Visual',
       ...ids.slice(13, 24).map((_, index) => (index % 2 === 1 ? 'Infrared' : 'Standard')),
     ]);
     expect(result.targets[0]?.images[0]).toMatchObject({ description: 'first  description' });

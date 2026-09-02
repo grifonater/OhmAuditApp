@@ -330,10 +330,7 @@ export class ThermalInspectionComponent {
     void this.loadImageUrls([image], true);
   }
   protected createTarget(): void {
-    const imageIds = [...this.selectedImageIds()].filter((id) => {
-      const image = this.imageById(id);
-      return image && this.imageKind(image) !== 'unclassified';
-    });
+    const imageIds = [...this.selectedImageIds()];
     this.error.set('');
     const target: ThermalTarget = {
       id: crypto.randomUUID(),
