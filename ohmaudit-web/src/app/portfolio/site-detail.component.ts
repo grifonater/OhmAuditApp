@@ -51,6 +51,11 @@ export class SiteDetailComponent {
   protected readonly evEnabled = computed(
     () => this.entitlements().find((item) => item.module.key === 'ev-charging')?.entitled ?? false,
   );
+  protected readonly emergencyLightingEnabled = computed(
+    () =>
+      this.entitlements().find((item) => item.module.key === 'emergency-lighting')?.entitled ??
+      false,
+  );
   protected readonly tab = signal<SiteTab>('overview');
   protected readonly view = signal<'grid' | 'list'>('grid');
   protected readonly editingSite = signal(false);

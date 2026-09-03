@@ -115,6 +115,11 @@ export class VisitsComponent {
     () =>
       this.entitlements().find((item) => item.module.key === 'thermal-imaging')?.entitled ?? false,
   );
+  protected readonly emergencyLightingEnabled = computed(
+    () =>
+      this.entitlements().find((item) => item.module.key === 'emergency-lighting')?.entitled ??
+      false,
+  );
   protected readonly canCreate = computed(() => this.capabilities().includes('visits.create'));
   protected readonly canAssign = computed(() => this.capabilities().includes('visits.assign'));
   protected readonly canGenerate = computed(() =>
@@ -147,6 +152,9 @@ export class VisitsComponent {
     guestEmail: new FormControl('', { nonNullable: true }),
     engineerNotes: new FormControl('', { nonNullable: true }),
     moduleKey: new FormControl('ev-charging', { nonNullable: true }),
+    emergencyTestType: new FormControl<'FUNCTIONAL' | 'DURATION'>('FUNCTIONAL', {
+      nonNullable: true,
+    }),
   });
 
   constructor() {
@@ -212,13 +220,14 @@ export class VisitsComponent {
 
   protected async create(): Promise<void> {
     if (!this.canCreate()) return;
-    const isThermal = this.form.controls.moduleKey.value === 'thermal-imaging';
+    const moduleKey = this.form.controls.moduleKey.value;
+    const isThermal = moduleKey === 'thermal-imaging';
     if (
       this.form.invalid ||
       (this.addInspection() &&
         !isThermal &&
         this.selectedAssetIds().size === 0 &&
-        !this.allowDiscovery())
+        !(moduleKey === 'ev-charging' && this.allowDiscovery()))
     )
       return;
     const value = this.form.getRawValue();
@@ -249,7 +258,10 @@ export class VisitsComponent {
             : selected.map((asset) => ({
                 assetId: asset.id,
                 moduleKey: value.moduleKey,
-                title: `${asset.displayName} inspection`,
+                title:
+                  value.moduleKey === 'emergency-lighting'
+                    ? `${value.emergencyTestType === 'DURATION' ? 'Annual duration' : 'Monthly functional'} emergency lighting test`
+                    : `${asset.displayName} inspection`,
               })),
       });
       this.showCreate.set(false);
@@ -397,7 +409,13 @@ export class VisitsComponent {
         this.entitlements.set(entitlements.entitlements);
         this.jobCategories.set(categories.categories);
         if (!this.evEnabled() && this.form.controls.moduleKey.value === 'ev-charging')
-          this.form.controls.moduleKey.setValue(this.thermalEnabled() ? 'thermal-imaging' : 'core');
+          this.form.controls.moduleKey.setValue(
+            this.emergencyLightingEnabled()
+              ? 'emergency-lighting'
+              : this.thermalEnabled()
+                ? 'thermal-imaging'
+                : 'core',
+          );
       } catch (error) {
         const downloaded = await this.offline.packs(this.organisationId);
         if (downloaded.length === 0) throw error;

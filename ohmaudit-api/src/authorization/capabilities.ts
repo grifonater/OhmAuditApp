@@ -25,6 +25,10 @@ export const capabilities = [
   'thermal.equipment.manage',
   'thermal.inspections.perform',
   'thermal.reports.issue',
+  'emergency-lighting.assets.read',
+  'emergency-lighting.assets.manage',
+  'emergency-lighting.inspections.perform',
+  'emergency-lighting.certificates.issue',
   'billing.manage',
   'organisation.manage',
   'organisation.users.manage',
@@ -205,6 +209,31 @@ export const capabilityCatalogue: CapabilityDefinition[] = [
     sensitive: true,
   },
   {
+    key: 'emergency-lighting.assets.read',
+    group: 'Emergency lighting',
+    name: 'View emergency lighting',
+    description: 'View emergency lighting systems, fittings, groups and keyswitches.',
+  },
+  {
+    key: 'emergency-lighting.assets.manage',
+    group: 'Emergency lighting',
+    name: 'Manage emergency lighting',
+    description: 'Manage emergency lighting systems, fittings, groups and keyswitches.',
+  },
+  {
+    key: 'emergency-lighting.inspections.perform',
+    group: 'Emergency lighting',
+    name: 'Perform emergency lighting inspections',
+    description: 'Record fitting-level functional and duration test results.',
+  },
+  {
+    key: 'emergency-lighting.certificates.issue',
+    group: 'Emergency lighting',
+    name: 'Issue emergency lighting reports',
+    description: 'Issue final emergency lighting inspection reports.',
+    sensitive: true,
+  },
+  {
     key: 'billing.manage',
     group: 'Administration',
     name: 'Manage billing',
@@ -234,6 +263,7 @@ const readOnly: Capability[] = [
   'rams.read',
   'ev.assets.read',
   'thermal.equipment.read',
+  'emergency-lighting.assets.read',
 ];
 const engineer: Capability[] = [
   ...readOnly,
@@ -241,6 +271,7 @@ const engineer: Capability[] = [
   'inspections.perform',
   'ev.inspections.perform',
   'thermal.inspections.perform',
+  'emergency-lighting.inspections.perform',
 ];
 const office: Capability[] = [
   ...readOnly,
@@ -248,6 +279,7 @@ const office: Capability[] = [
   'sites.manage',
   'assets.manage',
   'ev.assets.manage',
+  'emergency-lighting.assets.manage',
   'visits.create',
   'visits.assign',
   'rams.manage',
@@ -280,6 +312,7 @@ export const defaultRoles = [
       'certificates.issue',
       'ev.certificates.issue',
       'thermal.reports.issue',
+      'emergency-lighting.certificates.issue',
     ],
   },
   {

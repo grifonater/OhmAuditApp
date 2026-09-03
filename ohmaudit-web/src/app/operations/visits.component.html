@@ -105,6 +105,9 @@
               @if (thermalEnabled()) {
                 <option value="thermal-imaging">Thermal Imaging</option>
               }
+              @if (emergencyLightingEnabled()) {
+                <option value="emergency-lighting">Emergency Lighting</option>
+              }
               <option value="core">General inspection</option>
             </select></label
           >
@@ -171,20 +174,31 @@
                 <div class="inline-empty">No assets match these filters.</div>
               }
             </div>
-            <label class="discovery-option">
-              <input
-                type="checkbox"
-                [checked]="allowDiscovery()"
-                (change)="allowDiscovery.set($any($event.target).checked)"
-              />
-              <span
-                ><strong>Allow the engineer to add chargers found on site</strong
-                ><small
-                  >Use this for incomplete or empty asset registers. A new charger remains
-                  provisional until the office approves it.</small
-                ></span
-              >
-            </label>
+            @if (form.controls.moduleKey.value === 'ev-charging') {
+              <label class="discovery-option">
+                <input
+                  type="checkbox"
+                  [checked]="allowDiscovery()"
+                  (change)="allowDiscovery.set($any($event.target).checked)"
+                />
+                <span
+                  ><strong>Allow the engineer to add assets found on site</strong
+                  ><small
+                    >Use this for incomplete or empty asset registers. A new asset remains
+                    provisional until the office approves it.</small
+                  ></span
+                >
+              </label>
+            }
+            @if (form.controls.moduleKey.value === 'emergency-lighting') {
+              <label class="field">
+                Test type
+                <select [formControl]="form.controls.emergencyTestType">
+                  <option value="FUNCTIONAL">Monthly functional test</option>
+                  <option value="DURATION">Annual duration test</option>
+                </select>
+              </label>
+            }
           }
         }
 
@@ -279,7 +293,7 @@
                 (addInspection() &&
                   form.controls.moduleKey.value !== 'thermal-imaging' &&
                   selectedAssetIds().size === 0 &&
-                  !allowDiscovery())
+                  !(form.controls.moduleKey.value === 'ev-charging' && allowDiscovery()))
               "
             >
               Create job →

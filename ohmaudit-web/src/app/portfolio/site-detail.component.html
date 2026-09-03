@@ -401,6 +401,21 @@
                     >EV details</a
                   >
                 }
+                @if (
+                  emergencyLightingEnabled() && asset.assetType.toLowerCase().includes('emergency')
+                ) {
+                  <a
+                    class="button ghost compact"
+                    [routerLink]="[
+                      '/app/org',
+                      organisationId,
+                      'assets',
+                      asset.id,
+                      'emergency-lighting',
+                    ]"
+                    >Open register</a
+                  >
+                }
                 @if (canManageAssets()) {
                   <button
                     class="button secondary compact"

@@ -1,6 +1,6 @@
 import type { AssetSummary, VisitTask, VisitTaskInput } from '../core/api.service';
 
-export type InspectionModuleKey = 'core' | 'ev-charging' | 'thermal-imaging';
+export type InspectionModuleKey = 'core' | 'ev-charging' | 'thermal-imaging' | 'emergency-lighting';
 
 export function eligibleTaskAssets(
   assets: AssetSummary[],
@@ -20,6 +20,8 @@ export function eligibleTaskAssets(
       asset.status === 'ACTIVE' &&
       !linkedAssetIds.has(asset.id) &&
       (moduleKey !== 'ev-charging' || asset.assetType.toLocaleLowerCase('en-GB').includes('ev')) &&
+      (moduleKey !== 'emergency-lighting' ||
+        asset.assetType.toLocaleLowerCase('en-GB').includes('emergency')) &&
       (!search ||
         [
           asset.displayName,

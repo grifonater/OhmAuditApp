@@ -1,0 +1,270 @@
+<main class="page operations-page emergency-page">
+  @if (asset(); as current) {
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a [routerLink]="['/app/org', organisationId, 'portfolio', 'clients', current.customer.id]">{{
+        current.customer.name
+      }}</a
+      ><span>›</span>
+      <strong>{{ current.site.name }}</strong>
+    </nav>
+    <header class="emergency-hero">
+      <div>
+        <p class="eyebrow">Emergency lighting asset register</p>
+        <h1>{{ current.displayName }}</h1>
+        <p>{{ current.assetReference }} · {{ current.site.name }}</p>
+      </div>
+      <button class="button primary" type="button" (click)="addFitting()">+ Add fitting</button>
+    </header>
+    @if (notice()) {
+      <p class="notice" role="status">{{ notice() }}</p>
+    }
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+
+    <section class="stat-grid" aria-label="Register summary">
+      <article>
+        <span>Total fittings</span><strong>{{ stats().total }}</strong>
+      </article>
+      <article>
+        <span>Maintained</span><strong>{{ stats().maintained }}</strong>
+      </article>
+      <article>
+        <span>On keyswitch</span><strong>{{ stats().withKeyswitch }}</strong>
+      </article>
+      <article [class.alert-stat]="stats().attention">
+        <span>Needs attention</span><strong>{{ stats().attention }}</strong>
+      </article>
+    </section>
+
+    <section class="register-layout">
+      <article class="card panel register-main">
+        <div class="section-heading">
+          <div>
+            <h2>Fittings</h2>
+            <p>{{ filteredFittings().length }} of {{ stats().total }} shown</p>
+          </div>
+        </div>
+        <div class="register-filters">
+          <label class="field search-wide"
+            >Search<input
+              type="search"
+              placeholder="Reference, location, make or model"
+              [value]="query()"
+              (input)="query.set($any($event.target).value)"
+          /></label>
+          <label class="field"
+            >Room / location<select
+              [value]="locationFilter()"
+              (change)="locationFilter.set($any($event.target).value)"
+            >
+              <option value="">All rooms</option>
+              @for (location of current.locations; track location.id) {
+                <option [value]="location.id">{{ location.name }}</option>
+              }
+            </select></label
+          >
+          <label class="field"
+            >Group<select
+              [value]="groupFilter()"
+              (change)="groupFilter.set($any($event.target).value)"
+            >
+              <option value="">All groups</option>
+              @for (group of current.groups; track group.id) {
+                <option [value]="group.id">{{ group.name }}</option>
+              }
+            </select></label
+          >
+        </div>
+        <div class="fitting-table">
+          <div class="fitting-row fitting-head">
+            <span>Fitting</span><span>Location</span><span>Type</span><span>Controls</span
+            ><span></span>
+          </div>
+          @for (fitting of filteredFittings(); track fitting.id) {
+            <article class="fitting-row">
+              <span class="fitting-identity"
+                ><strong>{{ fitting.reference }}</strong
+                ><small
+                  >{{ fitting.manufacturer || 'Make optional' }} {{ fitting.model || '' }}</small
+                ></span
+              >
+              <span data-label="Location"
+                >{{ fitting.location?.name || 'Unassigned'
+                }}<small>{{ groupName(fitting) }}</small></span
+              >
+              <span data-label="Type"
+                >{{ fitting.fittingType || 'Not recorded'
+                }}<small>{{
+                  fitting.operationMode === 'MAINTAINED' ? 'Maintained' : 'Non-maintained'
+                }}</small></span
+              >
+              <span data-label="Controls">{{ keyswitchFor(fitting) || 'No keyswitch' }}</span>
+              <span class="row-actions"
+                ><label class="button ghost compact"
+                  >Camera<input
+                    hidden
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    [disabled]="busy()"
+                    (change)="uploadImage(fitting, $event)" /></label
+                ><button
+                  class="button secondary compact"
+                  type="button"
+                  (click)="editFitting(fitting)"
+                >
+                  Edit</button
+                ><button
+                  class="button danger compact"
+                  type="button"
+                  (click)="deleteFitting(fitting)"
+                >
+                  Delete
+                </button></span
+              >
+            </article>
+          } @empty {
+            <div class="inline-empty">No fittings match these filters.</div>
+          }
+        </div>
+      </article>
+
+      <aside class="register-setup">
+        <section class="card panel">
+          <h2>Rooms & locations</h2>
+          <div class="chip-list">
+            @for (item of current.locations; track item.id) {
+              <span>{{ item.name }}</span>
+            }
+          </div>
+          <div class="quick-add">
+            <input
+              aria-label="New location"
+              placeholder="e.g. Ground floor"
+              [formControl]="locationForm"
+            /><button class="button secondary compact" type="button" (click)="addLocation()">
+              Add
+            </button>
+          </div>
+        </section>
+        <section class="card panel">
+          <h2>Test groups</h2>
+          <div class="chip-list">
+            @for (item of current.groups; track item.id) {
+              <span>{{ item.name }}</span>
+            }
+          </div>
+          <div class="quick-add">
+            <input
+              aria-label="New group"
+              placeholder="e.g. Group A"
+              [formControl]="groupForm"
+            /><button class="button secondary compact" type="button" (click)="addGroup()">
+              Add
+            </button>
+          </div>
+        </section>
+        <section class="card panel">
+          <h2>Keyswitches</h2>
+          <div class="chip-list">
+            @for (item of current.keyswitches; track item.id) {
+              <span>{{ item.reference }}</span>
+            }
+          </div>
+          <form class="keyswitch-add" [formGroup]="keyswitchForm" (ngSubmit)="addKeyswitch()">
+            <input
+              aria-label="New keyswitch"
+              placeholder="e.g. KS-01"
+              formControlName="reference"
+            /><select aria-label="Keyswitch location" formControlName="locationId">
+              <option value="">No location</option>
+              @for (item of current.locations; track item.id) {
+                <option [value]="item.id">{{ item.name }}</option>
+              }</select
+            ><select aria-label="Keyswitch group" formControlName="groupId">
+              <option value="">No group</option>
+              @for (item of current.groups; track item.id) {
+                <option [value]="item.id">{{ item.name }}</option>
+              }</select
+            ><button class="button secondary compact" type="submit">Add</button>
+          </form>
+        </section>
+      </aside>
+    </section>
+
+    @if (editorOpen()) {
+      <div
+        class="modal-backdrop"
+        tabindex="0"
+        (click)="closeEditor($event)"
+        (keydown.escape)="closeEditor()"
+      >
+        <section
+          class="component-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fitting-title"
+        >
+          <header>
+            <div>
+              <p class="eyebrow">Asset register</p>
+              <h2 id="fitting-title">{{ editingId() ? 'Edit fitting' : 'Add fitting' }}</h2>
+            </div>
+            <button class="icon-button" type="button" aria-label="Close" (click)="closeEditor()">
+              ×
+            </button>
+          </header>
+          <form class="form-grid modal-form" [formGroup]="fittingForm" (ngSubmit)="saveFitting()">
+            <label class="field"
+              >Reference<input formControlName="reference" placeholder="EL-001" /></label
+            ><label class="field"
+              >Description<input formControlName="description" placeholder="Exit above main door"
+            /></label>
+            <label class="field"
+              >Room / location<select formControlName="locationId">
+                <option value="">Unassigned</option>
+                @for (item of current.locations; track item.id) {
+                  <option [value]="item.id">{{ item.name }}</option>
+                }
+              </select></label
+            ><label class="field"
+              >Groups<select formControlName="groupIds" multiple>
+                @for (item of current.groups; track item.id) {
+                  <option [value]="item.id">{{ item.name }}</option>
+                }
+              </select></label
+            >
+            <label class="field"
+              >Fitting type<input
+                formControlName="fittingType"
+                placeholder="Bulkhead, exit sign..."
+            /></label>
+            <label class="field">Make (optional)<input formControlName="manufacturer" /></label
+            ><label class="field">Model (optional)<input formControlName="model" /></label>
+            <label class="check-field full"
+              ><input type="checkbox" formControlName="maintained" /> Maintained fitting</label
+            ><label class="field full">Notes<textarea formControlName="notes"></textarea></label>
+            <footer class="form-actions full">
+              <button class="button ghost" type="button" (click)="closeEditor()">Cancel</button
+              ><button
+                class="button primary"
+                type="submit"
+                [disabled]="busy() || fittingForm.invalid"
+              >
+                {{ busy() ? 'Saving...' : 'Save fitting' }}
+              </button>
+            </footer>
+          </form>
+        </section>
+      </div>
+    }
+  } @else if (busy()) {
+    <div class="loading-state"><span class="oa-spinner"></span> Loading register...</div>
+  } @else {
+    <div class="empty-state card">
+      <h2>Register unavailable</h2>
+      <p>{{ error() }}</p>
+    </div>
+  }
+</main>

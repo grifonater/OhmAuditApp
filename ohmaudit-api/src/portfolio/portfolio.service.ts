@@ -458,6 +458,9 @@ export class PortfolioService {
             ...(input.serialNumber === undefined ? {} : { serialNumber: input.serialNumber }),
             ...(input.notes === undefined ? {} : { notes: input.notes }),
             ...(assetModelId === undefined ? {} : { assetModelId }),
+            ...(/emergency\s*lighting/iu.test(input.assetType)
+              ? { emergencyLightingSystem: { create: { organisationId } } }
+              : {}),
           },
         });
         await transaction.auditEvent.create({
@@ -943,7 +946,11 @@ export class PortfolioService {
                 ? await this.prisma.inspection.findFirst({
                     where: { id: entityId, organisationId },
                   })
-                : null;
+                : entityType === 'EmergencyLightingFitting'
+                  ? await this.prisma.emergencyLightingFitting.findFirst({
+                      where: { id: entityId, organisationId },
+                    })
+                  : null;
     if (exists === null)
       throw new DomainError('ENTITY_NOT_FOUND', 'The related record was not found.', 404);
   }

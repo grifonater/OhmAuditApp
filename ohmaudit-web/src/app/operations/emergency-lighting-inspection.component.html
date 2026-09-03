@@ -1,0 +1,232 @@
+<main class="inspection-shell emergency-page">
+  @if (context(); as current) {
+    <header class="inspection-topbar">
+      <div>
+        <p>Engineer workspace</p>
+        <h1>{{ testType() === 'DURATION' ? 'Annual duration' : 'Monthly functional' }} test</h1>
+      </div>
+      <div>
+        <strong>{{ completed() }} / {{ current.fittings.length }} tested</strong
+        ><span> · {{ progress() }}%</span>
+      </div>
+      <div
+        class="progress-line"
+        role="progressbar"
+        [attr.aria-valuenow]="progress()"
+        aria-valuemin="0"
+        aria-valuemax="100"
+      >
+        <span [style.width.%]="progress()"></span>
+      </div>
+    </header>
+    @if (notice()) {
+      <p class="notice" role="status">{{ notice() }}</p>
+    }
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+    <section class="inspection-tools card panel">
+      <label class="field"
+        >Room / location<select
+          [value]="roomFilter()"
+          (change)="roomFilter.set($any($event.target).value)"
+        >
+          <option value="">All rooms</option>
+          @for (item of locations(); track item.id) {
+            <option [value]="item.id">{{ item.name }}</option>
+          }
+        </select></label
+      >
+      <label class="field"
+        >Test group<select
+          [value]="groupFilter()"
+          (change)="groupFilter.set($any($event.target).value)"
+        >
+          <option value="">All groups</option>
+          @for (item of groups(); track item.id) {
+            <option [value]="item.id">{{ item.name }}</option>
+          }
+        </select></label
+      >
+      <button class="button primary" type="button" [disabled]="busy()" (click)="bulkPass()">
+        Pass all untested shown
+      </button>
+      <button class="button secondary" type="button" (click)="addingFitting.set(!addingFitting())">
+        + Fitting found on site
+      </button>
+    </section>
+    @if (addingFitting()) {
+      <section class="card panel">
+        <div class="section-heading">
+          <div>
+            <h2>Add fitting</h2>
+            <p>Add it to the register without leaving the inspection.</p>
+          </div>
+        </div>
+        <form class="form-grid" [formGroup]="fittingForm" (ngSubmit)="addFitting()">
+          <label class="field"
+            >Reference<input formControlName="reference" placeholder="EL-001" /></label
+          ><label class="field">Description<input formControlName="description" /></label>
+          <label class="field"
+            >Room<select formControlName="locationId">
+              <option value="">Unassigned</option>
+              @for (item of locations(); track item.id) {
+                <option [value]="item.id">{{ item.name }}</option>
+              }
+            </select></label
+          ><label class="field"
+            >Group<select formControlName="groupId">
+              <option value="">No group</option>
+              @for (item of groups(); track item.id) {
+                <option [value]="item.id">{{ item.name }}</option>
+              }
+            </select></label
+          >
+          <label class="field">Type<input formControlName="fittingType" /></label
+          ><label class="field">Make (optional)<input formControlName="manufacturer" /></label
+          ><label class="field">Model (optional)<input formControlName="model" /></label
+          ><label class="check-field"
+            ><input type="checkbox" formControlName="maintained" /> Maintained</label
+          >
+          <div class="form-actions full">
+            <button class="button ghost" type="button" (click)="addingFitting.set(false)">
+              Cancel</button
+            ><button
+              class="button primary"
+              type="submit"
+              [disabled]="busy() || fittingForm.invalid"
+            >
+              Add fitting
+            </button>
+          </div>
+        </form>
+      </section>
+    }
+    <section class="inspection-fittings" aria-label="Emergency light fittings">
+      @for (fitting of visibleFittings(); track fitting.id) {
+        <article
+          class="card test-card"
+          [class.pass]="resultFor(fitting.id) === 'PASS'"
+          [class.fail]="resultFor(fitting.id) === 'FAIL'"
+          [class.not-tested]="resultFor(fitting.id) === 'NOT_TESTED'"
+        >
+          <header>
+            <div>
+              <h2>{{ fitting.reference }}</h2>
+              <p>
+                {{ fitting.location?.name || 'No room' }} ·
+                {{ fitting.groupMappings?.[0]?.group?.name || 'No group' }} ·
+                {{ fitting.description || fitting.fittingType || 'Emergency light' }}
+              </p>
+            </div>
+            @if (savingIds().has(fitting.id)) {
+              <span class="oa-spinner" aria-label="Saving"></span>
+            }
+          </header>
+          <div
+            class="result-buttons"
+            role="group"
+            [attr.aria-label]="fitting.reference + ' result'"
+          >
+            <button
+              class="result-button pass"
+              [class.selected]="resultFor(fitting.id) === 'PASS'"
+              type="button"
+              (click)="chooseResult(fitting, 'PASS')"
+            >
+              Pass
+            </button>
+            <button
+              class="result-button fail"
+              [class.selected]="resultFor(fitting.id) === 'FAIL'"
+              type="button"
+              (click)="chooseResult(fitting, 'FAIL')"
+            >
+              Fail
+            </button>
+            <button
+              class="result-button not-tested"
+              [class.selected]="resultFor(fitting.id) === 'NOT_TESTED'"
+              type="button"
+              (click)="chooseResult(fitting, 'NOT_TESTED')"
+            >
+              Not tested
+            </button>
+          </div>
+          <div class="test-details">
+            @if (testType() === 'DURATION') {
+              <label class="field"
+                >Duration achieved (minutes)<input
+                  type="number"
+                  min="0"
+                  max="1440"
+                  [value]="durationFor(fitting.id) ?? ''"
+                  (input)="setDuration(fitting.id, $any($event.target).value)"
+                  (blur)="saveNote(fitting)"
+              /></label>
+            }
+            <label class="field"
+              >Notes<textarea
+                placeholder="Fault details, duration or reason not tested"
+                [value]="noteFor(fitting.id)"
+                (input)="setNote(fitting.id, $any($event.target).value)"
+                (blur)="saveNote(fitting)"
+              ></textarea></label
+            ><label class="button secondary camera-button"
+              >Take photo<input
+                hidden
+                type="file"
+                accept="image/*"
+                capture="environment"
+                (change)="capture(fitting, $event)"
+            /></label>
+          </div>
+        </article>
+      } @empty {
+        <div class="empty-state card">
+          <h2>No fittings shown</h2>
+          <p>Change the room or group filter, or add a fitting found on site.</p>
+        </div>
+      }
+    </section>
+    @if (current.inspection.status === 'IN_PROGRESS' || current.inspection.status === 'DRAFT') {
+      <section class="card panel inspection-submit">
+        <div class="section-heading">
+          <div>
+            <h2>Complete inspection</h2>
+            <p>Every fitting needs a recorded result before submission.</p>
+          </div>
+        </div>
+        <label class="field">Engineer name<input [formControl]="signerName" /></label>
+        <label class="check-field">
+          <input
+            type="checkbox"
+            [checked]="declarationAccepted()"
+            (change)="declarationAccepted.set($any($event.target).checked)"
+          />
+          I confirm these results are an accurate record of the test performed.
+        </label>
+        <button
+          class="button primary"
+          type="button"
+          [disabled]="
+            busy() ||
+            completed() !== current.fittings.length ||
+            signerName.invalid ||
+            !declarationAccepted()
+          "
+          (click)="submit()"
+        >
+          Submit inspection
+        </button>
+      </section>
+    }
+  } @else if (busy()) {
+    <div class="loading-state"><span class="oa-spinner"></span> Preparing inspection...</div>
+  } @else {
+    <div class="empty-state card">
+      <h2>Inspection unavailable</h2>
+      <p>{{ error() }}</p>
+    </div>
+  }
+</main>

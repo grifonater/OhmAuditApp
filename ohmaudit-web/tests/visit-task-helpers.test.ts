@@ -25,6 +25,13 @@ const archivedAsset: AssetSummary = {
   status: 'ARCHIVED',
 };
 const assets = [evAsset, panelAsset, archivedAsset];
+const emergencyAsset: AssetSummary = {
+  id: 'emergency-1',
+  assetType: 'Emergency Lighting System',
+  assetReference: 'EL-REGISTER',
+  displayName: 'Emergency lighting register',
+  status: 'ACTIVE',
+};
 
 const tasks: VisitTask[] = [
   {
@@ -52,6 +59,19 @@ describe('visit task helpers', () => {
     ]);
     expect(buildVisitTaskInputs('thermal-imaging', [])).toEqual([
       { moduleKey: 'thermal-imaging', title: 'Thermal imaging survey' },
+    ]);
+  });
+
+  it('only offers emergency lighting assets to the emergency module', () => {
+    expect(eligibleTaskAssets([...assets, emergencyAsset], tasks, 'emergency-lighting')).toEqual([
+      emergencyAsset,
+    ]);
+    expect(buildVisitTaskInputs('emergency-lighting', [emergencyAsset])).toEqual([
+      {
+        assetId: 'emergency-1',
+        moduleKey: 'emergency-lighting',
+        title: 'Emergency lighting register inspection',
+      },
     ]);
   });
 });

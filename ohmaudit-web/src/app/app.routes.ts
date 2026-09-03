@@ -7,8 +7,20 @@ import {
 } from './core/rams-routes';
 import { authGuard } from './core/auth.guard';
 import { authorizationGuard } from './core/authorization.guard';
+import {
+  emergencyLightingAssetRoute,
+  emergencyLightingInspectionRoute,
+  guestEmergencyLightingInspectionRoute,
+} from './core/emergency-lighting-routes';
 
 export const routes: Routes = [
+  {
+    path: guestEmergencyLightingInspectionRoute,
+    loadComponent: () =>
+      import('./operations/emergency-lighting-inspection.component').then(
+        (module) => module.EmergencyLightingInspectionComponent,
+      ),
+  },
   {
     path: 'offline-jobs',
     loadComponent: () =>
@@ -76,6 +88,18 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./shell/app-shell.component').then((module) => module.AppShellComponent),
     children: [
+      {
+        path: emergencyLightingInspectionRoute.path,
+        canActivate: [authorizationGuard],
+        data: {
+          capabilities: [...emergencyLightingInspectionRoute.capabilities],
+          module: 'emergency-lighting',
+        },
+        loadComponent: () =>
+          import('./operations/emergency-lighting-inspection.component').then(
+            (module) => module.EmergencyLightingInspectionComponent,
+          ),
+      },
       {
         path: '',
         loadComponent: () =>
@@ -249,6 +273,18 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./operations/inspection-review.component').then(
             (module) => module.InspectionReviewComponent,
+          ),
+      },
+      {
+        path: emergencyLightingAssetRoute.path,
+        canActivate: [authorizationGuard],
+        data: {
+          capabilities: [...emergencyLightingAssetRoute.capabilities],
+          module: 'emergency-lighting',
+        },
+        loadComponent: () =>
+          import('./operations/emergency-lighting-asset.component').then(
+            (module) => module.EmergencyLightingAssetComponent,
           ),
       },
       {

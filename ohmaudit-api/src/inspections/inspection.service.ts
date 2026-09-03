@@ -144,7 +144,12 @@ export class InspectionService {
         visit: true,
         visitTask: true,
         revisions: {
-          include: { signatures: true, documents: true, evData: true },
+          include: {
+            signatures: true,
+            documents: true,
+            evData: true,
+            emergencyLightingResults: { include: { fitting: true } },
+          },
           orderBy: { revisionNumber: 'desc' },
         },
         defects: true,
@@ -165,7 +170,12 @@ export class InspectionService {
                   entityType: 'Inspection',
                   entityId: inspection.id,
                   category: {
-                    in: ['unclassified-image', 'thermal-image', 'standard-image'],
+                    in: [
+                      'unclassified-image',
+                      'thermal-image',
+                      'standard-image',
+                      'emergency-lighting-evidence',
+                    ],
                   },
                 },
                 ...(inspection.assetId === null
@@ -306,6 +316,25 @@ export class InspectionService {
               }),
         },
       });
+      if (inspection.moduleKey === 'emergency-lighting') {
+        const sourceResults = await transaction.emergencyLightingFittingResult.findMany({
+          where: { organisationId, inspectionRevisionId: source.id },
+        });
+        if (sourceResults.length > 0)
+          await transaction.emergencyLightingFittingResult.createMany({
+            data: sourceResults.map((result) => ({
+              organisationId,
+              fittingId: result.fittingId,
+              inspectionRevisionId: revision.id,
+              outcome: result.outcome,
+              testType: result.testType,
+              durationMinutes: result.durationMinutes,
+              notes: result.notes,
+              isOverride: result.isOverride,
+              snapshot: result.snapshot as Prisma.InputJsonValue,
+            })),
+          });
+      }
       for (const defect of input.defects ?? []) {
         const existing = inspection.defects.find(({ id }) => id === defect.id);
         if (existing === undefined)
@@ -392,15 +421,88 @@ export class InspectionService {
         409,
       );
     const revisionNumber = inspection.currentRevisionNumber + 1;
+    const emergencyResults =
+      inspection.moduleKey === 'emergency-lighting' && inspection.assetId !== null
+        ? await this.prisma.emergencyLightingFittingResult.findMany({
+            where: { organisationId, inspectionId },
+            include: { fitting: true },
+          })
+        : [];
+    if (inspection.moduleKey === 'emergency-lighting' && inspection.assetId !== null) {
+      const activeFittings = await this.prisma.emergencyLightingFitting.findMany({
+        where: {
+          organisationId,
+          status: 'ACTIVE',
+          system: { assetId: inspection.assetId },
+        },
+        select: { id: true },
+      });
+      const activeIds = new Set(activeFittings.map(({ id }) => id));
+      const recordedIds = new Set(
+        emergencyResults
+          .filter(({ fittingId }) => activeIds.has(fittingId))
+          .map(({ fittingId }) => fittingId),
+      );
+      if (recordedIds.size !== activeIds.size)
+        throw new DomainError(
+          'EMERGENCY_LIGHTING_RESULTS_INCOMPLETE',
+          'Every active emergency light fitting must have a recorded result.',
+          422,
+        );
+      const expectedTestType = /duration|annual/iu.test(inspection.inspectionType)
+        ? 'DURATION'
+        : 'FUNCTIONAL';
+      if (emergencyResults.some(({ testType }) => testType !== expectedTestType))
+        throw new DomainError(
+          'EMERGENCY_LIGHTING_TEST_TYPE_INVALID',
+          'Every fitting result must match the inspection test type.',
+          422,
+        );
+      if (
+        expectedTestType === 'DURATION' &&
+        emergencyResults.some(
+          ({ outcome, durationMinutes }) => outcome !== 'NOT_TESTED' && durationMinutes === null,
+        )
+      )
+        throw new DomainError(
+          'EMERGENCY_LIGHTING_DURATION_REQUIRED',
+          'Record the achieved duration for every fitting that was duration tested.',
+          422,
+        );
+    }
     const rcdFailures = input.evData === undefined ? [] : evRcdFailureReasons(input.evData);
-    const effectiveData =
+    const suppliedData =
       rcdFailures.length === 0
         ? input.data
         : { ...input.data, outcome: 'FAIL', automaticFailureReason: 'Faulty RCD reading' };
-    const effectiveValidation =
+    const effectiveData =
+      inspection.moduleKey !== 'emergency-lighting'
+        ? suppliedData
+        : {
+            ...suppliedData,
+            outcome: emergencyResults.some(({ outcome }) => outcome === 'FAIL') ? 'FAIL' : 'PASS',
+            fittingCount: emergencyResults.length,
+            passedCount: emergencyResults.filter(({ outcome }) => outcome === 'PASS').length,
+            failedCount: emergencyResults.filter(({ outcome }) => outcome === 'FAIL').length,
+            notTestedCount: emergencyResults.filter(({ outcome }) => outcome === 'NOT_TESTED')
+              .length,
+            fittingResults: emergencyResults.map((result) => ({
+              fittingId: result.fittingId,
+              outcome: result.outcome,
+              testType: result.testType,
+              durationMinutes: result.durationMinutes,
+              notes: result.notes,
+              snapshot: result.snapshot,
+            })),
+          };
+    const suppliedValidation =
       rcdFailures.length === 0
         ? input.validation
         : { ...input.validation, rcdResult: 'FAIL', rcdFailureReasons: rcdFailures };
+    const effectiveValidation =
+      inspection.moduleKey === 'emergency-lighting'
+        ? { ...suppliedValidation, allFittingsRecorded: true, resultSource: 'server' }
+        : suppliedValidation;
     const effectiveEvData =
       input.evData === undefined
         ? undefined
@@ -414,7 +516,7 @@ export class InspectionService {
     const hasAutomaticRcdDefect = input.defects.some(
       ({ title }) => title.trim().toLowerCase() === 'faulty rcd reading',
     );
-    const effectiveDefects =
+    const baseDefects =
       rcdFailures.length === 0 || hasAutomaticRcdDefect
         ? input.defects
         : [
@@ -426,6 +528,19 @@ export class InspectionService {
               severity: 'MAJOR' as const,
             },
           ];
+    const emergencyDefects = emergencyResults
+      .filter(({ outcome }) => outcome === 'FAIL')
+      .filter(
+        ({ fitting }) =>
+          !baseDefects.some(({ title }) => title.trim().startsWith(fitting.reference)),
+      )
+      .map(({ fitting, notes }) => ({
+        assetId: inspection.assetId!,
+        title: `${fitting.reference} failed emergency lighting test`,
+        ...(notes === null ? {} : { description: notes }),
+        severity: 'MAJOR' as const,
+      }));
+    const effectiveDefects = [...baseDefects, ...emergencyDefects];
     const brand = await this.prisma.organisationBrandProfile.findUnique({
       where: { organisationId },
     });
@@ -469,6 +584,29 @@ export class InspectionService {
               }),
         },
       });
+      if (inspection.moduleKey === 'emergency-lighting') {
+        const draftResults = await transaction.emergencyLightingFittingResult.findMany({
+          where: { organisationId, inspectionId },
+        });
+        if (draftResults.length > 0) {
+          await transaction.emergencyLightingFittingResult.createMany({
+            data: draftResults.map((result) => ({
+              organisationId,
+              fittingId: result.fittingId,
+              inspectionRevisionId: revision.id,
+              outcome: result.outcome,
+              testType: result.testType,
+              durationMinutes: result.durationMinutes,
+              notes: result.notes,
+              isOverride: result.isOverride,
+              snapshot: result.snapshot as Prisma.InputJsonValue,
+            })),
+          });
+          await transaction.emergencyLightingFittingResult.deleteMany({
+            where: { organisationId, inspectionId },
+          });
+        }
+      }
       await transaction.defect.deleteMany({ where: { organisationId, inspectionId } });
       if (effectiveDefects.length > 0)
         await transaction.defect.createMany({
@@ -479,7 +617,7 @@ export class InspectionService {
             title: defect.title,
             ...(defect.description === undefined ? {} : { description: defect.description }),
             severity: defect.severity,
-            photoMediaIds: defect.photoMediaIds ?? [],
+            photoMediaIds: 'photoMediaIds' in defect ? (defect.photoMediaIds ?? []) : [],
           })),
         });
       const isNewAsset = inspection.asset?.status === 'PROPOSED';

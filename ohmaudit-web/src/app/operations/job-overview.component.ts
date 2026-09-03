@@ -114,6 +114,9 @@ export class JobOverviewComponent {
       ...(entitled.has('thermal-imaging')
         ? [{ key: 'thermal-imaging' as const, label: 'Thermal' }]
         : []),
+      ...(entitled.has('emergency-lighting')
+        ? [{ key: 'emergency-lighting' as const, label: 'Emergency Lighting' }]
+        : []),
       { key: 'core' as const, label: 'General' },
     ];
   });
@@ -418,7 +421,9 @@ export class JobOverviewComponent {
       ? 'EV charging inspection'
       : moduleKey === 'thermal-imaging'
         ? 'Thermal imaging inspection'
-        : 'General inspection';
+        : moduleKey === 'emergency-lighting'
+          ? 'Emergency lighting inspection'
+          : 'General inspection';
   }
 
   protected openDefectCount(defects: Array<{ status: string }> | undefined): number {

@@ -9,8 +9,10 @@ export const moduleCapabilities = [
   'ev.assets.manage',
   'ev.inspections.perform',
   'ev.certificates.issue',
+  'emergency-lighting.assets.read',
   'emergency-lighting.assets.manage',
   'emergency-lighting.inspections.perform',
+  'emergency-lighting.certificates.issue',
   'solar.assets.manage',
   'solar.inspections.perform',
 ] as const;

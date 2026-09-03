@@ -230,6 +230,97 @@ export interface AssetMedia {
   mimeType: string;
   createdAt?: string;
 }
+export type EmergencyLightTestResult = 'PASS' | 'FAIL' | 'NOT_TESTED';
+export interface EmergencyLightingLocation {
+  id: string;
+  name: string;
+  description?: string;
+  displayOrder?: number;
+}
+export interface EmergencyLightingGroup {
+  id: string;
+  name: string;
+  locationId?: string;
+  description?: string;
+}
+export interface EmergencyLightingKeyswitch {
+  id: string;
+  reference: string;
+  locationId?: string;
+  location?: EmergencyLightingLocation;
+  groupIds?: string[];
+  groupMappings?: Array<{ groupId: string; group: EmergencyLightingGroup }>;
+  description?: string;
+  notes?: string;
+}
+export interface EmergencyLightFitting {
+  id: string;
+  reference: string;
+  description?: string;
+  locationId?: string;
+  location?: EmergencyLightingLocation;
+  groupIds?: string[];
+  groupMappings?: Array<{ groupId: string; group: EmergencyLightingGroup }>;
+  manufacturer?: string;
+  model?: string;
+  fittingType?: string;
+  operationMode?: string;
+  serialNumber?: string;
+  ratedDurationMinutes?: number;
+  status: string;
+  notes?: string;
+  media?: AssetMedia[];
+}
+export interface EmergencyLightingAsset extends AssetSummary {
+  customer: { id: string; name: string };
+  site: { id: string; name: string };
+  locations: EmergencyLightingLocation[];
+  groups: EmergencyLightingGroup[];
+  keyswitches: EmergencyLightingKeyswitch[];
+  fittings: EmergencyLightFitting[];
+}
+export interface EmergencyLightingInspectionResult {
+  id?: string;
+  fittingId: string;
+  outcome: EmergencyLightTestResult;
+  testType: 'FUNCTIONAL' | 'DURATION';
+  durationMinutes?: number;
+  notes?: string;
+  media?: AssetMedia[];
+  updatedAt?: string;
+}
+export interface EmergencyLightingInspectionContext {
+  inspection: {
+    id: string;
+    status: string;
+    assetId: string;
+    visitTaskId?: string;
+    inspectionType: string;
+  };
+  system: {
+    id: string;
+    assetId: string;
+    description?: string;
+    notes?: string;
+    locations?: EmergencyLightingLocation[];
+    groups?: EmergencyLightingGroup[];
+  };
+  fittings: EmergencyLightFitting[];
+  results: EmergencyLightingInspectionResult[];
+}
+export interface EmergencyLightFittingInput {
+  reference: string;
+  description?: string;
+  locationId?: string;
+  groupIds?: string[];
+  manufacturer?: string;
+  model?: string;
+  fittingType?: string;
+  operationMode?: string;
+  serialNumber?: string;
+  ratedDurationMinutes?: number;
+  notes?: string;
+}
 export type AssetMediaMetadataUpdate = { mediaId: string } & Partial<
   Pick<AssetMedia, 'caption' | 'category' | 'tags' | 'sortOrder'>
 >;
@@ -1119,7 +1210,8 @@ export class ApiService {
   registerMedia(
     organisationId: string,
     input: {
-      entityType: 'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection';
+      entityType:
+        'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection' | 'EmergencyLightFitting';
       entityId: string;
       category: string;
       caption?: string;
@@ -1964,9 +2056,9 @@ export class ApiService {
     if (!response.ok) throw new Error('The charger image could not be loaded.');
     return response.blob();
   }
-  uploadGuestInspectionPhoto(token: string, inspectionId: string, photo: Blob) {
+  uploadGuestInspectionPhoto(token: string, inspectionId: string, photo: Blob, fittingId?: string) {
     return this.publicRequest<{ media: { id: string } }>(
-      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/media`,
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/media${fittingId ? `?fittingId=${encodeURIComponent(fittingId)}` : ''}`,
       {
         method: 'POST',
         headers: { 'content-type': photo.type, 'x-file-size': String(photo.size) },
@@ -2310,6 +2402,284 @@ export class ApiService {
     return this.request(
       `/modules/ev/assets/${assetId}/connectors/${connectorId}?organisationId=${encodeURIComponent(organisationId)}`,
       { method: 'DELETE' },
+    );
+  }
+  async getEmergencyLightingAsset(organisationId: string, assetId: string) {
+    const query = `organisationId=${encodeURIComponent(organisationId)}`;
+    const [detail, list] = await Promise.all([
+      this.request<{
+        system: AssetSummary & {
+          customer: { id: string; name: string };
+          site: { id: string; name: string };
+          emergencyLightingSystem?: {
+            locations: EmergencyLightingLocation[];
+            groups: EmergencyLightingGroup[];
+            keyswitches: EmergencyLightingKeyswitch[];
+          };
+        };
+      }>(`/modules/emergency-lighting/assets/${assetId}?${query}`),
+      this.request<{
+        fittings?: EmergencyLightFitting[];
+        items?: EmergencyLightFitting[];
+      }>(`/modules/emergency-lighting/assets/${assetId}/fittings?${query}&page=1&pageSize=200`),
+    ]);
+    const emergencySystem = detail.system.emergencyLightingSystem;
+    return {
+      asset: {
+        ...detail.system,
+        locations: emergencySystem?.locations ?? [],
+        groups: emergencySystem?.groups ?? [],
+        keyswitches: emergencySystem?.keyswitches ?? [],
+        fittings: list.fittings ?? list.items ?? [],
+      } satisfies EmergencyLightingAsset,
+    };
+  }
+  addEmergencyLightingLocation(
+    organisationId: string,
+    assetId: string,
+    input: Omit<EmergencyLightingLocation, 'id'>,
+  ) {
+    return this.emergencyAssetChild<{ location: EmergencyLightingLocation }>(
+      organisationId,
+      assetId,
+      'locations',
+      'POST',
+      input,
+    );
+  }
+  updateEmergencyLightingLocation(
+    organisationId: string,
+    assetId: string,
+    locationId: string,
+    input: Partial<Omit<EmergencyLightingLocation, 'id'>>,
+  ) {
+    return this.emergencyAssetChild<{ location: EmergencyLightingLocation }>(
+      organisationId,
+      assetId,
+      `locations/${locationId}`,
+      'PATCH',
+      input,
+    );
+  }
+  deleteEmergencyLightingLocation(organisationId: string, assetId: string, locationId: string) {
+    return this.emergencyAssetChild<{ deleted: true }>(
+      organisationId,
+      assetId,
+      `locations/${locationId}`,
+      'DELETE',
+    );
+  }
+  addEmergencyLightingGroup(
+    organisationId: string,
+    assetId: string,
+    input: Omit<EmergencyLightingGroup, 'id'>,
+  ) {
+    return this.emergencyAssetChild<{ group: EmergencyLightingGroup }>(
+      organisationId,
+      assetId,
+      'groups',
+      'POST',
+      input,
+    );
+  }
+  updateEmergencyLightingGroup(
+    organisationId: string,
+    assetId: string,
+    groupId: string,
+    input: Partial<Omit<EmergencyLightingGroup, 'id'>>,
+  ) {
+    return this.emergencyAssetChild<{ group: EmergencyLightingGroup }>(
+      organisationId,
+      assetId,
+      `groups/${groupId}`,
+      'PATCH',
+      input,
+    );
+  }
+  deleteEmergencyLightingGroup(organisationId: string, assetId: string, groupId: string) {
+    return this.emergencyAssetChild<{ deleted: true }>(
+      organisationId,
+      assetId,
+      `groups/${groupId}`,
+      'DELETE',
+    );
+  }
+  addEmergencyLightingKeyswitch(
+    organisationId: string,
+    assetId: string,
+    input: {
+      reference: string;
+      locationId?: string;
+      groupIds: string[];
+      description?: string;
+      notes?: string;
+    },
+  ) {
+    return this.emergencyAssetChild<{ keyswitch: EmergencyLightingKeyswitch }>(
+      organisationId,
+      assetId,
+      'keyswitches',
+      'POST',
+      input,
+    );
+  }
+  updateEmergencyLightingKeyswitch(
+    organisationId: string,
+    assetId: string,
+    keyswitchId: string,
+    input: {
+      reference: string;
+      locationId?: string;
+      groupIds: string[];
+      description?: string;
+      notes?: string;
+    },
+  ) {
+    return this.emergencyAssetChild<{ keyswitch: EmergencyLightingKeyswitch }>(
+      organisationId,
+      assetId,
+      `keyswitches/${keyswitchId}`,
+      'PUT',
+      input,
+    );
+  }
+  deleteEmergencyLightingKeyswitch(organisationId: string, assetId: string, keyswitchId: string) {
+    return this.emergencyAssetChild<{ deleted: true }>(
+      organisationId,
+      assetId,
+      `keyswitches/${keyswitchId}`,
+      'DELETE',
+    );
+  }
+  addEmergencyLightFitting(
+    organisationId: string,
+    assetId: string,
+    input: EmergencyLightFittingInput,
+  ) {
+    return this.emergencyAssetChild<{ fitting: EmergencyLightFitting }>(
+      organisationId,
+      assetId,
+      'fittings',
+      'POST',
+      input,
+    );
+  }
+  updateEmergencyLightFitting(
+    organisationId: string,
+    assetId: string,
+    fittingId: string,
+    input: EmergencyLightFittingInput,
+  ) {
+    return this.emergencyAssetChild<{ fitting: EmergencyLightFitting }>(
+      organisationId,
+      assetId,
+      `fittings/${fittingId}`,
+      'PUT',
+      input,
+    );
+  }
+  deleteEmergencyLightFitting(organisationId: string, assetId: string, fittingId: string) {
+    return this.emergencyAssetChild<void>(
+      organisationId,
+      assetId,
+      `fittings/${fittingId}`,
+      'DELETE',
+    );
+  }
+  getEmergencyLightingInspectionContext(organisationId: string, inspectionId: string) {
+    return this.request<EmergencyLightingInspectionContext>(
+      `/modules/emergency-lighting/inspections/${inspectionId}/context?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  addEmergencyLightFittingDuringInspection(
+    organisationId: string,
+    inspectionId: string,
+    input: EmergencyLightFittingInput,
+  ) {
+    return this.request<{ fitting: EmergencyLightFitting }>(
+      `/modules/emergency-lighting/inspections/${inspectionId}/fittings?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  saveEmergencyLightingResult(
+    organisationId: string,
+    inspectionId: string,
+    input: Omit<EmergencyLightingInspectionResult, 'id' | 'media' | 'updatedAt'>,
+  ) {
+    return this.request<{ result: EmergencyLightingInspectionResult }>(
+      `/modules/emergency-lighting/inspections/${inspectionId}/results/${input.fittingId}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+    );
+  }
+  bulkSaveEmergencyLightingResults(
+    organisationId: string,
+    inspectionId: string,
+    input: {
+      fittingIds: string[];
+      outcome: EmergencyLightTestResult;
+      testType: 'FUNCTIONAL' | 'DURATION';
+      notes?: string;
+      durationMinutes?: number;
+      replaceOverrides?: boolean;
+    },
+  ) {
+    return this.request<{ applied: number; preservedOverrides: number }>(
+      `/modules/emergency-lighting/inspections/${inspectionId}/results/bulk?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  getGuestEmergencyLightingInspectionContext(token: string, inspectionId: string) {
+    return this.publicRequest<EmergencyLightingInspectionContext>(
+      `/guest/visits/${encodeURIComponent(token)}/emergency-lighting/inspections/${inspectionId}/context`,
+    );
+  }
+  saveGuestEmergencyLightingResult(
+    token: string,
+    inspectionId: string,
+    input: Omit<EmergencyLightingInspectionResult, 'id' | 'media' | 'updatedAt'>,
+  ) {
+    return this.publicRequest<{ result: EmergencyLightingInspectionResult }>(
+      `/guest/visits/${encodeURIComponent(token)}/emergency-lighting/inspections/${inspectionId}/results/${input.fittingId}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+    );
+  }
+  bulkSaveGuestEmergencyLightingResults(
+    token: string,
+    inspectionId: string,
+    input: {
+      fittingIds: string[];
+      outcome: EmergencyLightTestResult;
+      testType: 'FUNCTIONAL' | 'DURATION';
+      notes?: string;
+      durationMinutes?: number;
+      replaceOverrides?: boolean;
+    },
+  ) {
+    return this.publicRequest<{ applied: number; preservedOverrides: number }>(
+      `/guest/visits/${encodeURIComponent(token)}/emergency-lighting/inspections/${inspectionId}/results/bulk`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  addGuestEmergencyLightFitting(
+    token: string,
+    inspectionId: string,
+    input: EmergencyLightFittingInput,
+  ) {
+    return this.publicRequest<{ fitting: EmergencyLightFitting }>(
+      `/guest/visits/${encodeURIComponent(token)}/emergency-lighting/inspections/${inspectionId}/fittings`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  private emergencyAssetChild<T>(
+    organisationId: string,
+    assetId: string,
+    child: string,
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    input?: object,
+  ) {
+    return this.request<T>(
+      `/modules/emergency-lighting/assets/${assetId}/${child}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method, ...(input === undefined ? {} : { body: JSON.stringify(input) }) },
     );
   }
 }

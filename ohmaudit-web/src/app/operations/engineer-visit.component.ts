@@ -18,6 +18,10 @@ import {
 } from '../core/api.service';
 import { compressImage, compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
+import {
+  emergencyLightingInspectionPath,
+  guestEmergencyLightingInspectionPath,
+} from '../core/emergency-lighting-routes';
 import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
 import { SignaturePadComponent } from '../shared/signature-pad.component';
 
@@ -291,6 +295,21 @@ export class EngineerVisitComponent {
           ? ['/guest/job', this.guestToken, 'thermal', task.id]
           : ['/app/org', this.organisationId, 'visits', this.visitId, 'thermal', task.id],
       );
+      return;
+    }
+    if (task.moduleKey === 'emergency-lighting') {
+      await this.run(async () => {
+        const inspection =
+          task.inspection ??
+          (this.guestToken
+            ? (await this.api.startGuestInspection(this.guestToken, task.id)).inspection
+            : (await this.api.startInspection(this.organisationId, task.id)).inspection);
+        await this.router.navigate(
+          this.guestToken
+            ? guestEmergencyLightingInspectionPath(this.guestToken, inspection.id)
+            : emergencyLightingInspectionPath(this.organisationId, this.visitId, inspection.id),
+        );
+      });
       return;
     }
     await this.run(async () => {

@@ -19,6 +19,7 @@ import { ScheduleService } from './scheduling/schedule.service';
 import { VisitService } from './visits/visit.service';
 import { evRcdFailureReasons, InspectionService } from './inspections/inspection.service';
 import { EvService } from './modules/ev/ev.service';
+import { EmergencyLightingService } from './modules/emergency-lighting/emergency-lighting.service';
 import { PlatformService } from './platform/platform.service';
 import { InstructionService } from './platform/instruction.service';
 import { EquipmentService } from './equipment/equipment.service';
@@ -193,7 +194,14 @@ const documentInput = z.object({
   category: z.string().trim().min(1).max(80),
 });
 const mediaInput = z.object({
-  entityType: z.enum(['Organisation', 'Customer', 'Site', 'Asset', 'Inspection']),
+  entityType: z.enum([
+    'Organisation',
+    'Customer',
+    'Site',
+    'Asset',
+    'Inspection',
+    'EmergencyLightingFitting',
+  ]),
   entityId: z.uuid(),
   category: z.string().trim().min(1).max(80),
   caption: z.string().max(500).optional(),
@@ -238,6 +246,70 @@ const equipmentInput = z.object({
 const equipmentUpdateInput = equipmentInput
   .partial()
   .refine((input) => Object.keys(input).length > 0);
+const emergencyLightingSystemInput = z.object({
+  description: optionalTrimmed(5000),
+  notes: optionalTrimmed(5000),
+});
+const emergencyLightingLocationInput = z.object({
+  name: z.string().trim().min(1).max(160),
+  description: optionalTrimmed(2000),
+  displayOrder: z.number().int().min(0).max(100_000).optional(),
+});
+const emergencyLightingLocationUpdateInput = emergencyLightingLocationInput
+  .partial()
+  .refine((input) => Object.keys(input).length > 0);
+const emergencyLightingGroupInput = z.object({
+  name: z.string().trim().min(1).max(160),
+  description: optionalTrimmed(2000),
+});
+const emergencyLightingGroupUpdateInput = emergencyLightingGroupInput
+  .partial()
+  .refine((input) => Object.keys(input).length > 0);
+const emergencyLightingKeyswitchInput = z.object({
+  reference: z.string().trim().min(1).max(100),
+  locationId: z.uuid().optional(),
+  groupIds: z
+    .array(z.uuid())
+    .max(100)
+    .refine((ids) => new Set(ids).size === ids.length),
+  description: optionalTrimmed(2000),
+  notes: optionalTrimmed(5000),
+});
+const emergencyLightingFittingInput = z.object({
+  reference: z.string().trim().min(1).max(100),
+  locationId: z.uuid().nullable().optional(),
+  groupIds: z
+    .array(z.uuid())
+    .max(100)
+    .refine((ids) => new Set(ids).size === ids.length)
+    .optional(),
+  description: optionalTrimmed(2000),
+  fittingType: optionalTrimmed(100),
+  operationMode: optionalTrimmed(100),
+  manufacturer: optionalTrimmed(160),
+  model: optionalTrimmed(160),
+  serialNumber: optionalTrimmed(160),
+  ratedDurationMinutes: z.number().int().min(1).max(1440).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).optional(),
+  notes: optionalTrimmed(5000),
+});
+const emergencyLightingResultInput = z.object({
+  outcome: z.enum(['PASS', 'FAIL', 'NOT_TESTED']),
+  testType: z.enum(['FUNCTIONAL', 'DURATION']),
+  durationMinutes: z.number().int().min(0).max(1440).optional(),
+  notes: optionalTrimmed(5000),
+});
+const emergencyLightingBulkResultInput = emergencyLightingResultInput.extend({
+  fittingIds: z
+    .array(z.uuid())
+    .min(1)
+    .max(1000)
+    .refine((ids) => new Set(ids).size === ids.length)
+    .optional(),
+  locationId: z.uuid().optional(),
+  groupId: z.uuid().optional(),
+  replaceOverrides: z.boolean().optional().default(false),
+});
 const superadminBootstrapInput = z.object({ token: z.string().min(1).max(500) });
 const platformRoleInput = z.object({ platformRole: z.enum(['USER', 'PLATFORM_ADMIN']) });
 const platformModuleInput = z.object({
@@ -346,7 +418,7 @@ const notificationPreferenceInput = z.object({
 });
 const visitTaskInput = z.object({
   assetId: z.uuid().optional(),
-  moduleKey: z.enum(['core', 'ev-charging', 'thermal-imaging']),
+  moduleKey: z.enum(['core', 'ev-charging', 'thermal-imaging', 'emergency-lighting']),
   title: z.string().trim().min(2).max(160),
 });
 const visitTasksInput = z.object({ tasks: z.array(visitTaskInput).min(1).max(100) });
@@ -754,6 +826,24 @@ async function requireInspectionModule(
   return inspection.moduleKey;
 }
 
+async function requireEmergencyLightingFitting(
+  prisma: ReturnType<typeof prismaFor>,
+  organisationId: string,
+  fittingId: string,
+): Promise<void> {
+  const fitting = await prisma.emergencyLightingFitting.findFirst({
+    where: { id: fittingId, organisationId },
+    select: { id: true },
+  });
+  if (fitting === null)
+    throw new DomainError(
+      'EMERGENCY_LIGHTING_FITTING_NOT_FOUND',
+      'The fitting was not found.',
+      404,
+    );
+  await requireModuleForKey(prisma, organisationId, 'emergency-lighting');
+}
+
 function specialistCapability(
   moduleKey: string,
   operation:
@@ -770,6 +860,12 @@ function specialistCapability(
     if (operation === 'issue') return 'thermal.reports.issue';
     if (operation === 'equipment-read') return 'thermal.equipment.read';
     if (operation === 'equipment-manage') return 'thermal.equipment.manage';
+  }
+  if (moduleKey === 'emergency-lighting') {
+    if (operation === 'asset-read') return 'emergency-lighting.assets.read';
+    if (operation === 'asset-manage') return 'emergency-lighting.assets.manage';
+    if (operation === 'perform') return 'emergency-lighting.inspections.perform';
+    if (operation === 'issue') return 'emergency-lighting.certificates.issue';
   }
   return undefined;
 }
@@ -789,6 +885,28 @@ async function requireSpecialistRoleCapability(
       organisationId,
       capability,
     );
+}
+
+async function emergencyLightingServiceFor(
+  environment: ApiBindings,
+  options: AppOptions,
+  actor: AuthenticatedActor,
+  organisationId: string,
+  operation: 'asset-read' | 'asset-manage' | 'perform',
+) {
+  const coreCapability: Capability =
+    operation === 'asset-read'
+      ? 'assets.read'
+      : operation === 'asset-manage'
+        ? 'assets.manage'
+        : 'inspections.perform';
+  await identityService(environment, options).requireAllCapabilities(actor, organisationId, [
+    coreCapability,
+    specialistCapability('emergency-lighting', operation)!,
+  ]);
+  const prisma = prismaFor(environment);
+  await requireModuleForKey(prisma, organisationId, 'emergency-lighting');
+  return new EmergencyLightingService(prisma);
 }
 
 async function analyseChargerDataPlate(
@@ -910,7 +1028,8 @@ function isEvAssetType(assetType: string | undefined): boolean {
 }
 
 function mediaWriteCapability(
-  entityType: 'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection',
+  entityType:
+    'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection' | 'EmergencyLightingFitting',
 ): Capability {
   if (entityType === 'Organisation') return 'organisation.manage';
   if (entityType === 'Customer') return 'customers.manage';
@@ -2282,6 +2401,17 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         'perform',
       );
     }
+    if (input.entityType === 'EmergencyLightingFitting') {
+      await requireEmergencyLightingFitting(prisma, input.organisationId, input.entityId);
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        input.organisationId,
+        'emergency-lighting',
+        'asset-manage',
+      );
+    }
     const { organisationId, clientUploadId, ...media } = input;
     const uploadTag = clientUploadId === undefined ? undefined : `offline-upload:${clientUploadId}`;
     if (uploadTag !== undefined) {
@@ -2317,7 +2447,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       context.get('actor'),
       organisationId,
       mediaWriteCapability(
-        media.entityType as 'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection',
+        media.entityType as
+          | 'Organisation'
+          | 'Customer'
+          | 'Site'
+          | 'Asset'
+          | 'Inspection'
+          | 'EmergencyLightingFitting',
       ),
     );
     if (media.entityType === 'Inspection') {
@@ -2333,6 +2469,17 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         organisationId,
         moduleKey,
         'perform',
+      );
+    }
+    if (media.entityType === 'EmergencyLightingFitting') {
+      await requireEmergencyLightingFitting(prismaFor(environment), organisationId, media.entityId);
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'emergency-lighting',
+        'asset-manage',
       );
     }
     const contentType = context.req.header('content-type') ?? '';
@@ -2444,13 +2591,20 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         organisationId,
         'assets.read',
       );
-    else {
+    else if (media.entityType === 'Inspection') {
       await identityService(environment, options).requireAnyCapability(
         context.get('actor'),
         organisationId,
         ['inspections.perform', 'inspections.review', 'inspections.approve'],
       );
       await requireInspectionModule(prismaFor(environment), organisationId, media.entityId);
+    } else {
+      await identityService(environment, options).requireAllCapabilities(
+        context.get('actor'),
+        organisationId,
+        ['assets.read', 'emergency-lighting.assets.read'],
+      );
+      await requireEmergencyLightingFitting(prismaFor(environment), organisationId, media.entityId);
     }
     const object = await environment.MEDIA_BUCKET.get(media.storageKey);
     if (object === null)
@@ -2469,7 +2623,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       context.get('actor'),
       organisationId,
       mediaWriteCapability(
-        existingMedia.entityType as 'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection',
+        existingMedia.entityType as
+          | 'Organisation'
+          | 'Customer'
+          | 'Site'
+          | 'Asset'
+          | 'Inspection'
+          | 'EmergencyLightingFitting',
       ),
     );
     if (existingMedia.entityType === 'Inspection') {
@@ -2485,6 +2645,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         organisationId,
         moduleKey,
         'perform',
+      );
+    }
+    if (existingMedia.entityType === 'EmergencyLightingFitting') {
+      await requireEmergencyLightingFitting(
+        prismaFor(environment),
+        organisationId,
+        existingMedia.entityId,
+      );
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'emergency-lighting',
+        'asset-manage',
       );
     }
     const media = await portfolio.deleteMedia(organisationId, mediaId);
@@ -3721,6 +3896,117 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       inspection: await new InspectionService(prisma).detail(visit.organisationId, inspectionId),
     });
   });
+  app.get(
+    '/api/v1/guest/visits/:token/emergency-lighting/inspections/:inspectionId/context',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const prisma = prismaFor(environment);
+      const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+      const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+      if (
+        !visit.tasks.some(
+          (task) => task.moduleKey === 'emergency-lighting' && task.inspection?.id === inspectionId,
+        )
+      )
+        throw new DomainError(
+          'INSPECTION_NOT_FOUND',
+          'The emergency lighting inspection is not assigned to this job.',
+          404,
+        );
+      await requireModuleForKey(prisma, visit.organisationId, 'emergency-lighting');
+      return context.json(
+        await new EmergencyLightingService(prisma).inspectionContext(
+          visit.organisationId,
+          inspectionId,
+        ),
+      );
+    },
+  );
+  app.post(
+    '/api/v1/guest/visits/:token/emergency-lighting/inspections/:inspectionId/fittings',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const prisma = prismaFor(environment);
+      const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+      const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+      if (
+        !visit.tasks.some(
+          (task) => task.moduleKey === 'emergency-lighting' && task.inspection?.id === inspectionId,
+        )
+      )
+        throw new DomainError(
+          'INSPECTION_NOT_FOUND',
+          'The emergency lighting inspection is not assigned to this job.',
+          404,
+        );
+      await requireModuleForKey(prisma, visit.organisationId, 'emergency-lighting');
+      return context.json(
+        {
+          fitting: await new EmergencyLightingService(prisma).createFittingDuringInspection(
+            visit.organisationId,
+            inspectionId,
+            emergencyLightingFittingInput.parse(await context.req.json()),
+          ),
+        },
+        201,
+      );
+    },
+  );
+  app.put(
+    '/api/v1/guest/visits/:token/emergency-lighting/inspections/:inspectionId/results/:fittingId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const prisma = prismaFor(environment);
+      const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+      const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+      if (
+        !visit.tasks.some(
+          (task) => task.moduleKey === 'emergency-lighting' && task.inspection?.id === inspectionId,
+        )
+      )
+        throw new DomainError(
+          'INSPECTION_NOT_FOUND',
+          'The emergency lighting inspection is not assigned to this job.',
+          404,
+        );
+      await requireModuleForKey(prisma, visit.organisationId, 'emergency-lighting');
+      return context.json({
+        result: await new EmergencyLightingService(prisma).saveResult(
+          visit.organisationId,
+          inspectionId,
+          z.uuid().parse(context.req.param('fittingId')),
+          emergencyLightingResultInput.parse(await context.req.json()),
+        ),
+      });
+    },
+  );
+  app.post(
+    '/api/v1/guest/visits/:token/emergency-lighting/inspections/:inspectionId/results/bulk',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const prisma = prismaFor(environment);
+      const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+      const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+      if (
+        !visit.tasks.some(
+          (task) => task.moduleKey === 'emergency-lighting' && task.inspection?.id === inspectionId,
+        )
+      )
+        throw new DomainError(
+          'INSPECTION_NOT_FOUND',
+          'The emergency lighting inspection is not assigned to this job.',
+          404,
+        );
+      await requireModuleForKey(prisma, visit.organisationId, 'emergency-lighting');
+      return context.json(
+        await new EmergencyLightingService(prisma).bulkApplyResults(
+          visit.organisationId,
+          inspectionId,
+          emergencyLightingBulkResultInput.parse(await context.req.json()),
+        ),
+      );
+    },
+  );
   app.post('/api/v1/guest/visits/:token/ev-assets', async (context) => {
     const environment = parseEnvironment(context.env);
     const input = engineerEvAssetInput.parse(await context.req.json());
@@ -3859,6 +4145,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       context.req.param('token'),
       context.req.param('inspectionId'),
     );
+    const fittingId = z.uuid().optional().parse(context.req.query('fittingId'));
+    if (fittingId !== undefined) {
+      const emergencyContext = await new EmergencyLightingService(
+        prismaFor(environment),
+      ).inspectionContext(owner.organisationId, context.req.param('inspectionId'));
+      if (!emergencyContext.fittings.some(({ id }) => id === fittingId))
+        throw new DomainError(
+          'EMERGENCY_LIGHTING_FITTING_NOT_FOUND',
+          'The fitting was not found in this inspection.',
+          404,
+        );
+    }
     const kind = z
       .enum(['fault', 'normal-state'])
       .default('fault')
@@ -3891,12 +4189,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const media =
       existing ??
       (await portfolio.registerMedia(owner.organisationId, undefined, {
-        entityType: 'Asset',
-        entityId: owner.assetId,
-        category: kind === 'normal-state' ? 'asset-image' : 'inspection-fault',
+        entityType: fittingId === undefined ? 'Asset' : 'Inspection',
+        entityId: fittingId === undefined ? owner.assetId : context.req.param('inspectionId'),
+        category:
+          fittingId === undefined
+            ? kind === 'normal-state'
+              ? 'asset-image'
+              : 'inspection-fault'
+            : 'emergency-lighting-evidence',
         caption: description,
         tags: [
           kind === 'normal-state' ? 'normal-state' : 'fault-evidence',
+          ...(fittingId === undefined ? [] : [`fitting:${fittingId}`]),
           ...(uploadTag === undefined ? [] : [uploadTag]),
         ],
         mimeType,
@@ -5171,6 +5475,397 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       headers: responseHeaders,
     });
   });
+  app.get('/api/v1/modules/emergency-lighting/assets/:assetId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-read',
+    );
+    return context.json({
+      system: await service.detail(organisationId, context.req.param('assetId')),
+    });
+  });
+  app.put('/api/v1/modules/emergency-lighting/assets/:assetId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json({
+      system: await service.saveSystem(
+        organisationId,
+        context.req.param('assetId'),
+        emergencyLightingSystemInput.parse(await context.req.json()),
+      ),
+    });
+  });
+  app.post('/api/v1/modules/emergency-lighting/assets/:assetId/locations', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json(
+      {
+        location: await service.createLocation(
+          organisationId,
+          context.req.param('assetId'),
+          emergencyLightingLocationInput.parse(await context.req.json()),
+        ),
+      },
+      201,
+    );
+  });
+  app.patch(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/locations/:locationId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      return context.json({
+        location: await service.updateLocation(
+          organisationId,
+          context.req.param('assetId'),
+          context.req.param('locationId'),
+          emergencyLightingLocationUpdateInput.parse(await context.req.json()),
+        ),
+      });
+    },
+  );
+  app.delete(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/locations/:locationId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      await service.deleteLocation(
+        organisationId,
+        context.req.param('assetId'),
+        context.req.param('locationId'),
+      );
+      return context.json({ deleted: true });
+    },
+  );
+  app.post('/api/v1/modules/emergency-lighting/assets/:assetId/groups', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json(
+      {
+        group: await service.createGroup(
+          organisationId,
+          context.req.param('assetId'),
+          emergencyLightingGroupInput.parse(await context.req.json()),
+        ),
+      },
+      201,
+    );
+  });
+  app.patch(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/groups/:groupId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      return context.json({
+        group: await service.updateGroup(
+          organisationId,
+          context.req.param('assetId'),
+          context.req.param('groupId'),
+          emergencyLightingGroupUpdateInput.parse(await context.req.json()),
+        ),
+      });
+    },
+  );
+  app.delete(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/groups/:groupId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      await service.deleteGroup(
+        organisationId,
+        context.req.param('assetId'),
+        context.req.param('groupId'),
+      );
+      return context.json({ deleted: true });
+    },
+  );
+  app.post('/api/v1/modules/emergency-lighting/assets/:assetId/keyswitches', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json(
+      {
+        keyswitch: await service.createKeyswitch(
+          organisationId,
+          context.req.param('assetId'),
+          emergencyLightingKeyswitchInput.parse(await context.req.json()),
+        ),
+      },
+      201,
+    );
+  });
+  app.put(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/keyswitches/:keyswitchId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      return context.json({
+        keyswitch: await service.updateKeyswitch(
+          organisationId,
+          context.req.param('assetId'),
+          context.req.param('keyswitchId'),
+          emergencyLightingKeyswitchInput.parse(await context.req.json()),
+        ),
+      });
+    },
+  );
+  app.delete(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/keyswitches/:keyswitchId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      await service.deleteKeyswitch(
+        organisationId,
+        context.req.param('assetId'),
+        context.req.param('keyswitchId'),
+      );
+      return context.json({ deleted: true });
+    },
+  );
+  app.get('/api/v1/modules/emergency-lighting/assets/:assetId/fittings', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const query = z
+      .object({
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(200).default(50),
+        search: z.string().trim().min(1).max(160).optional(),
+        locationId: z.uuid().optional(),
+        groupId: z.uuid().optional(),
+      })
+      .parse(context.req.query());
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-read',
+    );
+    return context.json(
+      await service.listFittings(organisationId, context.req.param('assetId'), query),
+    );
+  });
+  app.post('/api/v1/modules/emergency-lighting/assets/:assetId/fittings', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json(
+      {
+        fitting: await service.createFitting(
+          organisationId,
+          context.req.param('assetId'),
+          emergencyLightingFittingInput.parse(await context.req.json()),
+        ),
+      },
+      201,
+    );
+  });
+  app.put(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/fittings/:fittingId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      return context.json({
+        fitting: await service.updateFitting(
+          organisationId,
+          context.req.param('assetId'),
+          context.req.param('fittingId'),
+          emergencyLightingFittingInput.parse(await context.req.json()),
+        ),
+      });
+    },
+  );
+  app.delete(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/fittings/:fittingId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      await service.deleteFitting(
+        organisationId,
+        context.req.param('assetId'),
+        context.req.param('fittingId'),
+      );
+      return context.json({ deleted: true });
+    },
+  );
+  app.get(
+    '/api/v1/modules/emergency-lighting/inspections/:inspectionId/context',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'perform',
+      );
+      return context.json(
+        await service.inspectionContext(organisationId, context.req.param('inspectionId')),
+      );
+    },
+  );
+  app.post(
+    '/api/v1/modules/emergency-lighting/inspections/:inspectionId/fittings',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'perform',
+      );
+      return context.json(
+        {
+          fitting: await service.createFittingDuringInspection(
+            organisationId,
+            context.req.param('inspectionId'),
+            emergencyLightingFittingInput.parse(await context.req.json()),
+          ),
+        },
+        201,
+      );
+    },
+  );
+  app.put(
+    '/api/v1/modules/emergency-lighting/inspections/:inspectionId/results/:fittingId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'perform',
+      );
+      return context.json({
+        result: await service.saveResult(
+          organisationId,
+          context.req.param('inspectionId'),
+          context.req.param('fittingId'),
+          emergencyLightingResultInput.parse(await context.req.json()),
+        ),
+      });
+    },
+  );
+  app.post(
+    '/api/v1/modules/emergency-lighting/inspections/:inspectionId/results/bulk',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'perform',
+      );
+      return context.json(
+        await service.bulkApplyResults(
+          organisationId,
+          context.req.param('inspectionId'),
+          emergencyLightingBulkResultInput.parse(await context.req.json()),
+        ),
+      );
+    },
+  );
   app.get('/api/v1/modules/ev/assets/:assetId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';

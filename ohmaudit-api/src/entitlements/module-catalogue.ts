@@ -25,7 +25,12 @@ export const moduleCatalogue = [
     key: 'emergency-lighting',
     name: 'Emergency Lighting',
     description: 'Lighting systems, fittings, functional and duration testing.',
-    capabilities: ['emergency-lighting.assets.manage', 'emergency-lighting.inspections.perform'],
+    capabilities: [
+      'emergency-lighting.assets.read',
+      'emergency-lighting.assets.manage',
+      'emergency-lighting.inspections.perform',
+      'emergency-lighting.certificates.issue',
+    ],
   },
   {
     key: 'solar-pv',
