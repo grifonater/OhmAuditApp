@@ -80,6 +80,45 @@ function footer(reference: string, page: number, totalPages: number): string {
   </footer>`;
 }
 
+const OUTCOME_COVER_LINES = 14;
+const OUTCOME_LINES_PER_PAGE = 34;
+const OUTCOME_CHARS_PER_LINE = 80;
+
+function outcomeLines(value: string): string[] {
+  const paragraphs = value.trim().split(/\n/);
+  const lines: string[] = [];
+  const lastParagraph = paragraphs.length - 1;
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    const words = paragraph.trim() === '' ? [] : paragraph.trim().split(/\s+/u);
+    let current = '';
+    for (const word of words) {
+      let piece = word;
+      while (piece.length > OUTCOME_CHARS_PER_LINE) {
+        if (current) {
+          lines.push(current);
+          current = '';
+        }
+        lines.push(piece.slice(0, OUTCOME_CHARS_PER_LINE));
+        piece = piece.slice(OUTCOME_CHARS_PER_LINE);
+      }
+      const candidate = `${current} ${piece}`.trim();
+      if (candidate.length > OUTCOME_CHARS_PER_LINE && current) {
+        lines.push(current);
+        current = piece;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) lines.push(current);
+    if (paragraphIndex < lastParagraph) lines.push('');
+  });
+  return lines.length === 0 ? ['NOT RECORDED'] : lines;
+}
+
+function outcomeLinesMarkup(lines: readonly string[]): string {
+  return lines.map((line) => `<div class="outcome-line">${text(line, '')}</div>`).join('');
+}
+
 function targetPage(
   target: ThermalCertificatePayload['targets'][number],
   targetIndex: number,
@@ -176,10 +215,36 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     ({ condition }) => condition.toLocaleUpperCase('en-GB') === 'FAULT',
   ).length;
   const noIssueCount = payload.targets.length - faultCount;
-  const totalPages =
-    3 + payload.targets.reduce((pages, target) => pages + targetPageCount(target), 0);
+  const targetTotal = payload.targets.reduce((pages, target) => pages + targetPageCount(target), 0);
+  const outcomeLinesArray = outcomeLines(payload.outcome.replaceAll('_', ' ') || 'NOT RECORDED');
+  const outcomeOverflowLines = outcomeLinesArray.slice(OUTCOME_COVER_LINES);
+  const outcomeOverflowPages =
+    outcomeOverflowLines.length === 0
+      ? 0
+      : Math.ceil(outcomeOverflowLines.length / OUTCOME_LINES_PER_PAGE);
+  const totalPages = 3 + outcomeOverflowPages + targetTotal;
+  const detailsPageNumber = 2 + outcomeOverflowPages;
+  const surveyPageNumber = 3 + outcomeOverflowPages;
+  const coverOutcomeLines = outcomeLinesArray.slice(0, OUTCOME_COVER_LINES);
   const outcomeClass = faultCount > 0 ? 'fault' : 'clear';
   const details = payload.details;
+  const outcomeContinuationMarkup = Array.from({ length: outcomeOverflowPages }, (_, pageIndex) => {
+    const start = pageIndex * OUTCOME_LINES_PER_PAGE;
+    const slice = outcomeOverflowLines.slice(start, start + OUTCOME_LINES_PER_PAGE);
+    const page = 2 + pageIndex;
+    return `<section class="report-page details-page outcome-page">
+      <header class="page-header">
+        ${logo(payload)}
+        <div><span>THERMAL IMAGING REPORT</span><strong>OVERALL OUTCOME (CONTINUED)</strong></div>
+      </header>
+      <div class="details-heading"><p class="eyebrow">OVERALL OUTCOME</p><h2>OVERALL OUTCOME (CONTINUED)</h2></div>
+      <section class="overall-outcome outcome-page-panel ${outcomeClass}">
+        <h2>OVERALL OUTCOME CONTINUATION</h2>
+        ${outcomeLinesMarkup(slice)}
+      </section>
+      ${footer(payload.reportReference, page, totalPages)}
+    </section>`;
+  }).join('\n');
   return `<!doctype html>
 <html lang="en-GB">
 <head>
@@ -228,6 +293,10 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     .overall-outcome.fault { border-left-color: ${BRAND.danger}; background: #fff8f8; }
     .overall-outcome h2 { margin: 0 0 4mm; color: ${BRAND.navy}; font-size: 14pt; letter-spacing: .02em; }
     .overall-outcome p { margin: 0; overflow-wrap: anywhere; font-size: 10pt; line-height: 1.55; white-space: pre-line; }
+    .overall-outcome .outcome-line { margin: 0 0 1.5mm; overflow-wrap: anywhere; font-size: 9.5pt; line-height: 1.5; color: ${BRAND.ink}; }
+    .overall-outcome .outcome-continued { margin-top: 4mm; font-size: 8pt; font-weight: 700; letter-spacing: .06em; }
+    .outcome-page-panel { min-height: 0; }
+    .outcome-page-panel .outcome-line { font-size: 10pt; line-height: 1.55; }
     .cover-direction { margin-top: 6mm; padding: 4mm 5mm; border: 1px solid ${BRAND.line}; border-radius: 3mm; color: ${BRAND.muted}; font-size: 8pt; }
     .cover-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
     .report-card { border: 1px solid ${BRAND.line}; border-radius: 3mm; overflow: hidden; break-inside: avoid; }
@@ -334,11 +403,20 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     </div>
     <section class="overall-outcome ${outcomeClass}">
       <h2>OVERALL OUTCOME</h2>
-      <p>${text(payload.outcome.replaceAll('_', ' '), faultCount > 0 ? 'ACTION REQUIRED' : 'SATISFACTORY')}</p>
+      ${
+        outcomeOverflowLines.length > 0
+          ? `${outcomeLinesMarkup(coverOutcomeLines)}
+            <p class="outcome-continued">CONTINUED ON THE FOLLOWING PAGE</p>`
+          : `<p>${text(
+              payload.outcome.replaceAll('_', ' '),
+              faultCount > 0 ? 'ACTION REQUIRED' : 'SATISFACTORY',
+            )}</p>`
+      }
     </section>
     <div class="cover-direction">THE FOLLOWING PAGES RECORD THE INSPECTION SCOPE, SURVEY CONDITIONS, EQUIPMENT, TARGET EVIDENCE, OBSERVATIONS AND RECOMMENDED ACTIONS.</div>
     ${footer(payload.reportReference, 1, totalPages)}
   </section>
+  ${outcomeContinuationMarkup}
   <section class="report-page details-page inspection-details-page">
     <header class="page-header">
       ${logo(payload)}
@@ -356,7 +434,7 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
         ${detail('LIMITATIONS', details?.limitations, 'wide')}
       </dl>
     </section>
-    ${footer(payload.reportReference, 2, totalPages)}
+    ${footer(payload.reportReference, detailsPageNumber, totalPages)}
   </section>
   <section class="report-page details-page survey-conditions-page">
     <header class="page-header">
@@ -378,10 +456,10 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
       </dl>
     </section>
     <div class="declaration"><strong>REPORT INTERPRETATION</strong>THIS REPORT RECORDS CONDITIONS OBSERVED AT THE TIME OF THE SURVEY. THERMAL PATTERNS CAN CHANGE WITH LOAD, AMBIENT CONDITIONS AND EQUIPMENT OPERATION. RECOMMENDATIONS SHOULD BE REVIEWED BY A COMPETENT PERSON BEFORE REMEDIAL WORK.</div>
-    ${footer(payload.reportReference, 3, totalPages)}
+    ${footer(payload.reportReference, surveyPageNumber, totalPages)}
   </section>
   ${(() => {
-    let page = 4;
+    let page = 4 + outcomeOverflowPages;
     return payload.targets
       .flatMap((target, targetIndex) =>
         thermalImagePageGroups(target.images).map(({ offset, images }, groupIndex) =>

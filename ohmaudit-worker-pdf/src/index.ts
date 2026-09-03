@@ -442,6 +442,7 @@ function renderPages(pages: string[][], logoJpegBase64?: string): Uint8Array {
 const accent = '0.078 0.373 0.788';
 const muted = '0.322 0.384 0.478';
 const lineColour = '0.839 0.871 0.914';
+const OUTCOME_LINES_PER_PAGE = 38;
 
 function textAt(value: string, x: number, y: number, size = 9, colour = '0.1 0.1 0.1'): string {
   return `BT /F1 ${size} Tf ${colour} rg ${x} ${y} Td (${pdfEscape(value)}) Tj ET`;
@@ -795,7 +796,17 @@ function thermalCertificateContents(
   const targetPageCounts = payload.targets.map((target) =>
     Math.max(1, thermalImagePageGroups(target.images).length),
   );
-  const totalPages = 3 + targetPageCounts.reduce((total, count) => total + count, 0);
+  const outcomeText = payload.outcome.replaceAll('_', ' ').trim() || 'NOT RECORDED';
+  const outcomeLines = wrappedParagraphs(outcomeText, 92);
+  const outcomeOverflowLines = outcomeLines.length > 14 ? outcomeLines.slice(14) : [];
+  const outcomeOverflowPages =
+    outcomeOverflowLines.length === 0
+      ? 0
+      : Math.ceil(outcomeOverflowLines.length / OUTCOME_LINES_PER_PAGE);
+  const targetTotal = targetPageCounts.reduce((total, count) => total + count, 0);
+  const totalPages = 3 + outcomeOverflowPages + targetTotal;
+  const detailsPageNumber = 2 + outcomeOverflowPages;
+  const surveyPageNumber = 3 + outcomeOverflowPages;
   const logoName = `${imagePrefix}Logo`;
   const images: PdfImage[] = [{ name: logoName, base64: payload.logoJpegBase64 }];
   const cover = [
@@ -824,11 +835,22 @@ function thermalCertificateContents(
     textAt(String(faultCount), 435, 525, 20, faultCount > 0 ? '0.78 0.12 0.09' : accent),
     textAt('FAULTS', 421, 503, 7, muted),
     textAt('OVERALL OUTCOME', 42, 452, 7, muted),
-    ...wrappedParagraphs(payload.outcome.replaceAll('_', ' ') || 'NOT RECORDED', 92)
+    ...outcomeLines
       .slice(0, 14)
       .map((line, index) =>
         textAt(line, 42, 430 - index * 14, 9, faultCount > 0 ? '0.78 0.12 0.09' : accent),
       ),
+    ...(outcomeOverflowLines.length > 0
+      ? [
+          textAt(
+            'CONTINUED ON THE FOLLOWING PAGE',
+            42,
+            430 - outcomeLines.slice(0, 14).length * 14,
+            8,
+            muted,
+          ),
+        ]
+      : []),
     textAt('REPORT CONTENTS', 42, 205, 7, muted),
     ...wrapped(
       'THE FOLLOWING PAGES RECORD THE INSPECTION SCOPE, SURVEY CONDITIONS, EQUIPMENT, TARGET EVIDENCE, OBSERVATIONS AND RECOMMENDED ACTIONS.',
@@ -862,7 +884,7 @@ function thermalCertificateContents(
     ...detailLines('LIMITATIONS', payload.details?.limitations, 315, 360, 42, 10),
     textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
     textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
-    textAt(`PAGE 2 OF ${totalPages}`, 475, 25, 7, muted),
+    textAt(`PAGE ${detailsPageNumber} OF ${totalPages}`, 475, 25, 7, muted),
   ].join('\n');
   const surveyConditionsPage = [
     textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
@@ -908,13 +930,47 @@ function thermalCertificateContents(
     ).map((line, index) => textAt(line, 42, 136 - index * 12, 7, muted)),
     textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
     textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
-    textAt(`PAGE 3 OF ${totalPages}`, 475, 25, 7, muted),
+    textAt(`PAGE ${surveyPageNumber} OF ${totalPages}`, 475, 25, 7, muted),
     ...(payload.buildReference
       ? [textAt(`BUILD ${payload.buildReference}`, 475, 45, 6, muted)]
       : []),
   ].join('\n');
-  const contents = [cover, inspectionDetailsPage, surveyConditionsPage];
-  let pageNumber = 4;
+  const outcomeOverflowPagesArray: string[] = [];
+  for (let pageIndex = 0; pageIndex < outcomeOverflowPages; pageIndex += 1) {
+    const start = pageIndex * OUTCOME_LINES_PER_PAGE;
+    const slice = outcomeOverflowLines.slice(start, start + OUTCOME_LINES_PER_PAGE);
+    const pageNumber = 2 + pageIndex;
+    outcomeOverflowPagesArray.push(
+      [
+        textAt('THERMAL IMAGING REPORT', 42, 805, 11, accent),
+        textAt(
+          pageIndex === 0 ? 'OVERALL OUTCOME' : 'OVERALL OUTCOME (CONTINUED)',
+          455,
+          805,
+          7,
+          muted,
+        ),
+        textAt('OVERALL OUTCOME (CONTINUED)', 42, 772, 18),
+        `${accent} RG 42 758 m 553 758 l S`,
+        ...slice.map((line, index) =>
+          textAt(line, 42, 730 - index * 14, 9, faultCount > 0 ? '0.78 0.12 0.09' : accent),
+        ),
+        textAt(`ENGINEER: ${payload.engineerName}`, 42, 45, 7, muted),
+        textAt(`REPORT REF: ${payload.reportReference}`, 210, 45, 7, muted),
+        textAt(`PAGE ${pageNumber} OF ${totalPages}`, 475, 25, 7, muted),
+        ...(payload.buildReference
+          ? [textAt(`BUILD ${payload.buildReference}`, 475, 45, 6, muted)]
+          : []),
+      ].join('\n'),
+    );
+  }
+  const contents = [
+    cover,
+    ...outcomeOverflowPagesArray,
+    inspectionDetailsPage,
+    surveyConditionsPage,
+  ];
+  let pageNumber = 4 + outcomeOverflowPages;
   for (const [targetIndex, target] of payload.targets.entries()) {
     for (const [
       groupIndex,

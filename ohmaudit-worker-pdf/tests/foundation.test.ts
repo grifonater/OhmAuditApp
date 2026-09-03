@@ -215,6 +215,49 @@ describe('PDF worker', () => {
     expect(text).toContain('NO THERMAL ANOMALIES OR REPORTABLE ISSUES');
     expect(text).not.toContain('Apex Facilities Group');
   });
+  it('spills a long multi-paragraph outcome onto dedicated continuation pages in the native renderer', () => {
+    const longOutcome = Array.from(
+      { length: 30 },
+      (_, index) =>
+        `Paragraph ${index + 1}: thermal patterns across the distribution board were assessed under normal operating load and the connection temperatures recorded during the survey are summarised below.`,
+    ).join('\n');
+    const text = new TextDecoder().decode(
+      renderThermalCertificatePdf({
+        organisationName: 'Ohm Audit Electrical Ltd',
+        customerName: 'Apex Facilities Group',
+        siteName: 'Apex House',
+        siteAddress: [],
+        reportDate: '2026-08-22',
+        engineerName: 'A Engineer',
+        reportReference: 'THERMAL-LONG',
+        outcome: longOutcome,
+        targets: [],
+      }),
+    );
+    expect(text).toContain('OVERALL OUTCOME \\(CONTINUED\\)');
+    expect(text).toContain('CONTINUED ON THE FOLLOWING PAGE');
+    expect(text).toContain('PARAGRAPH 30: THERMAL PATTERNS ACROSS THE DISTRIBUTION');
+    expect(text).toContain('PAGE 1 OF 6');
+    expect(text).toContain('PAGE 6 OF 6');
+  });
+  it('splits a long outcome into a bounded cover portion and HTML continuation pages', () => {
+    const longOutcome =
+      `${'First sentence showing the initial assessment of the installation under normal operating conditions with no abnormal heating detected. '.repeat(20)}\nSecond paragraph with further detail about the equipment surveyed and recommended next steps agreed with the client.`.trim();
+    const html = renderThermalReportHtml({
+      organisationName: 'Ohm Audit Electrical Ltd',
+      customerName: 'Apex Facilities',
+      siteName: 'Apex House',
+      siteAddress: [],
+      reportDate: '2026-09-02',
+      engineerName: 'A Engineer',
+      reportReference: 'THERMAL-LONG-HTML',
+      outcome: longOutcome,
+      targets: [],
+    });
+    expect(html).toContain('OVERALL OUTCOME (CONTINUED)');
+    expect(html).toContain('CONTINUED ON THE FOLLOWING PAGE');
+    expect(html).toContain('SECOND PARAGRAPH WITH FURTHER DETAIL');
+  });
   it('renders a self-contained A4 thermal report preview with escaped client content', () => {
     const html = renderThermalReportHtml({
       organisationName: 'Ohm Audit Electrical Ltd',
