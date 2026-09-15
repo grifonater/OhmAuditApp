@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   connectorSupplyIds,
+  engineerWorkspaceStep,
   isSupportedImageMimeType,
   PROTECTIVE_DEVICE_TYPES,
 } from '../src/app/operations/ev-visit-helpers';
@@ -16,6 +17,13 @@ describe('EV visit helpers', () => {
 
   it('offers all supported protective device types', () => {
     expect(PROTECTIVE_DEVICE_TYPES).toEqual(['MCB', 'MCCB', 'RCBO', 'HRC', 'AFDD', 'OTHER']);
+  });
+
+  it('restores valid engineer workspace steps and defaults invalid URLs to overview', () => {
+    expect(engineerWorkspaceStep('rams')).toBe('rams');
+    expect(engineerWorkspaceStep('inspections')).toBe('inspections');
+    expect(engineerWorkspaceStep('unknown')).toBe('overview');
+    expect(engineerWorkspaceStep(null)).toBe('overview');
   });
 
   it('assigns a sole supply only when a connector has no explicit mapping', () => {

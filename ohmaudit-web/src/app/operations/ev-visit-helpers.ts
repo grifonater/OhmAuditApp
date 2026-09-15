@@ -2,6 +2,12 @@ export const SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/web
 
 export const PROTECTIVE_DEVICE_TYPES = ['MCB', 'MCCB', 'RCBO', 'HRC', 'AFDD', 'OTHER'] as const;
 
+export type EngineerWorkspaceStep = 'overview' | 'rams' | 'inspections';
+
+export function engineerWorkspaceStep(value: string | null): EngineerWorkspaceStep {
+  return value === 'rams' || value === 'inspections' ? value : 'overview';
+}
+
 export function isSupportedImageMimeType(type: string): boolean {
   return SUPPORTED_IMAGE_MIME_TYPES.includes(type as (typeof SUPPORTED_IMAGE_MIME_TYPES)[number]);
 }

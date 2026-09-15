@@ -70,6 +70,16 @@ describe('engineer guest API contracts', () => {
     expect(inspectionAssetMediaKindInput.parse('data-plate')).toBe('data-plate');
   });
 
+  it('protects the engineer job-pack PDF route', async () => {
+    const response = await createApp().request(
+      `/api/v1/visits/${visitId}/engineer-job-pack.pdf?organisationId=${organisationId}`,
+      undefined,
+      { ...environment, DATABASE_URL: 'postgresql://test:test@localhost:5432/test' },
+    );
+
+    expect(response.status).toBe(401);
+  });
+
   it('requires the EV specialist capability for authenticated charger sync', async () => {
     const verifier = new EngineerTestVerifier();
     const store = new MemoryIdentityStore();

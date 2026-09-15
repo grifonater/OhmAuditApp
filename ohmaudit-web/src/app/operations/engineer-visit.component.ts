@@ -38,6 +38,8 @@ import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
 import { SignaturePadComponent } from '../shared/signature-pad.component';
 import {
   connectorSupplyIds,
+  engineerWorkspaceStep,
+  type EngineerWorkspaceStep,
   isSupportedImageMimeType,
   PROTECTIVE_DEVICE_TYPES,
 } from './ev-visit-helpers';
@@ -86,6 +88,14 @@ export class EngineerVisitComponent {
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly visitId = this.route.snapshot.paramMap.get('visitId') ?? '';
   protected readonly guestToken = this.route.snapshot.paramMap.get('token') ?? '';
+  protected readonly workspaceSteps: Array<{ key: EngineerWorkspaceStep; label: string }> = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'rams', label: 'RAMS' },
+    { key: 'inspections', label: 'Inspections' },
+  ];
+  protected readonly workspaceStep = signal(
+    engineerWorkspaceStep(this.route.snapshot.queryParamMap.get('step')),
+  );
   protected readonly visit = signal<VisitSummary | undefined>(undefined);
   protected readonly linkedRams = signal<EngineerRamsRecord[]>([]);
   protected readonly currentSignerName = signal('your account');
@@ -99,6 +109,7 @@ export class EngineerVisitComponent {
   protected readonly assetImageUrl = signal('');
   protected readonly busy = signal(false);
   protected readonly downloadingPack = signal(false);
+  protected readonly downloadingPdf = signal('');
   protected readonly offlineDownloadedAt = signal('');
   protected readonly error = signal('');
   protected readonly saved = signal('');
@@ -188,6 +199,9 @@ export class EngineerVisitComponent {
     validators: [Validators.maxLength(500)],
   });
   constructor() {
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((parameters) => {
+      this.workspaceStep.set(engineerWorkspaceStep(parameters.get('step')));
+    });
     merge(
       this.form.valueChanges,
       this.evAssetForm.valueChanges,
@@ -215,6 +229,58 @@ export class EngineerVisitComponent {
 
   protected isEvTask(): boolean {
     return this.selectedTask()?.moduleKey === 'ev-charging';
+  }
+
+  protected async selectWorkspaceStep(step: EngineerWorkspaceStep): Promise<void> {
+    this.workspaceStep.set(step);
+    await this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { step },
+      queryParamsHandling: 'merge',
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  protected async downloadJobPackPdf(): Promise<void> {
+    const visit = this.visit();
+    if (!visit || !this.offline.online() || this.downloadingPdf()) return;
+    this.downloadingPdf.set('job-pack');
+    this.error.set('');
+    try {
+      const blob = this.guestToken
+        ? await this.api.downloadGuestJobSheetPdf(this.guestToken, true)
+        : await this.api.downloadEngineerJobPackPdf(this.organisationId, visit.id);
+      this.saveBlob(blob, `${this.slug(visit.reference || visit.title)}-job-pack-with-rams.pdf`);
+      this.saved.set('Job pack PDF downloaded');
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to generate the job pack.');
+    } finally {
+      this.downloadingPdf.set('');
+    }
+  }
+
+  protected async downloadCurrentRamsPdf(rams: EngineerRamsRecord): Promise<void> {
+    if (!this.offline.online() || this.downloadingPdf() || rams.currentRevisionNumber < 1) return;
+    this.downloadingPdf.set(`rams:${rams.id}`);
+    this.error.set('');
+    try {
+      const blob = this.guestToken
+        ? await this.api.downloadGuestRamsRevisionPdf(
+            this.guestToken,
+            rams.id,
+            rams.currentRevisionNumber,
+          )
+        : await this.api.downloadRamsPdf(this.organisationId, rams.id);
+      this.saveBlob(
+        blob,
+        `${this.slug(rams.reference || rams.title)}-revision-${rams.currentRevisionNumber}.pdf`,
+      );
+      this.saved.set(`${rams.reference} PDF downloaded`);
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to generate the RAMS PDF.');
+    } finally {
+      this.downloadingPdf.set('');
+    }
   }
 
   protected async downloadPack(): Promise<void> {
@@ -363,12 +429,7 @@ export class EngineerVisitComponent {
             rams.id,
             revision.revisionNumber,
           );
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${rams.reference}-revision-${revision.revisionNumber}.pdf`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      this.saveBlob(blob, `${this.slug(rams.reference)}-revision-${revision.revisionNumber}.pdf`);
     });
   }
 
@@ -1440,6 +1501,26 @@ export class EngineerVisitComponent {
           : task,
       ),
     };
+  }
+
+  private saveBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private slug(value: string): string {
+    return (
+      value
+        .trim()
+        .toLocaleLowerCase('en-GB')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80) || 'job'
+    );
   }
 
   private async run(operation: () => Promise<unknown>): Promise<void> {

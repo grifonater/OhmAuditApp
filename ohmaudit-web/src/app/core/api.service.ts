@@ -1713,6 +1713,33 @@ export class ApiService {
     }
     return response.blob();
   }
+  async downloadGuestJobSheetPdf(token: string, includeRams = false): Promise<Blob> {
+    const report = includeRams ? 'job-sheet-with-rams.pdf' : 'job-sheet.pdf';
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}/guest/visits/${encodeURIComponent(token)}/${report}`,
+      { cache: 'no-store' },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as
+        { message?: string } | undefined;
+      throw new Error(body?.message ?? 'The job pack could not be generated.');
+    }
+    return response.blob();
+  }
+  async downloadEngineerJobPackPdf(organisationId: string, visitId: string): Promise<Blob> {
+    const accessToken = this.auth.session()?.access_token;
+    if (accessToken === undefined) throw new Error('Sign in to continue.');
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}/visits/${encodeURIComponent(visitId)}/engineer-job-pack.pdf?organisationId=${encodeURIComponent(organisationId)}`,
+      { headers: this.authenticatedHeaders(accessToken), cache: 'no-store' },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as
+        { message?: string } | undefined;
+      throw new Error(body?.message ?? 'The job pack could not be generated.');
+    }
+    return response.blob();
+  }
   timeline(organisationId: string, entityType: string, entityId: string) {
     return this.request<{ events: TimelineEvent[] }>(
       `/timeline/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?organisationId=${encodeURIComponent(organisationId)}`,

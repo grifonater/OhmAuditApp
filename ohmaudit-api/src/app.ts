@@ -5380,14 +5380,29 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   const renderJobSheetPdf = async (
     context: Context<AppEnvironment>,
     includeRams: boolean,
+    access: 'certificate' | 'engineer' | 'guest' = 'certificate',
   ): Promise<Response> => {
     const environment = parseEnvironment(context.env);
-    const organisationId = z.uuid().parse(context.req.query('organisationId'));
-    const visitId = z.uuid().parse(context.req.param('visitId'));
-    const identity = identityService(environment, options);
-    await identity.requireMembership(context.get('actor'), organisationId, 'certificates.generate');
-    if (includeRams)
-      await identity.requireMembership(context.get('actor'), organisationId, 'rams.read');
+    const prisma = prismaFor(environment);
+    let organisationId: string;
+    let visitId: string;
+    if (access === 'guest') {
+      const token = z.string().min(1).parse(context.req.param('token'));
+      const visit = await new VisitService(prisma).guestVisitScope(token);
+      organisationId = visit.organisationId;
+      visitId = visit.id;
+    } else {
+      organisationId = z.uuid().parse(context.req.query('organisationId'));
+      visitId = z.uuid().parse(context.req.param('visitId'));
+      const identity = identityService(environment, options);
+      await identity.requireMembership(
+        context.get('actor'),
+        organisationId,
+        access === 'engineer' ? 'sites.read' : 'certificates.generate',
+      );
+      if (includeRams)
+        await identity.requireMembership(context.get('actor'), organisationId, 'rams.read');
+    }
     if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
       throw new DomainError(
         'PDF_RENDERER_UNAVAILABLE',
@@ -5395,7 +5410,6 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         503,
       );
 
-    const prisma = prismaFor(environment);
     await requireVisitModules(prisma, organisationId, visitId);
     const source = await new VisitService(prisma).jobSheetSource(organisationId, visitId);
     const brand = source.organisation.brandProfile;
@@ -5555,6 +5569,15 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
   app.get('/api/v1/visits/:visitId/job-sheet.pdf', (context) => renderJobSheetPdf(context, false));
   app.get('/api/v1/visits/:visitId/job-sheet-with-rams.pdf', (context) =>
     renderJobSheetPdf(context, true),
+  );
+  app.get('/api/v1/visits/:visitId/engineer-job-pack.pdf', (context) =>
+    renderJobSheetPdf(context, true, 'engineer'),
+  );
+  app.get('/api/v1/guest/visits/:token/job-sheet.pdf', (context) =>
+    renderJobSheetPdf(context, false, 'guest'),
+  );
+  app.get('/api/v1/guest/visits/:token/job-sheet-with-rams.pdf', (context) =>
+    renderJobSheetPdf(context, true, 'guest'),
   );
   app.get('/api/v1/visits/:visitId/report.pdf', async (context) => {
     const environment = parseEnvironment(context.env);

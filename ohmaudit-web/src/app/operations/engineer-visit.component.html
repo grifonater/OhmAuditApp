@@ -55,418 +55,480 @@
             </div>
           </dl>
         </article>
-        <article class="card offline-readiness-card" [class.ready]="offlineDownloadedAt()">
-          <div class="offline-readiness-icon" aria-hidden="true">↓</div>
-          <div>
-            <p class="eyebrow">Work without signal</p>
-            <h2>{{ offlineStatusLabel() }}</h2>
-            @if (offlineDownloadedAt()) {
-              <p>Downloaded {{ formatVisitDate(offlineDownloadedAt(), true) }}</p>
-              <small>Refresh before travelling if job details may have changed.</small>
-            } @else {
-              <p>Save job details, tasks, RAMS and supported inspection data to this device.</p>
-            }
-          </div>
-          <button
-            class="button primary touch-button"
-            type="button"
-            (click)="downloadPack()"
-            [disabled]="downloadingPack() || !offline.online()"
-          >
-            @if (downloadingPack()) {
-              <span class="oa-spinner" aria-hidden="true"></span>
-            }
-            {{
-              downloadingPack()
-                ? 'Preparing job…'
-                : offlineDownloadedAt()
-                  ? 'Update offline job'
-                  : 'Download offline job'
-            }}
-          </button>
-          @if (!offline.online()) {
-            <small class="offline-readiness-note">Reconnect to update this offline copy.</small>
+        <nav class="engineer-workspace-nav" aria-label="Job workspace sections">
+          @for (step of workspaceSteps; track step.key) {
+            <button
+              type="button"
+              [class.active]="workspaceStep() === step.key"
+              [attr.aria-current]="workspaceStep() === step.key ? 'page' : null"
+              (click)="selectWorkspaceStep(step.key)"
+            >
+              <span>{{ $index + 1 }}</span
+              >{{ step.label }}
+            </button>
           }
-        </article>
-        @if (guestIdentityRequired()) {
-          <article class="card guest-identity-card">
-            <p class="eyebrow">Before you start</p>
-            <h2>Confirm your identity</h2>
-            <p>Your full name is required for RAMS acknowledgements and inspection signatures.</p>
-            <form [formGroup]="guestIdentityForm" (ngSubmit)="saveGuestIdentity()">
-              <label class="field"
-                >Full name<input
-                  formControlName="displayName"
-                  autocomplete="name"
-                  placeholder="Enter your full name"
-              /></label>
-              <button
-                class="button primary touch-button"
-                type="submit"
-                [disabled]="busy() || !offline.online() || guestIdentityForm.invalid"
-              >
-                {{ busy() ? 'Saving identity…' : 'Confirm identity' }}
-              </button>
-            </form>
+        </nav>
+        @if (workspaceStep() === 'overview') {
+          <article class="card offline-readiness-card" [class.ready]="offlineDownloadedAt()">
+            <div class="offline-readiness-icon" aria-hidden="true">↓</div>
+            <div>
+              <p class="eyebrow">Work without signal</p>
+              <h2>{{ offlineStatusLabel() }}</h2>
+              @if (offlineDownloadedAt()) {
+                <p>Downloaded {{ formatVisitDate(offlineDownloadedAt(), true) }}</p>
+                <small>Refresh before travelling if job details may have changed.</small>
+              } @else {
+                <p>Save job details, tasks, RAMS and supported inspection data to this device.</p>
+              }
+            </div>
+            <button
+              class="button primary touch-button"
+              type="button"
+              (click)="downloadPack()"
+              [disabled]="downloadingPack() || !offline.online()"
+            >
+              @if (downloadingPack()) {
+                <span class="oa-spinner" aria-hidden="true"></span>
+              }
+              {{
+                downloadingPack()
+                  ? 'Preparing job…'
+                  : offlineDownloadedAt()
+                    ? 'Update offline job'
+                    : 'Download offline job'
+              }}
+            </button>
             @if (!offline.online()) {
-              <small>Reconnect once to confirm your identity before signing or inspecting.</small>
+              <small class="offline-readiness-note">Reconnect to update this offline copy.</small>
             }
+          </article>
+          <article class="card job-download-card">
+            <div class="job-download-icon" aria-hidden="true">PDF</div>
+            <div>
+              <p class="eyebrow">Take the paperwork with you</p>
+              <h2>Download job pack</h2>
+              <p>Includes job details, site instructions, inspection tasks and linked RAMS.</p>
+            </div>
+            <button
+              class="button secondary touch-button"
+              type="button"
+              [disabled]="!offline.online() || downloadingPdf() !== ''"
+              (click)="downloadJobPackPdf()"
+            >
+              {{ downloadingPdf() === 'job-pack' ? 'Generating PDF…' : 'Download job pack PDF' }}
+            </button>
+            @if (!offline.online()) {
+              <small>Reconnect to generate the latest PDF.</small>
+            }
+          </article>
+          @if (guestIdentityRequired()) {
+            <article class="card guest-identity-card">
+              <p class="eyebrow">Before you start</p>
+              <h2>Confirm your identity</h2>
+              <p>Your full name is required for RAMS acknowledgements and inspection signatures.</p>
+              <form [formGroup]="guestIdentityForm" (ngSubmit)="saveGuestIdentity()">
+                <label class="field"
+                  >Full name<input
+                    formControlName="displayName"
+                    autocomplete="name"
+                    placeholder="Enter your full name"
+                /></label>
+                <button
+                  class="button primary touch-button"
+                  type="submit"
+                  [disabled]="busy() || !offline.online() || guestIdentityForm.invalid"
+                >
+                  {{ busy() ? 'Saving identity…' : 'Confirm identity' }}
+                </button>
+              </form>
+              @if (!offline.online()) {
+                <small>Reconnect once to confirm your identity before signing or inspecting.</small>
+              }
+            </article>
+          }
+          <div class="job-information-grid landing-details">
+            <article class="card job-info-card">
+              <p class="eyebrow">Client and site</p>
+              <h2>{{ currentVisit.customer.name }}</h2>
+              <strong>{{ currentVisit.site.name }}</strong>
+              <p>{{ currentVisit.site.postcode || 'No postcode recorded' }}</p>
+            </article>
+            <article class="card job-info-card">
+              <p class="eyebrow">Scope</p>
+              <h2>Work to complete</h2>
+              <p>{{ currentVisit.description || 'No scope has been recorded.' }}</p>
+              @if (currentVisit.exclusions) {
+                <strong>Exclusions</strong>
+                <p>{{ currentVisit.exclusions }}</p>
+              }
+            </article>
+            <article class="card job-info-card">
+              <p class="eyebrow">Access</p>
+              <h2>Arriving on site</h2>
+              <dl>
+                <div>
+                  <dt>Instructions</dt>
+                  <dd>{{ currentVisit.site.accessInstructions || 'None recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Parking</dt>
+                  <dd>{{ currentVisit.site.parkingInformation || 'None recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Opening times</dt>
+                  <dd>{{ currentVisit.site.openingTimes || 'Not recorded' }}</dd>
+                </div>
+              </dl>
+            </article>
+            <article class="card job-info-card">
+              <p class="eyebrow">Site safety</p>
+              <h2>Before work starts</h2>
+              <dl>
+                <div>
+                  <dt>PPE</dt>
+                  <dd>{{ currentVisit.site.ppeRequirements || 'No additional PPE recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Induction</dt>
+                  <dd>
+                    {{
+                      currentVisit.site.inductionInformation || 'No induction information recorded'
+                    }}
+                  </dd>
+                </div>
+              </dl>
+            </article>
+          </div>
+          <article class="card briefing-card landing-briefing">
+            <p class="eyebrow">Briefing</p>
+            <h2>Engineer instructions</h2>
+            <p>{{ currentVisit.engineerNotes || 'No special job instructions.' }}</p>
           </article>
         }
-        <div class="job-information-grid landing-details">
-          <article class="card job-info-card">
-            <p class="eyebrow">Client and site</p>
-            <h2>{{ currentVisit.customer.name }}</h2>
-            <strong>{{ currentVisit.site.name }}</strong>
-            <p>{{ currentVisit.site.postcode || 'No postcode recorded' }}</p>
-          </article>
-          <article class="card job-info-card">
-            <p class="eyebrow">Scope</p>
-            <h2>Work to complete</h2>
-            <p>{{ currentVisit.description || 'No scope has been recorded.' }}</p>
-            @if (currentVisit.exclusions) {
-              <strong>Exclusions</strong>
-              <p>{{ currentVisit.exclusions }}</p>
-            }
-          </article>
-          <article class="card job-info-card">
-            <p class="eyebrow">Access</p>
-            <h2>Arriving on site</h2>
-            <dl>
-              <div>
-                <dt>Instructions</dt>
-                <dd>{{ currentVisit.site.accessInstructions || 'None recorded' }}</dd>
-              </div>
-              <div>
-                <dt>Parking</dt>
-                <dd>{{ currentVisit.site.parkingInformation || 'None recorded' }}</dd>
-              </div>
-              <div>
-                <dt>Opening times</dt>
-                <dd>{{ currentVisit.site.openingTimes || 'Not recorded' }}</dd>
-              </div>
-            </dl>
-          </article>
-          <article class="card job-info-card">
-            <p class="eyebrow">Site safety</p>
-            <h2>Before work starts</h2>
-            <dl>
-              <div>
-                <dt>PPE</dt>
-                <dd>{{ currentVisit.site.ppeRequirements || 'No additional PPE recorded' }}</dd>
-              </div>
-              <div>
-                <dt>Induction</dt>
-                <dd>
-                  {{
-                    currentVisit.site.inductionInformation || 'No induction information recorded'
-                  }}
-                </dd>
-              </div>
-            </dl>
-          </article>
-        </div>
-        <article class="card briefing-card landing-briefing">
-          <p class="eyebrow">Briefing</p>
-          <h2>Engineer instructions</h2>
-          <p>{{ currentVisit.engineerNotes || 'No special job instructions.' }}</p>
-        </article>
-        <div class="engineer-task-summary">
-          <strong>{{ currentVisit.tasks.length }}</strong
-          ><span>inspection tasks</span>
-        </div>
-        <section class="job-rams-section" aria-labelledby="job-rams-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Safe system of work</p>
-              <h2 id="job-rams-title">RAMS for this job</h2>
-              <p>Read the current approved issue and sign on before starting work.</p>
-            </div>
-            <span class="badge">{{ linkedRams().length }} linked</span>
+        @if (workspaceStep() === 'rams') {
+          <div class="engineer-task-summary">
+            <strong>{{ linkedRams().length }}</strong
+            ><span>RAMS linked to this job</span>
           </div>
-          <div class="job-rams-list">
-            @for (rams of linkedRams(); track rams.id) {
-              <article
-                class="card engineer-rams-card"
-                [class.approved]="rams.status === 'APPROVED'"
-              >
-                <div class="rams-card-heading">
-                  <div>
-                    <span class="badge" [class.success]="rams.status === 'APPROVED'">{{
-                      rams.status
-                    }}</span>
-                    <h3>{{ rams.title }}</h3>
-                    <p>
-                      {{ rams.reference }} / Revision {{ rams.currentRevisionNumber || 'draft' }}
-                    </p>
+          <section class="job-rams-section" aria-labelledby="job-rams-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Safe system of work</p>
+                <h2 id="job-rams-title">RAMS for this job</h2>
+                <p>Read the current approved issue and sign on before starting work.</p>
+              </div>
+              <span class="badge">{{ linkedRams().length }} linked</span>
+            </div>
+            <div class="job-rams-list">
+              @for (rams of linkedRams(); track rams.id) {
+                <article
+                  class="card engineer-rams-card"
+                  [class.approved]="rams.status === 'APPROVED'"
+                >
+                  <div class="rams-card-heading">
+                    <div>
+                      <span class="badge" [class.success]="rams.status === 'APPROVED'">{{
+                        rams.status
+                      }}</span>
+                      <h3>{{ rams.title }}</h3>
+                      <p>
+                        {{ rams.reference }} / Revision {{ rams.currentRevisionNumber || 'draft' }}
+                      </p>
+                    </div>
+                    <div class="sign-status" [class.signed]="rams.signedOn">
+                      <strong>{{ rams.signedOn ? 'Signed on' : 'Not signed' }}</strong>
+                      @if (rams.signedAt) {
+                        <small
+                          >{{ formatVisitDate(rams.signedAt, true) }} by
+                          {{ personLabel(rams.signedBy) }}</small
+                        >
+                      }
+                    </div>
                   </div>
-                  <div class="sign-status" [class.signed]="rams.signedOn">
-                    <strong>{{ rams.signedOn ? 'Signed on' : 'Not signed' }}</strong>
-                    @if (rams.signedAt) {
-                      <small
-                        >{{ formatVisitDate(rams.signedAt, true) }} by
-                        {{ personLabel(rams.signedBy) }}</small
-                      >
-                    }
-                  </div>
-                </div>
-                <div class="rams-actions">
-                  <button
-                    class="button secondary touch-button"
-                    type="button"
-                    [disabled]="!rams.draftData"
-                    (click)="viewedRams.set(rams)"
-                  >
-                    Read current RAMS
-                  </button>
-                </div>
-                @if (rams.revisions?.length) {
-                  <details class="rams-history">
-                    <summary>Revision history ({{ rams.revisions.length }})</summary>
-                    @for (revision of rams.revisions; track revision.id) {
-                      <button
-                        type="button"
-                        (click)="openRamsRevision(rams, revision.revisionNumber)"
-                      >
-                        <span>Revision {{ revision.revisionNumber }}</span
-                        ><small>{{ formatVisitDate(revision.createdAt, true) }}</small>
-                      </button>
-                    }
-                  </details>
-                }
-                @if (rams.status === 'APPROVED' && !rams.signedOn) {
-                  <div class="rams-sign-on">
-                    <h4>Sign onto revision {{ rams.currentRevisionNumber }}</h4>
-                    <p>
-                      Your drawn signature confirms you have read, understood and will follow this
-                      RAMS.
-                    </p>
-                    <p class="signing-identity">
-                      Signing as <strong>{{ currentSignerName() }}</strong>
-                    </p>
-                    <oa-signature-pad (signatureChange)="ramsSignature.set($event)" /><button
-                      class="button primary touch-button"
+                  <div class="rams-actions">
+                    <button
+                      class="button secondary touch-button"
+                      type="button"
+                      [disabled]="!rams.draftData"
+                      (click)="viewedRams.set(rams)"
+                    >
+                      Read current RAMS
+                    </button>
+                    <button
+                      class="button secondary touch-button"
                       type="button"
                       [disabled]="
                         !offline.online() ||
-                        guestIdentityRequired() ||
-                        !ramsSignature() ||
-                        signingRamsId() === rams.id
+                        rams.currentRevisionNumber < 1 ||
+                        downloadingPdf() !== ''
                       "
-                      (click)="signOn(rams)"
+                      (click)="downloadCurrentRamsPdf(rams)"
                     >
-                      {{ signingRamsId() === rams.id ? 'Signing on…' : 'Confirm and sign on' }}
+                      {{
+                        downloadingPdf() === 'rams:' + rams.id
+                          ? 'Generating PDF…'
+                          : 'Download RAMS PDF'
+                      }}
                     </button>
-                    @if (!offline.online()) {
-                      <small>Reconnect to sign onto RAMS.</small>
-                    } @else if (guestIdentityRequired()) {
-                      <small>Confirm your full name above before signing.</small>
-                    }
                   </div>
-                } @else if (rams.status !== 'APPROVED') {
-                  <p class="rams-unavailable">
-                    Sign-on becomes available when the current issue is approved.
+                  @if (rams.revisions?.length) {
+                    <details class="rams-history">
+                      <summary>Revision history ({{ rams.revisions.length }})</summary>
+                      @for (revision of rams.revisions; track revision.id) {
+                        <button
+                          type="button"
+                          (click)="openRamsRevision(rams, revision.revisionNumber)"
+                        >
+                          <span>Revision {{ revision.revisionNumber }}</span
+                          ><small>{{ formatVisitDate(revision.createdAt, true) }}</small>
+                        </button>
+                      }
+                    </details>
+                  }
+                  @if (rams.status === 'APPROVED' && !rams.signedOn) {
+                    <div class="rams-sign-on">
+                      <h4>Sign onto revision {{ rams.currentRevisionNumber }}</h4>
+                      <p>
+                        Your drawn signature confirms you have read, understood and will follow this
+                        RAMS.
+                      </p>
+                      <p class="signing-identity">
+                        Signing as <strong>{{ currentSignerName() }}</strong>
+                      </p>
+                      <oa-signature-pad (signatureChange)="ramsSignature.set($event)" /><button
+                        class="button primary touch-button"
+                        type="button"
+                        [disabled]="
+                          !offline.online() ||
+                          guestIdentityRequired() ||
+                          !ramsSignature() ||
+                          signingRamsId() === rams.id
+                        "
+                        (click)="signOn(rams)"
+                      >
+                        {{ signingRamsId() === rams.id ? 'Signing on…' : 'Confirm and sign on' }}
+                      </button>
+                      @if (!offline.online()) {
+                        <small>Reconnect to sign onto RAMS.</small>
+                      } @else if (guestIdentityRequired()) {
+                        <small>Confirm your full name above before signing.</small>
+                      }
+                    </div>
+                  } @else if (rams.status !== 'APPROVED') {
+                    <p class="rams-unavailable">
+                      Sign-on becomes available when the current issue is approved.
+                    </p>
+                  }
+                </article>
+              } @empty {
+                <article class="card empty-state">
+                  <h3>No RAMS linked</h3>
+                  <p>Contact the office before starting if RAMS are expected for this job.</p>
+                </article>
+              }
+            </div>
+          </section>
+        }
+        @if (workspaceStep() === 'inspections') {
+          <div class="engineer-task-summary">
+            <strong>{{ currentVisit.tasks.length }}</strong
+            ><span>inspection tasks</span>
+          </div>
+          @if (currentVisit.evDiscoveryEnabled) {
+            <section class="engineer-add-asset card">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Asset missing?</p>
+                  <h2>Add a charger found on site</h2>
+                  <p>
+                    Create the charger now, then record its supplies, connectors and tests normally.
                   </p>
-                }
-              </article>
-            } @empty {
-              <article class="card empty-state">
-                <h3>No RAMS linked</h3>
-                <p>Contact the office before starting if RAMS are expected for this job.</p>
+                </div>
+                <button class="button secondary" type="button" (click)="toggleAddCharger()">
+                  {{ addingCharger() ? 'Cancel' : '+ Add charger' }}
+                </button>
+              </div>
+              @if (addingCharger()) {
+                <form
+                  [formGroup]="newChargerForm"
+                  (ngSubmit)="addCharger()"
+                  class="form-grid engineer-add-form"
+                >
+                  <section
+                    class="new-charger-data-plate full"
+                    aria-labelledby="new-data-plate-title"
+                  >
+                    <div>
+                      <strong id="new-data-plate-title">Charger nameplate</strong>
+                      <small
+                        >Capture this separately as durable evidence. Suggestions never replace your
+                        entries unless you apply them.</small
+                      >
+                    </div>
+                    <div class="data-plate-actions">
+                      <label class="button secondary touch-button data-plate-capture">
+                        Gallery
+                        <input
+                          hidden
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          [disabled]="newChargerDataPlateBusy()"
+                          (change)="selectNewChargerDataPlate($event)"
+                        />
+                      </label>
+                      <label class="button touch-button data-plate-capture">
+                        {{ newChargerDataPlateBusy() ? 'Saving…' : 'Take photo' }}
+                        <input
+                          hidden
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          capture="environment"
+                          [disabled]="newChargerDataPlateBusy()"
+                          (change)="selectNewChargerDataPlate($event)"
+                        />
+                      </label>
+                    </div>
+                    @if (newChargerDataPlatePreviewUrl()) {
+                      <img
+                        class="data-plate-preview"
+                        [src]="newChargerDataPlatePreviewUrl()"
+                        alt="Selected charger nameplate"
+                      />
+                    }
+                    @if (newChargerDataPlateError()) {
+                      <p class="data-plate-message" role="status">
+                        {{ newChargerDataPlateError() }}
+                      </p>
+                    }
+                    @if (newChargerDataPlateCandidates().length) {
+                      <div class="data-plate-results">
+                        @for (candidate of newChargerDataPlateCandidates(); track candidate.field) {
+                          <article>
+                            <span
+                              ><small>{{ dataPlateFieldLabel(candidate.field) }}</small
+                              ><strong>{{ candidate.value }}</strong></span
+                            >
+                            <button
+                              class="button secondary compact"
+                              type="button"
+                              [disabled]="
+                                newChargerAppliedDataPlateFields().includes(candidate.field)
+                              "
+                              (click)="applyNewChargerDataPlateCandidate(candidate)"
+                            >
+                              {{
+                                newChargerAppliedDataPlateFields().includes(candidate.field)
+                                  ? 'Applied'
+                                  : 'Apply'
+                              }}
+                            </button>
+                          </article>
+                        }
+                      </div>
+                    }
+                  </section>
+                  <label class="field"
+                    >Site asset reference<input
+                      formControlName="assetReference"
+                      placeholder="e.g. EVCP 1"
+                      autocomplete="off"
+                    /><small>Must be unique at this site.</small></label
+                  >
+                  <label class="field full"
+                    >Charger name<input
+                      formControlName="displayName"
+                      placeholder="e.g. Car park charger 01"
+                  /></label>
+                  <label class="field">Make<input formControlName="manufacturer" /></label>
+                  <label class="field">Model<input formControlName="model" /></label>
+                  <label class="field">Serial number<input formControlName="serialNumber" /></label>
+                  <label class="field"
+                    >Power output (kW)<input
+                      type="number"
+                      inputmode="decimal"
+                      formControlName="maximumPowerKw"
+                  /></label>
+                  <label class="field full"
+                    >DC protection<select formControlName="dcRcdType">
+                      <option value="TYPE_B">Type B RCD</option>
+                      <option value="RDC_DD">RDC-DD</option>
+                      <option value="NONE">None / confirm during inspection</option>
+                    </select></label
+                  >
+                  <div class="form-actions full">
+                    <button
+                      class="button primary touch-button"
+                      type="submit"
+                      [disabled]="busy() || newChargerForm.invalid"
+                    >
+                      @if (busy()) {
+                        <span class="oa-spinner" aria-hidden="true"></span>
+                      }
+                      {{
+                        busy()
+                          ? 'Saving charger…'
+                          : offline.online()
+                            ? 'Add charger & inspect'
+                            : 'Save charger & inspect offline'
+                      }}
+                    </button>
+                  </div>
+                </form>
+              }
+            </section>
+          }
+          <div class="record-list">
+            @for (task of currentVisit.tasks; track task.id) {
+              <article
+                class="card task-card"
+                [class.recent-task]="recentlySubmittedTaskId() === task.id"
+                [class.pending-sync]="pendingAddTaskIds().has(task.id)"
+              >
+                <div class="section-heading">
+                  <div>
+                    <span class="badge">{{ friendlyModuleLabel(task.moduleKey) }}</span>
+                    <h2>{{ task.title }}</h2>
+                    <strong class="task-asset-name">{{
+                      task.asset?.displayName || 'Site-level inspection'
+                    }}</strong>
+                    <p>
+                      {{ task.asset?.assetReference }} ·
+                      {{ task.asset?.manufacturer || 'Make not set' }}
+                      {{ task.asset?.model || '' }} ·
+                      {{ task.asset?.serialNumber || 'No serial' }}
+                    </p>
+                  </div>
+                  <span>
+                    @if (pendingAddTaskIds().has(task.id)) {
+                      <span class="badge warning">Pending sync</span>
+                    } @else {
+                      <span
+                        class="badge"
+                        [class.success]="task.status === 'COMPLETED' || task.status === 'SUBMITTED'"
+                        >{{ task.status }}</span
+                      >
+                    }
+                  </span>
+                </div>
+                <button
+                  class="button primary touch-button"
+                  type="button"
+                  [disabled]="guestIdentityRequired()"
+                  (click)="openTask(task)"
+                >
+                  {{
+                    task.status === 'SUBMITTED' || task.status === 'COMPLETED'
+                      ? 'View submitted inspection'
+                      : task.inspection
+                        ? 'Continue inspection'
+                        : 'Start inspection'
+                  }}
+                  →
+                </button>
               </article>
             }
           </div>
-        </section>
-        @if (currentVisit.evDiscoveryEnabled) {
-          <section class="engineer-add-asset card">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Asset missing?</p>
-                <h2>Add a charger found on site</h2>
-                <p>
-                  Create the charger now, then record its supplies, connectors and tests normally.
-                </p>
-              </div>
-              <button class="button secondary" type="button" (click)="toggleAddCharger()">
-                {{ addingCharger() ? 'Cancel' : '+ Add charger' }}
-              </button>
-            </div>
-            @if (addingCharger()) {
-              <form
-                [formGroup]="newChargerForm"
-                (ngSubmit)="addCharger()"
-                class="form-grid engineer-add-form"
-              >
-                <section class="new-charger-data-plate full" aria-labelledby="new-data-plate-title">
-                  <div>
-                    <strong id="new-data-plate-title">Charger nameplate</strong>
-                    <small
-                      >Capture this separately as durable evidence. Suggestions never replace your
-                      entries unless you apply them.</small
-                    >
-                  </div>
-                  <div class="data-plate-actions">
-                    <label class="button secondary touch-button data-plate-capture">
-                      Gallery
-                      <input
-                        hidden
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        [disabled]="newChargerDataPlateBusy()"
-                        (change)="selectNewChargerDataPlate($event)"
-                      />
-                    </label>
-                    <label class="button touch-button data-plate-capture">
-                      {{ newChargerDataPlateBusy() ? 'Saving…' : 'Take photo' }}
-                      <input
-                        hidden
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        capture="environment"
-                        [disabled]="newChargerDataPlateBusy()"
-                        (change)="selectNewChargerDataPlate($event)"
-                      />
-                    </label>
-                  </div>
-                  @if (newChargerDataPlatePreviewUrl()) {
-                    <img
-                      class="data-plate-preview"
-                      [src]="newChargerDataPlatePreviewUrl()"
-                      alt="Selected charger nameplate"
-                    />
-                  }
-                  @if (newChargerDataPlateError()) {
-                    <p class="data-plate-message" role="status">
-                      {{ newChargerDataPlateError() }}
-                    </p>
-                  }
-                  @if (newChargerDataPlateCandidates().length) {
-                    <div class="data-plate-results">
-                      @for (candidate of newChargerDataPlateCandidates(); track candidate.field) {
-                        <article>
-                          <span
-                            ><small>{{ dataPlateFieldLabel(candidate.field) }}</small
-                            ><strong>{{ candidate.value }}</strong></span
-                          >
-                          <button
-                            class="button secondary compact"
-                            type="button"
-                            [disabled]="
-                              newChargerAppliedDataPlateFields().includes(candidate.field)
-                            "
-                            (click)="applyNewChargerDataPlateCandidate(candidate)"
-                          >
-                            {{
-                              newChargerAppliedDataPlateFields().includes(candidate.field)
-                                ? 'Applied'
-                                : 'Apply'
-                            }}
-                          </button>
-                        </article>
-                      }
-                    </div>
-                  }
-                </section>
-                <label class="field"
-                  >Site asset reference<input
-                    formControlName="assetReference"
-                    placeholder="e.g. EVCP 1"
-                    autocomplete="off"
-                  /><small>Must be unique at this site.</small></label
-                >
-                <label class="field full"
-                  >Charger name<input
-                    formControlName="displayName"
-                    placeholder="e.g. Car park charger 01"
-                /></label>
-                <label class="field">Make<input formControlName="manufacturer" /></label>
-                <label class="field">Model<input formControlName="model" /></label>
-                <label class="field">Serial number<input formControlName="serialNumber" /></label>
-                <label class="field"
-                  >Power output (kW)<input
-                    type="number"
-                    inputmode="decimal"
-                    formControlName="maximumPowerKw"
-                /></label>
-                <label class="field full"
-                  >DC protection<select formControlName="dcRcdType">
-                    <option value="TYPE_B">Type B RCD</option>
-                    <option value="RDC_DD">RDC-DD</option>
-                    <option value="NONE">None / confirm during inspection</option>
-                  </select></label
-                >
-                <div class="form-actions full">
-                  <button
-                    class="button primary touch-button"
-                    type="submit"
-                    [disabled]="busy() || newChargerForm.invalid"
-                  >
-                    @if (busy()) {
-                      <span class="oa-spinner" aria-hidden="true"></span>
-                    }
-                    {{
-                      busy()
-                        ? 'Saving charger…'
-                        : offline.online()
-                          ? 'Add charger & inspect'
-                          : 'Save charger & inspect offline'
-                    }}
-                  </button>
-                </div>
-              </form>
-            }
-          </section>
         }
-        <div class="record-list">
-          @for (task of currentVisit.tasks; track task.id) {
-            <article
-              class="card task-card"
-              [class.recent-task]="recentlySubmittedTaskId() === task.id"
-              [class.pending-sync]="pendingAddTaskIds().has(task.id)"
-            >
-              <div class="section-heading">
-                <div>
-                  <span class="badge">{{ friendlyModuleLabel(task.moduleKey) }}</span>
-                  <h2>{{ task.title }}</h2>
-                  <strong class="task-asset-name">{{
-                    task.asset?.displayName || 'Site-level inspection'
-                  }}</strong>
-                  <p>
-                    {{ task.asset?.assetReference }} ·
-                    {{ task.asset?.manufacturer || 'Make not set' }} {{ task.asset?.model || '' }} ·
-                    {{ task.asset?.serialNumber || 'No serial' }}
-                  </p>
-                </div>
-                <span>
-                  @if (pendingAddTaskIds().has(task.id)) {
-                    <span class="badge warning">Pending sync</span>
-                  } @else {
-                    <span
-                      class="badge"
-                      [class.success]="task.status === 'COMPLETED' || task.status === 'SUBMITTED'"
-                      >{{ task.status }}</span
-                    >
-                  }
-                </span>
-              </div>
-              <button
-                class="button primary touch-button"
-                type="button"
-                [disabled]="guestIdentityRequired()"
-                (click)="openTask(task)"
-              >
-                {{
-                  task.status === 'SUBMITTED' || task.status === 'COMPLETED'
-                    ? 'View submitted inspection'
-                    : task.inspection
-                      ? 'Continue inspection'
-                      : 'Start inspection'
-                }}
-                →
-              </button>
-            </article>
-          }
-        </div>
       </section>
     } @else if (selectedTask(); as task) {
       @if (submitted()) {

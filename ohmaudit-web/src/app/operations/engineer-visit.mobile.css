@@ -26,7 +26,7 @@
   color: white;
 }
 .offline-readiness-card {
-  order: 2;
+  order: 3;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -70,7 +70,7 @@
   min-height: 3rem;
 }
 .guest-identity-card {
-  order: 3;
+  order: 5;
   display: grid;
   gap: 0.65rem;
   padding: 1rem;
@@ -91,19 +91,19 @@
   order: 4;
 }
 .engineer-task-summary {
-  order: 5;
+  order: 3;
 }
 .record-list {
-  order: 6;
+  order: 5;
 }
 .landing-details {
-  order: 7;
+  order: 6;
 }
 .landing-briefing {
-  order: 8;
+  order: 7;
 }
 .engineer-add-asset {
-  order: 9;
+  order: 4;
 }
 .task-asset-name {
   display: block;
@@ -312,19 +312,18 @@
     grid-column: 2;
   }
   .job-rams-section {
-    grid-column: 2;
-    grid-row: span 3;
+    grid-column: 1 / -1;
   }
   .engineer-task-summary,
   .record-list {
-    grid-column: 1;
+    grid-column: 1 / -1;
   }
   .landing-details,
   .landing-briefing {
     grid-column: 1;
   }
   .engineer-add-asset {
-    grid-column: 2;
+    grid-column: 1 / -1;
   }
   .offline-readiness-card .button {
     grid-column: auto;
@@ -333,6 +332,10 @@
   }
   .offline-readiness-note {
     grid-column: 2 / -1;
+  }
+  .job-rams-list,
+  .record-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
