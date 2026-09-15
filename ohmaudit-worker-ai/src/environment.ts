@@ -3,6 +3,7 @@ export type AiBindings = Pick<
   | 'AI'
   | 'APP_VERSION'
   | 'AI_MODEL_ID'
+  | 'AI_MODEL_CHAIN'
   | 'RAMS_VECTORS'
   | 'RAMS_EMBEDDING_MODEL_ID'
   | 'RAMS_SIMILARITY_THRESHOLD'

@@ -437,6 +437,13 @@
               [class.warning]="visit.status === 'SUBMITTED'"
               >{{ visit.status === 'SUBMITTED' ? 'AWAITING REVIEW' : visit.status }}</span
             >
+            <a
+              class="button secondary compact"
+              [routerLink]="['/app/org', organisationId, 'visits', visit.id]"
+              (click)="prepareOfflineNotifications()"
+            >
+              Make available offline
+            </a>
             @if (canAssign()) {
               <button
                 class="button secondary compact"
@@ -452,7 +459,7 @@
                   @if (jobSheetDownload()?.visitId === visit.id) {
                     <span class="oa-spinner small" aria-hidden="true"></span> Preparing…
                   } @else {
-                    Job pack <span aria-hidden="true">▾</span>
+                    PDF documents <span aria-hidden="true">▾</span>
                   }
                 </summary>
                 <div class="job-pack-options">

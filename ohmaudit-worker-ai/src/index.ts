@@ -4,7 +4,12 @@ import { recommendRamsRoute } from './features/rams/routes';
 
 export type { AiBindings };
 export type { ChargerDataPlateField, ExtractionCandidate } from './features/dataplate/schema';
-export { dataPlateDebugModels, isDataPlateDebugModel } from './features/dataplate/models';
+export {
+  dataPlateDebugModels,
+  dataPlateModelChain,
+  defaultDataPlateModelChain,
+  isDataPlateDebugModel,
+} from './features/dataplate/models';
 export type { DataPlateDebugModel } from './features/dataplate/models';
 export type {
   RamsDocument,

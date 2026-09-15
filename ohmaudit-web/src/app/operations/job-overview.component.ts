@@ -366,6 +366,21 @@ export class JobOverviewComponent {
     });
   }
 
+  protected async unlinkRams(rams: RamsSummary): Promise<void> {
+    if (
+      !this.canManageRams() ||
+      !window.confirm(
+        `Remove ${rams.reference} from this job? The RAMS record itself will not be deleted.`,
+      )
+    )
+      return;
+    await this.run(async () => {
+      await this.api.unlinkRamsVisit(this.organisationId, rams.id, this.visitId);
+      await this.reloadRams();
+      this.notice.set('RAMS removed from this job.');
+    });
+  }
+
   protected async downloadDocument(document: VisitDocument): Promise<void> {
     if (!this.canGenerate()) return;
     await this.run(async () => {
@@ -390,6 +405,23 @@ export class JobOverviewComponent {
       const blob = await this.api.downloadVisitReportPdf(this.organisationId, this.visitId);
       const job = this.job();
       this.saveBlob(blob, `${this.slug(job?.reference || job?.title || 'job')}-job-report.pdf`);
+    });
+  }
+
+  protected canDownloadDraft(task: VisitTask): boolean {
+    if (!this.canGenerate() || task.inspection?.draft?.available !== true) return false;
+    return (
+      task.moduleKey === 'core' ||
+      this.entitlements().some((item) => item.module.key === task.moduleKey && item.entitled)
+    );
+  }
+
+  protected async downloadDraft(task: VisitTask): Promise<void> {
+    const inspection = task.inspection;
+    if (!inspection || !this.canDownloadDraft(task)) return;
+    await this.run(async () => {
+      const blob = await this.api.downloadInspectionDraftPdf(this.organisationId, inspection.id);
+      this.saveBlob(blob, `${this.slug(task.title)}-draft.pdf`);
     });
   }
 

@@ -401,20 +401,29 @@
                     >EV details</a
                   >
                 }
-                @if (
-                  emergencyLightingEnabled() && asset.assetType.toLowerCase().includes('emergency')
-                ) {
-                  <a
-                    class="button ghost compact"
-                    [routerLink]="[
-                      '/app/org',
-                      organisationId,
-                      'assets',
-                      asset.id,
-                      'emergency-lighting',
-                    ]"
-                    >Open register</a
-                  >
+                @if (asset.assetType.toLowerCase().includes('emergency')) {
+                  @if (emergencyLightingEnabled()) {
+                    <a
+                      class="button ghost compact"
+                      [routerLink]="[
+                        '/app/org',
+                        organisationId,
+                        'assets',
+                        asset.id,
+                        'emergency-lighting',
+                      ]"
+                      >Open register</a
+                    >
+                  } @else {
+                    <button
+                      class="button ghost compact"
+                      type="button"
+                      disabled
+                      title="Enable the Emergency Lighting module for this organisation to open the register."
+                    >
+                      Register unavailable
+                    </button>
+                  }
                 }
                 @if (canManageAssets()) {
                   <button

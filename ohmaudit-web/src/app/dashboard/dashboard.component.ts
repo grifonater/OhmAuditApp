@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import {
   ApiService,
   type CurrentUserResponse,
@@ -8,6 +8,7 @@ import {
   type OrganisationMember,
 } from '../core/api.service';
 import { OrganisationContextService } from '../core/organisation-context.service';
+import { OfflineVisitService } from '../core/offline-visit.service';
 
 @Component({
   selector: 'oa-dashboard',
@@ -19,6 +20,8 @@ import { OrganisationContextService } from '../core/organisation-context.service
 export class DashboardComponent {
   private readonly api = inject(ApiService);
   private readonly context = inject(OrganisationContextService);
+  private readonly offline = inject(OfflineVisitService);
+  private readonly router = inject(Router);
   protected readonly account = signal<CurrentUserResponse | undefined>(undefined);
   protected readonly onboarding = signal<OnboardingState | undefined>(undefined);
   protected readonly entitlements = signal<Entitlement[]>([]);
@@ -63,6 +66,8 @@ export class DashboardComponent {
       this.account.set(await this.api.currentUser());
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to load your dashboard.');
+      if ((await this.offline.allPacks()).length > 0)
+        await this.router.navigate(['/offline-jobs'], { replaceUrl: true });
     } finally {
       this.loading.set(false);
     }

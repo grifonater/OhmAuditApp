@@ -422,6 +422,16 @@ export class InspectionReviewComponent {
     ) => {
       if (!isNew && this.blank(next) && !this.blank(current)) return;
       if (this.comparable(current) === this.comparable(next)) return;
+      const resolvedOptions = options === undefined ? undefined : [...options];
+      for (const value of [current, next]) {
+        if (
+          resolvedOptions !== undefined &&
+          typeof value === 'string' &&
+          value !== '' &&
+          !resolvedOptions.some((option) => option.value === value)
+        )
+          resolvedOptions.unshift({ value, label: value });
+      }
       fields.push({
         path,
         section,
@@ -429,7 +439,7 @@ export class InspectionReviewComponent {
         current,
         proposed: next,
         type,
-        ...(options === undefined ? {} : { options }),
+        ...(resolvedOptions === undefined ? {} : { options: resolvedOptions }),
       });
     };
     const asset = this.record(proposed['asset']);
@@ -520,8 +530,11 @@ export class InspectionReviewComponent {
         'select',
         [
           { value: 'MCB', label: 'MCB' },
+          { value: 'MCCB', label: 'MCCB' },
           { value: 'RCBO', label: 'RCBO' },
+          { value: 'HRC', label: 'HRC' },
           { value: 'AFDD', label: 'AFDD' },
+          { value: 'OTHER', label: 'Other' },
         ],
       );
       add(

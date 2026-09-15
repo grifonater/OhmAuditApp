@@ -1,0 +1,521 @@
+<main class="page operations-page emergency-page fitting-dashboard-page">
+  @if (detail(); as current) {
+    <nav class="fitting-breadcrumbs" aria-label="Breadcrumb">
+      <a [routerLink]="assetBackPath">Assets</a><span>/</span>
+      <a [routerLink]="assetBackPath">Emergency lighting</a><span>/</span>
+      <strong>Fitting details</strong>
+    </nav>
+
+    <form [formGroup]="fittingForm" (ngSubmit)="saveChanges()">
+      <header class="fitting-page-header">
+        <div class="fitting-heading">
+          <span class="fitting-heading-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 3h13v18H4V3Zm2 2v14h9V5H6Zm13 2h2v10h-2V7ZM8 8h5v2H8V8Zm0 4h5v4H8v-4Z" />
+            </svg>
+          </span>
+          <div>
+            <h1>Fitting Details</h1>
+            <p>{{ current.fitting.description || current.fitting.reference }}</p>
+          </div>
+          <span class="compliance-badge" [class.warning]="!isCompliant()">
+            <span></span>{{ isCompliant() ? 'Compliant' : 'Attention required' }}
+          </span>
+        </div>
+        <div class="fitting-header-actions">
+          <button class="button primary" type="submit" [disabled]="busy() || fittingForm.invalid">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 3h13l3 3v15H4V3Zm2 2v14h12V7l-2-2H6Zm2 0h6v5H8V5Zm1 9h6v4H9v-4Z" />
+            </svg>
+            {{ busy() ? 'Saving...' : 'Save changes' }}
+          </button>
+          <button class="button ghost" type="button" (click)="scrollToHistory()">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 2a10 10 0 1 1-9.8 12H4a8 8 0 1 0 2.3-7.7L9 9H2V2l2.9 2.9A10 10 0 0 1 12 2Zm-1 5h2v5.2l3.4 2-1 1.7-4.4-2.6V7Z"
+              />
+            </svg>
+            View history
+          </button>
+          <a
+            class="button ghost"
+            [routerLink]="labelStudioPath"
+            [queryParams]="{ fittingId: fittingId }"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6 3h12v4h2v10h-3v4H7v-4H4V7h2V3Zm2 2v4h8V5H8Zm1 10v4h6v-4H9Zm8-5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"
+              />
+            </svg>
+            Label studio
+          </a>
+          <label class="button ghost">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3 7 8h3v5h4V8h3l-5-5ZM5 12H3v8h18v-8h-2v6H5v-6Z" />
+            </svg>
+            Upload image
+            <input
+              hidden
+              type="file"
+              accept="image/*"
+              capture="environment"
+              [disabled]="busy()"
+              (change)="uploadImage($event)"
+            />
+          </label>
+          <a
+            class="button ghost icon-only"
+            [routerLink]="assetBackPath"
+            aria-label="Back to register"
+            title="Back to register"
+            >...</a
+          >
+        </div>
+      </header>
+
+      @if (notice()) {
+        <p class="notice" role="status">{{ notice() }}</p>
+      }
+      @if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+      }
+
+      <div class="fitting-dashboard-grid">
+        <div class="fitting-main-column">
+          <section class="fitting-summary-card">
+            <article>
+              <span class="summary-icon"
+                ><svg viewBox="0 0 24 24">
+                  <path d="M7 2h10v3h3v17H4V5h3V2Zm2 3h6V4H9v1ZM6 7v13h12V7H6Z" /></svg
+              ></span>
+              <div>
+                <small>Fitting ID</small><strong>{{ current.fitting.reference }}</strong>
+                <p>{{ current.asset.assetReference }}</p>
+              </div>
+            </article>
+            <article>
+              <span class="summary-icon success"
+                ><svg viewBox="0 0 24 24">
+                  <path d="m9.5 16.2-3.7-3.7-1.4 1.4 5.1 5.1L20 8.5l-1.4-1.4-9.1 9.1Z" /></svg
+              ></span>
+              <div>
+                <small>Compliance status</small
+                ><strong [class.text-success]="isCompliant()">{{
+                  isCompliant() ? 'Compliant' : 'Review required'
+                }}</strong>
+                <p>Last result: {{ latestTest() ? resultLabel(latestTest()!.outcome) : 'None' }}</p>
+              </div>
+            </article>
+            <article>
+              <span class="summary-icon"
+                ><svg viewBox="0 0 24 24">
+                  <path
+                    d="M4 2h12v20H4V2Zm2 2v16h8V4H6Zm12 5h3v13h-3V9ZM8 6h4v2H8V6Zm0 4h4v2H8v-2Z"
+                  /></svg
+              ></span>
+              <div>
+                <small>Site</small
+                ><strong>{{ current.asset.site?.name || current.asset.displayName }}</strong>
+                <p>{{ current.asset.customer?.name || 'Customer' }}</p>
+              </div>
+            </article>
+            <article>
+              <span class="summary-icon"
+                ><svg viewBox="0 0 24 24">
+                  <path d="M5 2h14v20H5V2Zm2 2v16h10V4H7Zm7 7h2v2h-2v-2Z" /></svg
+              ></span>
+              <div>
+                <small>Room</small
+                ><strong>{{ current.fitting.location?.name || 'Unassigned' }}</strong>
+                <p>{{ groupNames() }}</p>
+              </div>
+            </article>
+            <article>
+              <span class="summary-icon"
+                ><svg viewBox="0 0 24 24">
+                  <path
+                    d="M14 3a7 7 0 0 0-6.7 9L2 17.3V22h4.7l1-1H10l1-1v-2.3l1-1A7 7 0 1 0 14 3Zm0 2a5 5 0 1 1-3.7 8.4L5.9 17.8H4v-1.7l5.6-5.6A5 5 0 0 1 14 5Zm2-1v2h2V4h-2Z"
+                  /></svg
+              ></span>
+              <div>
+                <small>Linked keyswitch</small><strong>{{ keyswitchNames() }}</strong>
+                <p>{{ current.fitting.keyswitches?.length || 0 }} controls linked</p>
+              </div>
+            </article>
+          </section>
+
+          <div class="fitting-card-row three-columns">
+            <section class="fitting-data-card">
+              <header>
+                <h2>General details</h2>
+                <span>Editable</span>
+              </header>
+              <div class="detail-form-rows">
+                <label><span>Fitting reference</span><input formControlName="reference" /></label>
+                <label
+                  ><span>Serial / label no.</span
+                  ><input formControlName="serialNumber" placeholder="Not recorded"
+                /></label>
+                <label
+                  ><span>Fitting type</span
+                  ><input
+                    formControlName="fittingType"
+                    list="detail-fitting-types"
+                    [readonly]="deviceSelected()"
+                /></label>
+                <datalist id="detail-fitting-types">
+                  @for (type of current.system.fittingTypes; track type.id) {
+                    <option [value]="type.name"></option>
+                  }
+                </datalist>
+                <label
+                  ><span>Operation</span
+                  ><select formControlName="maintained">
+                    <option [ngValue]="true">Maintained</option>
+                    <option [ngValue]="false">Non-maintained</option>
+                  </select></label
+                >
+                <label
+                  ><span>Rated duration</span
+                  ><input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    formControlName="ratedDurationMinutes"
+                    placeholder="Minutes"
+                /></label>
+                <label
+                  ><span>Manufacturer</span
+                  ><input
+                    formControlName="manufacturer"
+                    [readonly]="deviceSelected()"
+                    placeholder="Not recorded"
+                /></label>
+                <label
+                  ><span>Model</span
+                  ><input
+                    formControlName="model"
+                    [readonly]="deviceSelected()"
+                    placeholder="Not recorded"
+                /></label>
+                <label
+                  ><span>Record status</span
+                  ><select formControlName="status">
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                    <option value="ARCHIVED">Archived</option>
+                  </select></label
+                >
+              </div>
+            </section>
+
+            <section class="fitting-data-card">
+              <header>
+                <h2>Location & grouping</h2>
+                <span>Editable</span>
+              </header>
+              <div class="detail-form-rows">
+                <div class="detail-readonly-row">
+                  <span>Site</span
+                  ><strong>{{ current.asset.site?.name || current.asset.displayName }}</strong>
+                </div>
+                <label
+                  ><span>Room / area</span
+                  ><select formControlName="locationId">
+                    <option value="">Unassigned</option>
+                    @for (location of current.system.locations; track location.id) {
+                      <option [value]="location.id">{{ location.name }}</option>
+                    }
+                  </select></label
+                >
+                <label class="groups-field"
+                  ><span>Test groups</span
+                  ><select formControlName="groupIds" multiple>
+                    @for (group of current.system.groups; track group.id) {
+                      <option [value]="group.id">{{ group.name }}</option>
+                    }
+                  </select></label
+                >
+                <div class="detail-readonly-row">
+                  <span>Linked keyswitch</span><strong>{{ keyswitchNames() }}</strong>
+                </div>
+                <label
+                  ><span>Description</span
+                  ><input formControlName="description" placeholder="Fitting description"
+                /></label>
+              </div>
+            </section>
+
+            <section class="fitting-data-card" id="fitting-history">
+              <header>
+                <h2>Test & compliance</h2>
+                <button type="button" (click)="showAllHistory.update((value) => !value)">
+                  {{ showAllHistory() ? 'Show latest' : 'View all' }}
+                </button>
+              </header>
+              <div class="test-summary-list">
+                <article>
+                  <span>Monthly test</span><strong>{{ resultDate(monthlyTests()[0]) }}</strong>
+                  @if (monthlyTests()[0]; as result) {
+                    <em [class.fail]="result.outcome === 'FAIL'">{{
+                      resultLabel(result.outcome)
+                    }}</em>
+                  }
+                </article>
+                <article>
+                  <span>Annual test</span><strong>{{ resultDate(annualTests()[0]) }}</strong>
+                  @if (annualTests()[0]; as result) {
+                    <em [class.fail]="result.outcome === 'FAIL'">{{
+                      resultLabel(result.outcome)
+                    }}</em>
+                  }
+                </article>
+                <article>
+                  <span>Battery duration</span
+                  ><strong>{{
+                    latestDuration() ? latestDuration() + ' minutes' : 'Not recorded'
+                  }}</strong>
+                </article>
+              </div>
+              <div class="test-history-list">
+                @for (result of visibleHistory(); track result.id) {
+                  <article>
+                    <div>
+                      <strong>{{ testName(result) }}</strong
+                      ><small
+                        >{{ resultDate(result) }}
+                        @if (result.inspection) {
+                          · {{ result.inspection.status.toLowerCase() }}
+                        }
+                      </small>
+                    </div>
+                    <span
+                      class="result-pill"
+                      [class.fail]="result.outcome === 'FAIL'"
+                      [class.not-tested]="result.outcome === 'NOT_TESTED'"
+                      >{{ resultLabel(result.outcome) }}</span
+                    >
+                  </article>
+                } @empty {
+                  <p>No test history has been recorded for this fitting.</p>
+                }
+              </div>
+            </section>
+          </div>
+
+          <div class="fitting-lower-grid">
+            <div>
+              <section class="fitting-data-card images-card">
+                <header>
+                  <h2>Images</h2>
+                  <label class="add-image-link"
+                    >+ Add image<input
+                      hidden
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      [disabled]="busy()"
+                      (change)="uploadImage($event)"
+                  /></label>
+                </header>
+                <div class="fitting-image-grid">
+                  @for (image of fittingImages(); track image.id) {
+                    <figure>
+                      <img [src]="image.url" [alt]="image.caption || current.fitting.reference" />
+                      <figcaption>
+                        <span>{{ image.caption || 'Fitting image' }}</span
+                        ><button type="button" (click)="deleteImage(image)">Delete</button>
+                      </figcaption>
+                    </figure>
+                  }
+                  @for (image of roomImages(); track image.id) {
+                    <figure>
+                      <img [src]="image.url" [alt]="image.caption || 'Room image'" />
+                      <figcaption>
+                        <span>{{ image.caption || 'Location image' }}</span
+                        ><em>Room</em>
+                      </figcaption>
+                    </figure>
+                  }
+                  @if (!fittingImages().length && !roomImages().length) {
+                    <div class="image-empty">
+                      <strong>No images yet</strong>
+                      <p>Upload clear views of the fitting and its location.</p>
+                    </div>
+                  }
+                </div>
+              </section>
+
+              <section class="fitting-data-card notes-card">
+                <header>
+                  <h2>Notes & tags</h2>
+                  <span>Saved with fitting</span>
+                </header>
+                <label
+                  ><span>Notes</span
+                  ><textarea
+                    formControlName="notes"
+                    placeholder="Installation notes, access details or observations..."
+                  ></textarea>
+                </label>
+                <div class="generated-tags">
+                  @if (current.fitting.fittingType) {
+                    <span>{{ current.fitting.fittingType }}</span>
+                  }
+                  @if (current.fitting.location?.name) {
+                    <span>{{ current.fitting.location.name }}</span>
+                  }
+                  <span>{{
+                    current.fitting.operationMode === 'MAINTAINED' ? 'Maintained' : 'Non-maintained'
+                  }}</span>
+                  @if (current.fitting.ratedDurationMinutes) {
+                    <span>{{ current.fitting.ratedDurationMinutes }} min</span>
+                  }
+                </div>
+              </section>
+            </div>
+
+            <section class="fitting-data-card linked-card">
+              <header>
+                <h2>Linked devices</h2>
+                <span>Register relationships</span>
+              </header>
+              <label class="linked-device-select"
+                ><span>Device series</span
+                ><select formControlName="deviceId" (change)="onDeviceChange()">
+                  <option value="">No linked device</option>
+                  @for (device of current.system.devices; track device.id) {
+                    <option [value]="device.id">{{ device.make }} {{ device.model }}</option>
+                  }
+                </select></label
+              >
+              <div class="linked-list">
+                @for (keyswitch of current.fitting.keyswitches || []; track keyswitch.id) {
+                  <article>
+                    <span class="linked-icon">K</span>
+                    <div>
+                      <small>Keyswitch</small><strong>{{ keyswitch.reference }}</strong>
+                      <p>{{ keyswitch.location?.name || 'No location' }}</p>
+                    </div>
+                  </article>
+                }
+                @for (mapping of current.fitting.groupMappings || []; track mapping.groupId) {
+                  <article>
+                    <span class="linked-icon group">G</span>
+                    <div>
+                      <small>Test group</small><strong>{{ mapping.group.name }}</strong>
+                      <p>Assigned to this fitting</p>
+                    </div>
+                  </article>
+                }
+                @if (current.fitting.device; as device) {
+                  <article>
+                    <span class="linked-icon device">D</span>
+                    <div>
+                      <small>Device series</small
+                      ><strong>{{ device.make }} {{ device.model }}</strong>
+                      <p>{{ device.fittingType?.name || 'No type' }}</p>
+                    </div>
+                  </article>
+                }
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <aside class="fitting-side-column">
+          <section class="side-card quick-stats-card">
+            <header><h2>Quick stats</h2></header>
+            <div>
+              <article>
+                <strong>{{ monthlyTests().length }}</strong
+                ><small>Monthly tests</small>
+              </article>
+              <article>
+                <strong>{{ annualTests().length }}</strong
+                ><small>Annual tests</small>
+              </article>
+              <article>
+                <strong>{{ passRate() }}%</strong><small>Pass rate</small>
+              </article>
+              <article>
+                <strong>{{ failedTests() }}</strong
+                ><small>Failed tests</small>
+              </article>
+              <article>
+                <strong>{{ latestDuration() || 0 }}</strong
+                ><small>Battery (mins)</small>
+              </article>
+              <article>
+                <strong>{{ current.fitting.media?.length || 0 }}</strong
+                ><small>Images</small>
+              </article>
+            </div>
+          </section>
+
+          <section class="side-card sticker-card print-label-sheet">
+            <header><h2>Sticker preview</h2></header>
+            <div class="compliance-sticker" [class.warning]="!isCompliant()">
+              <strong class="sticker-status">{{ isCompliant() ? 'PASS' : 'CHECK' }}</strong>
+              <div class="sticker-copy">
+                <small>OHM AUDIT</small
+                ><strong>{{ current.fitting.serialNumber || current.fitting.reference }}</strong
+                ><span>{{ resultDate(latestTest()) }}</span
+                ><em>Emergency lighting</em>
+              </div>
+              @if (qrCodeUrl()) {
+                <img [src]="qrCodeUrl()" alt="QR code for this fitting record" />
+              }
+            </div>
+          </section>
+
+          <section class="side-card codes-card">
+            <header><h2>QR / Barcode</h2></header>
+            <div>
+              @if (qrCodeUrl()) {
+                <img [src]="qrCodeUrl()" alt="QR code for this fitting record" />
+              }
+              <svg #barcode class="barcode-svg" aria-label="Barcode for this fitting"></svg>
+            </div>
+            <p>Scan to view the full fitting record</p>
+          </section>
+
+          <section class="side-card activity-card">
+            <header><h2>Recent activity</h2></header>
+            <div class="activity-list">
+              @for (item of activity(); track item.id) {
+                <article>
+                  <span [class]="item.kind">{{
+                    item.kind === 'image'
+                      ? 'I'
+                      : item.kind === 'edit'
+                        ? 'E'
+                        : item.kind === 'fail'
+                          ? '!'
+                          : 'P'
+                  }}</span>
+                  <div>
+                    <strong>{{ item.title }}</strong>
+                    <p>{{ item.detail }}</p>
+                  </div>
+                  <time>{{ formatTime(item.date) }}</time>
+                </article>
+              } @empty {
+                <p>No activity recorded yet.</p>
+              }
+            </div>
+            <button type="button" (click)="scrollToHistory()">View full test history</button>
+          </section>
+        </aside>
+      </div>
+    </form>
+  } @else if (busy()) {
+    <div class="loading-state"><span class="oa-spinner"></span> Loading fitting...</div>
+  } @else {
+    <div class="empty-state card">
+      <h2>Fitting unavailable</h2>
+      <p>{{ error() }}</p>
+      <a class="button secondary" [routerLink]="assetBackPath">Back to register</a>
+    </div>
+  }
+</main>

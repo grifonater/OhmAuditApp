@@ -57,13 +57,17 @@ export const authorizationGuard: CanActivateFn = async (route) => {
   } catch {
     const organisationId = route.paramMap.get('organisationId');
     const visitId = route.paramMap.get('visitId') ?? undefined;
-    const offlineVisitRoute = route.routeConfig?.path?.includes('visits') === true;
+    const offlineVisitRoute = [
+      'org/:organisationId/visits/:visitId',
+      'org/:organisationId/visits/:visitId/thermal/:taskId',
+    ].includes(route.routeConfig?.path ?? '');
     if (
       organisationId !== null &&
       offlineVisitRoute &&
       (await offline.hasPack(organisationId, visitId))
     )
       return true;
+    if ((await offline.allPacks()).length > 0) return router.createUrlTree(['/offline-jobs']);
     return router.createUrlTree(['/app']);
   }
 };

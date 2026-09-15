@@ -1,7 +1,7 @@
 <main class="offline-jobs-page">
   <header>
     <strong class="offline-wordmark"><span>Ω</span> OhmAudit</strong>
-    <span class="offline-pill">Offline</span>
+    <span class="offline-pill">{{ offline.online() ? 'Online' : 'Offline' }}</span>
   </header>
   <section>
     <p class="eyebrow">Downloaded work</p>
@@ -10,6 +10,9 @@
       Continue a downloaded inspection normally. Completed work and images stay safely on this
       device and upload automatically when a connection returns.
     </p>
+    @if (offline.syncComplete()) {
+      <div class="alert success" role="status">{{ offline.syncComplete() }}</div>
+    }
     <div class="offline-job-list">
       @for (pack of packs(); track pack.visitId) {
         <a class="offline-job-card" [routerLink]="jobLink(pack)">

@@ -7,9 +7,16 @@ function stripUndefined<T extends object>(input: T): { [K in keyof T]: Exclude<T
   };
 }
 
+function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'P2002'
+  );
+}
+
 export interface EmergencyLightingFittingInput {
   reference: string;
   locationId?: string | null | undefined;
+  deviceId?: string | null | undefined;
   groupIds?: string[] | undefined;
   description?: string | undefined;
   fittingType?: string | undefined;
@@ -21,6 +28,18 @@ export interface EmergencyLightingFittingInput {
   status?: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | undefined;
   notes?: string | undefined;
 }
+
+export const DEFAULT_ELEMERGENCY_FITTING_TYPES = [
+  'Bulkhead',
+  'Pin Spot',
+  'Panel',
+  'Exit Box',
+  'Running Man',
+  'High Bay',
+  'Floodlight',
+  'Twin Spot',
+  'Other',
+] as const;
 
 export interface EmergencyLightingResultInput {
   outcome: 'PASS' | 'FAIL' | 'NOT_TESTED';
@@ -43,8 +62,16 @@ export class EmergencyLightingService {
             locations: { orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }] },
             groups: { orderBy: { name: 'asc' } },
             keyswitches: {
-              include: { location: true, groupMappings: { include: { group: true } } },
+              include: {
+                location: true,
+                groupMappings: { include: { group: true } },
+              },
               orderBy: { reference: 'asc' },
+            },
+            fittingTypes: { orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }] },
+            devices: {
+              include: { fittingType: true },
+              orderBy: [{ make: 'asc' }, { model: 'asc' }],
             },
           },
         },
@@ -56,7 +83,46 @@ export class EmergencyLightingService {
         'The emergency lighting system was not found.',
         404,
       );
-    return asset;
+    const system = asset.emergencyLightingSystem;
+    if (system === null) return asset;
+    const locations = system.locations ?? [];
+    const devices = system.devices ?? [];
+    const [locationMedia, deviceMedia] = await Promise.all([
+      locations.length === 0
+        ? []
+        : this.prisma.media.findMany({
+            where: {
+              organisationId,
+              status: 'AVAILABLE',
+              entityType: 'EmergencyLightingLocation',
+              entityId: { in: locations.map((location) => location.id) },
+            },
+          }),
+      devices.length === 0
+        ? []
+        : this.prisma.media.findMany({
+            where: {
+              organisationId,
+              status: 'AVAILABLE',
+              entityType: 'EmergencyLightingDevice',
+              entityId: { in: devices.map((device) => device.id) },
+            },
+          }),
+    ]);
+    return {
+      ...asset,
+      emergencyLightingSystem: {
+        ...system,
+        locations: locations.map((location) => ({
+          ...location,
+          media: locationMedia.filter((media) => media.entityId === location.id),
+        })),
+        devices: devices.map((device) => ({
+          ...device,
+          media: deviceMedia.filter((media) => media.entityId === device.id),
+        })),
+      },
+    };
   }
 
   async saveSystem(
@@ -66,11 +132,242 @@ export class EmergencyLightingService {
   ) {
     await this.detail(organisationId, assetId);
     const data = stripUndefined(input);
-    return this.prisma.emergencyLightingSystem.upsert({
+    const system = await this.prisma.emergencyLightingSystem.upsert({
       where: { assetId },
       create: { organisationId, assetId, ...data },
       update: data,
     });
+    await this.seedDefaultFittingTypes(organisationId, system.id);
+    return system;
+  }
+
+  private async seedDefaultFittingTypes(organisationId: string, systemId: string) {
+    const existing = await this.prisma.emergencyLightingFittingType.findMany({
+      where: { organisationId, systemId },
+      select: { name: true },
+    });
+    const existingNames = new Set(existing.map((item) => item.name.toLowerCase()));
+    const missing = DEFAULT_ELEMERGENCY_FITTING_TYPES.filter(
+      (name) => !existingNames.has(name.toLowerCase()),
+    );
+    if (missing.length === 0) return;
+    await this.prisma.emergencyLightingFittingType.createMany({
+      data: missing.map((name, index) => ({
+        organisationId,
+        systemId,
+        name,
+        displayOrder: index,
+        isDefault: true,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  async listFittingTypes(organisationId: string, assetId: string) {
+    const system = await this.requireSystem(organisationId, assetId);
+    return this.prisma.emergencyLightingFittingType.findMany({
+      where: { organisationId, systemId: system.id },
+      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  async createFittingType(organisationId: string, assetId: string, name: string) {
+    const system = await this.requireSystem(organisationId, assetId);
+    const trimmed = name.trim();
+    if (trimmed.length === 0)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_FITTING_TYPE_INVALID',
+        'Fitting type name is required.',
+        422,
+      );
+    try {
+      return await this.prisma.emergencyLightingFittingType.create({
+        data: { organisationId, systemId: system.id, name: trimmed },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) throw this.fittingTypeExists();
+      throw error;
+    }
+  }
+
+  async updateFittingType(
+    organisationId: string,
+    assetId: string,
+    fittingTypeId: string,
+    name: string,
+  ) {
+    const system = await this.requireSystem(organisationId, assetId);
+    const trimmed = name.trim();
+    if (trimmed.length === 0)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_FITTING_TYPE_INVALID',
+        'Fitting type name is required.',
+        422,
+      );
+    const type = await this.prisma.emergencyLightingFittingType.findFirst({
+      where: { id: fittingTypeId, organisationId, systemId: system.id },
+    });
+    if (type === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_FITTING_TYPE_NOT_FOUND',
+        'The fitting type was not found.',
+        404,
+      );
+    try {
+      return await this.prisma.emergencyLightingFittingType.update({
+        where: { id: fittingTypeId },
+        data: { name: trimmed },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) throw this.fittingTypeExists();
+      throw error;
+    }
+  }
+
+  private fittingTypeExists(): DomainError {
+    return new DomainError(
+      'EMERGENCY_LIGHTING_FITTING_TYPE_EXISTS',
+      'A fitting type with this name already exists on this register.',
+      409,
+    );
+  }
+
+  async deleteFittingType(organisationId: string, assetId: string, fittingTypeId: string) {
+    const system = await this.requireSystem(organisationId, assetId);
+    const result = await this.prisma.emergencyLightingFittingType.deleteMany({
+      where: { id: fittingTypeId, organisationId, systemId: system.id },
+    });
+    if (result.count !== 1)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_FITTING_TYPE_NOT_FOUND',
+        'The fitting type was not found.',
+        404,
+      );
+  }
+
+  async listDevices(organisationId: string, assetId: string) {
+    const system = await this.requireSystem(organisationId, assetId);
+    return this.prisma.emergencyLightingDevice.findMany({
+      where: { organisationId, systemId: system.id },
+      include: { fittingType: true },
+      orderBy: [{ make: 'asc' }, { model: 'asc' }],
+    });
+  }
+
+  async createDevice(
+    organisationId: string,
+    assetId: string,
+    input: {
+      make: string;
+      model: string;
+      fittingTypeId?: string | null | undefined;
+      description?: string | undefined;
+      notes?: string | undefined;
+    },
+  ) {
+    const system = await this.requireSystem(organisationId, assetId);
+    const make = input.make.trim();
+    const model = input.model.trim();
+    if (make.length === 0 || model.length === 0)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_DEVICE_INVALID',
+        'Device make and model are required.',
+        422,
+      );
+    if (input.fittingTypeId !== undefined && input.fittingTypeId !== null)
+      await this.requireFittingType(organisationId, system.id, input.fittingTypeId);
+    try {
+      return await this.prisma.emergencyLightingDevice.create({
+        data: {
+          organisationId,
+          systemId: system.id,
+          make,
+          model,
+          ...(input.fittingTypeId === undefined || input.fittingTypeId === null
+            ? {}
+            : { fittingTypeId: input.fittingTypeId }),
+          ...(input.description === undefined ? {} : { description: input.description }),
+          ...(input.notes === undefined ? {} : { notes: input.notes }),
+        },
+        include: { fittingType: true },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) throw this.deviceExists();
+      throw error;
+    }
+  }
+
+  private deviceExists(): DomainError {
+    return new DomainError(
+      'EMERGENCY_LIGHTING_DEVICE_EXISTS',
+      'A device with this model already exists on this register.',
+      409,
+    );
+  }
+
+  async updateDevice(
+    organisationId: string,
+    assetId: string,
+    deviceId: string,
+    input: {
+      make?: string | undefined;
+      model?: string | undefined;
+      fittingTypeId?: string | null | undefined;
+      description?: string | undefined;
+      notes?: string | undefined;
+    },
+  ) {
+    const system = await this.requireSystem(organisationId, assetId);
+    const device = await this.prisma.emergencyLightingDevice.findFirst({
+      where: { id: deviceId, organisationId, systemId: system.id },
+    });
+    if (device === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_DEVICE_NOT_FOUND',
+        'The device was not found.',
+        404,
+      );
+    if (input.fittingTypeId !== undefined && input.fittingTypeId !== null)
+      await this.requireFittingType(organisationId, system.id, input.fittingTypeId);
+    try {
+      return await this.prisma.emergencyLightingDevice.update({
+        where: { id: deviceId },
+        data: {
+          ...(input.make === undefined ? {} : { make: input.make.trim() }),
+          ...(input.model === undefined ? {} : { model: input.model.trim() }),
+          ...(input.fittingTypeId === undefined ? {} : { fittingTypeId: input.fittingTypeId }),
+          ...(input.description === undefined ? {} : { description: input.description }),
+          ...(input.notes === undefined ? {} : { notes: input.notes }),
+        },
+        include: { fittingType: true },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) throw this.deviceExists();
+      throw error;
+    }
+  }
+
+  async deleteDevice(organisationId: string, assetId: string, deviceId: string) {
+    const system = await this.requireSystem(organisationId, assetId);
+    const device = await this.prisma.emergencyLightingDevice.findFirst({
+      where: { id: deviceId, organisationId, systemId: system.id },
+    });
+    if (device === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_DEVICE_NOT_FOUND',
+        'The device was not found.',
+        404,
+      );
+    const count = await this.prisma.emergencyLightingFitting.count({
+      where: { organisationId, deviceId },
+    });
+    if (count > 0)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_DEVICE_IN_USE',
+        'This device cannot be deleted while fittings use it. Remove it from those fittings first.',
+        409,
+      );
+    return this.prisma.emergencyLightingDevice.delete({ where: { id: deviceId } });
   }
 
   async createLocation(
@@ -248,7 +545,11 @@ export class EmergencyLightingService {
     const [items, total] = await Promise.all([
       this.prisma.emergencyLightingFitting.findMany({
         where,
-        include: { location: true, groupMappings: { include: { group: true } } },
+        include: {
+          location: true,
+          device: { include: { fittingType: true } },
+          groupMappings: { include: { group: true } },
+        },
         orderBy: { reference: 'asc' },
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
@@ -289,6 +590,251 @@ export class EmergencyLightingService {
     };
   }
 
+  async labelStudio(organisationId: string, assetId: string) {
+    await this.requireSystem(organisationId, assetId);
+    const target = await this.prisma.asset.findFirst({
+      where: { id: assetId, organisationId },
+      select: {
+        site: {
+          select: {
+            id: true,
+            name: true,
+            reference: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            county: true,
+            postcode: true,
+            countryCode: true,
+            emergencyLightingLabelSettings: true,
+            customer: { select: { id: true, name: true } },
+            organisation: {
+              select: {
+                id: true,
+                name: true,
+                brandProfile: {
+                  select: {
+                    tradingName: true,
+                    registeredName: true,
+                    addressLine1: true,
+                    addressLine2: true,
+                    city: true,
+                    county: true,
+                    postcode: true,
+                    telephone: true,
+                    email: true,
+                    website: true,
+                    primaryColour: true,
+                    secondaryColour: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (target === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_SYSTEM_NOT_FOUND',
+        'The emergency lighting system was not found.',
+        404,
+      );
+    const assets = await this.prisma.asset.findMany({
+      where: { organisationId, siteId: target.site.id },
+      select: {
+        id: true,
+        assetReference: true,
+        displayName: true,
+        emergencyLightingSystem: {
+          select: {
+            fittings: {
+              where: { status: { not: 'ARCHIVED' } },
+              include: {
+                location: true,
+                device: { include: { fittingType: true } },
+                groupMappings: { include: { group: true } },
+              },
+              orderBy: { reference: 'asc' },
+            },
+          },
+        },
+      },
+      orderBy: { assetReference: 'asc' },
+    });
+    return {
+      site: target.site,
+      organisation: target.site.organisation,
+      fittings: assets.flatMap((asset) =>
+        (asset.emergencyLightingSystem?.fittings ?? []).map((fitting) => ({
+          ...fitting,
+          asset: {
+            id: asset.id,
+            assetReference: asset.assetReference,
+            displayName: asset.displayName,
+          },
+        })),
+      ),
+    };
+  }
+
+  async saveLabelSettings(
+    organisationId: string,
+    assetId: string,
+    settings: Prisma.InputJsonObject,
+  ) {
+    await this.requireSystem(organisationId, assetId);
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: assetId, organisationId },
+      select: { siteId: true },
+    });
+    if (asset === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_SYSTEM_NOT_FOUND',
+        'The emergency lighting system was not found.',
+        404,
+      );
+    const site = await this.prisma.site.update({
+      where: { id: asset.siteId },
+      data: { emergencyLightingLabelSettings: settings },
+      select: { emergencyLightingLabelSettings: true },
+    });
+    return site.emergencyLightingLabelSettings;
+  }
+
+  async getFitting(organisationId: string, assetId: string, fittingId: string) {
+    const system = await this.requireSystem(organisationId, assetId);
+    const fitting = await this.prisma.emergencyLightingFitting.findFirst({
+      where: { id: fittingId, organisationId, systemId: system.id },
+      include: {
+        location: true,
+        device: { include: { fittingType: true } },
+        groupMappings: { include: { group: true } },
+      },
+    });
+    if (fitting === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_FITTING_NOT_FOUND',
+        'The fitting was not found.',
+        404,
+      );
+    const groupIds = new Set(fitting.groupMappings.map(({ groupId }) => groupId));
+    const [asset, media, locationMedia, keyswitches, testHistory] = await Promise.all([
+      this.prisma.asset.findFirst({
+        where: { id: assetId, organisationId },
+        select: {
+          id: true,
+          assetReference: true,
+          displayName: true,
+          customer: { select: { id: true, name: true } },
+          site: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.media.findMany({
+        where: {
+          organisationId,
+          status: 'AVAILABLE',
+          OR: [
+            { entityType: 'EmergencyLightingFitting', entityId: fittingId },
+            {
+              entityType: 'Inspection',
+              category: 'emergency-lighting-evidence',
+              tags: { has: `fitting:${fittingId}` },
+            },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      fitting.location === null
+        ? Promise.resolve([])
+        : this.prisma.media.findMany({
+            where: {
+              organisationId,
+              status: 'AVAILABLE',
+              entityType: 'EmergencyLightingLocation',
+              entityId: fitting.location.id,
+            },
+            orderBy: { createdAt: 'desc' },
+          }),
+      this.prisma.emergencyLightingKeyswitch.findMany({
+        where: { organisationId, systemId: system.id },
+        include: { groupMappings: { include: { group: true } } },
+        orderBy: { reference: 'asc' },
+      }),
+      this.prisma.emergencyLightingFittingResult.findMany({
+        where: { organisationId, fittingId },
+        include: {
+          inspection: {
+            select: {
+              id: true,
+              inspectionType: true,
+              status: true,
+              effectiveDate: true,
+              submittedAt: true,
+              approvedAt: true,
+            },
+          },
+          inspectionRevision: {
+            select: {
+              revisionNumber: true,
+              createdAt: true,
+              inspection: {
+                select: {
+                  id: true,
+                  inspectionType: true,
+                  status: true,
+                  effectiveDate: true,
+                  submittedAt: true,
+                  approvedAt: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 100,
+      }),
+    ]);
+    const keyswitchMappings = keyswitches.filter((keyswitch) =>
+      keyswitch.groupMappings.some(({ groupId }) => groupIds.has(groupId)),
+    );
+    return {
+      asset: asset ?? { id: system.assetId, assetReference: '', displayName: '' },
+      system: {
+        id: system.id,
+        locations: system.locations,
+        groups: system.groups,
+        fittingTypes: system.fittingTypes,
+        devices: system.devices,
+      },
+      fitting: {
+        ...fitting,
+        media: media.filter(
+          (entry) => entry.entityId === fittingId || entry.tags.includes(`fitting:${fittingId}`),
+        ),
+        locationMedia,
+        keyswitches: keyswitchMappings.map((keyswitch) => ({
+          ...keyswitch,
+          groupMappings: keyswitch.groupMappings.filter(({ groupId }) => groupIds.has(groupId)),
+        })),
+      },
+      testHistory: testHistory.map((result) => {
+        const inspection = result.inspection ?? result.inspectionRevision?.inspection ?? null;
+        return {
+          id: result.id,
+          outcome: result.outcome,
+          testType: result.testType,
+          durationMinutes: result.durationMinutes,
+          notes: result.notes,
+          isOverride: result.isOverride,
+          recordedAt: result.inspectionRevision?.createdAt ?? result.updatedAt,
+          inspection,
+          revisionNumber: result.inspectionRevision?.revisionNumber ?? null,
+        };
+      }),
+    };
+  }
+
   async createFitting(
     organisationId: string,
     assetId: string,
@@ -322,22 +868,46 @@ export class EmergencyLightingService {
       system.id,
       input.locationId ?? undefined,
       input.groupIds ?? [],
+      input.deviceId ?? undefined,
     );
-    const { groupIds = [], locationId, ...optionalData } = input;
+    const device =
+      input.deviceId === undefined || input.deviceId === null
+        ? null
+        : await this.requireDevice(organisationId, system.id, input.deviceId);
+    const { groupIds = [], locationId, deviceId, ...optionalData } = input;
     const data = stripUndefined(optionalData);
-    return this.prisma.emergencyLightingFitting.update({
-      where: { id: fittingId },
-      data: {
-        ...data,
-        ...(locationId === undefined
-          ? {}
-          : locationId === null
-            ? { location: { disconnect: true } }
-            : { location: { connect: { id: locationId } } }),
-        groupMappings: { deleteMany: {}, create: groupIds.map((groupId) => ({ groupId })) },
-      },
-      include: { location: true, groupMappings: { include: { group: true } } },
-    });
+    try {
+      return await this.prisma.emergencyLightingFitting.update({
+        where: { id: fittingId },
+        data: {
+          ...data,
+          ...(device === null
+            ? deviceId === undefined
+              ? {}
+              : { device: { disconnect: true } }
+            : {
+                device: { connect: { id: deviceId as string } },
+                manufacturer: device.make,
+                model: device.model,
+                ...(device.fittingType === null ? {} : { fittingType: device.fittingType.name }),
+              }),
+          ...(locationId === undefined
+            ? {}
+            : locationId === null
+              ? { location: { disconnect: true } }
+              : { location: { connect: { id: locationId } } }),
+          groupMappings: { deleteMany: {}, create: groupIds.map((groupId) => ({ groupId })) },
+        },
+        include: {
+          location: true,
+          device: { include: { fittingType: true } },
+          groupMappings: { include: { group: true } },
+        },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) throw this.fittingReferenceExists();
+      throw error;
+    }
   }
 
   async deleteFitting(organisationId: string, assetId: string, fittingId: string) {
@@ -500,21 +1070,55 @@ export class EmergencyLightingService {
       systemId,
       input.locationId ?? undefined,
       input.groupIds ?? [],
+      input.deviceId ?? undefined,
     );
-    const { groupIds = [], locationId, ...optionalData } = input;
-    const data = stripUndefined(optionalData);
-    return this.prisma.emergencyLightingFitting.create({
-      data: {
-        organisation: { connect: { id: organisationId } },
-        system: { connect: { id: systemId } },
-        ...data,
-        ...(locationId === undefined || locationId === null
-          ? {}
-          : { location: { connect: { id: locationId } } }),
-        groupMappings: { create: groupIds.map((groupId) => ({ groupId })) },
-      },
-      include: { location: true, groupMappings: { include: { group: true } } },
-    });
+    const device =
+      input.deviceId === undefined || input.deviceId === null
+        ? null
+        : await this.requireDevice(organisationId, systemId, input.deviceId);
+    const { groupIds = [], locationId, deviceId, ...optionalData } = input;
+    const data = stripUndefined({ ...optionalData, reference: optionalData.reference });
+    const deviceFields =
+      device === null
+        ? {}
+        : {
+            manufacturer: device.make,
+            model: device.model,
+            ...(device.fittingType === null ? {} : { fittingType: device.fittingType.name }),
+          };
+    try {
+      return await this.prisma.emergencyLightingFitting.create({
+        data: {
+          organisation: { connect: { id: organisationId } },
+          system: { connect: { id: systemId } },
+          ...data,
+          ...deviceFields,
+          ...(deviceId === undefined || deviceId === null
+            ? {}
+            : { device: { connect: { id: deviceId } } }),
+          ...(locationId === undefined || locationId === null
+            ? {}
+            : { location: { connect: { id: locationId } } }),
+          groupMappings: { create: groupIds.map((groupId) => ({ groupId })) },
+        },
+        include: {
+          location: true,
+          device: { include: { fittingType: true } },
+          groupMappings: { include: { group: true } },
+        },
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) throw this.fittingReferenceExists();
+      throw error;
+    }
+  }
+
+  private fittingReferenceExists(): DomainError {
+    return new DomainError(
+      'EMERGENCY_LIGHTING_FITTING_REFERENCE_EXISTS',
+      'A fitting with this reference already exists on this register.',
+      409,
+    );
   }
 
   private async requireSystem(organisationId: string, assetId: string) {
@@ -527,6 +1131,8 @@ export class EmergencyLightingService {
           include: { location: true, groupMappings: { include: { group: true } } },
           orderBy: { reference: 'asc' },
         },
+        fittingTypes: { orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }] },
+        devices: { include: { fittingType: true }, orderBy: [{ make: 'asc' }, { model: 'asc' }] },
       },
     });
     if (system === null)
@@ -566,8 +1172,11 @@ export class EmergencyLightingService {
     systemId: string,
     locationId: string | undefined,
     groupIds: string[],
+    deviceId?: string | null,
   ) {
     if (locationId !== undefined) await this.requireLocation(organisationId, systemId, locationId);
+    if (deviceId !== undefined && deviceId !== null)
+      await this.requireDevice(organisationId, systemId, deviceId);
     const uniqueGroupIds = [...new Set(groupIds)];
     if (uniqueGroupIds.length > 0) {
       const groups = await this.prisma.emergencyLightingGroup.findMany({
@@ -603,6 +1212,37 @@ export class EmergencyLightingService {
     if (group === null)
       throw new DomainError('EMERGENCY_LIGHTING_GROUP_NOT_FOUND', 'The group was not found.', 404);
     return group;
+  }
+
+  private async requireFittingType(
+    organisationId: string,
+    systemId: string,
+    fittingTypeId: string,
+  ) {
+    const fittingType = await this.prisma.emergencyLightingFittingType.findFirst({
+      where: { id: fittingTypeId, organisationId, systemId },
+    });
+    if (fittingType === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_FITTING_TYPE_NOT_FOUND',
+        'The fitting type was not found.',
+        404,
+      );
+    return fittingType;
+  }
+
+  private async requireDevice(organisationId: string, systemId: string, deviceId: string) {
+    const device = await this.prisma.emergencyLightingDevice.findFirst({
+      where: { id: deviceId, organisationId, systemId },
+      include: { fittingType: true },
+    });
+    if (device === null)
+      throw new DomainError(
+        'EMERGENCY_LIGHTING_DEVICE_NOT_FOUND',
+        'The device was not found.',
+        404,
+      );
+    return device;
   }
 
   private async requireFittings(organisationId: string, systemId: string, fittingIds: string[]) {

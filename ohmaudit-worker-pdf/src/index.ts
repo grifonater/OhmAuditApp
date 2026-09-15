@@ -41,6 +41,7 @@ export interface ReportImagePayload {
 }
 
 export interface CertificatePayload {
+  draft?: boolean;
   title: string;
   organisationName: string;
   customerName: string;
@@ -59,6 +60,7 @@ export interface CertificatePayload {
 }
 
 export interface ThermalCertificatePayload {
+  draft?: boolean;
   organisationName: string;
   customerName: string;
   siteName: string;
@@ -102,6 +104,7 @@ export interface ThermalCertificatePayload {
 }
 
 export interface EvCertificatePayload {
+  draft?: boolean;
   testingCompany: {
     name: string;
     addressLines: string[];
@@ -173,6 +176,7 @@ function upperUserText(value: string): string {
 
 function uppercaseEvCertificate(payload: EvCertificatePayload): EvCertificatePayload {
   return {
+    ...(payload.draft === undefined ? {} : { draft: payload.draft }),
     testingCompany: {
       name: upperUserText(payload.testingCompany.name),
       addressLines: payload.testingCompany.addressLines.map(upperUserText),
@@ -242,6 +246,7 @@ function uppercaseThermalCertificate(
   payload: ThermalCertificatePayload,
 ): ThermalCertificatePayload {
   return {
+    ...(payload.draft === undefined ? {} : { draft: payload.draft }),
     organisationName: upperUserText(payload.organisationName),
     customerName: upperUserText(payload.customerName),
     siteName: upperUserText(payload.siteName),
@@ -283,6 +288,7 @@ function uppercaseThermalCertificate(
 
 function uppercaseCertificate(payload: CertificatePayload): CertificatePayload {
   return {
+    ...(payload.draft === undefined ? {} : { draft: payload.draft }),
     title: upperUserText(payload.title),
     organisationName: upperUserText(payload.organisationName),
     customerName: upperUserText(payload.customerName),
@@ -771,6 +777,10 @@ function evCertificateContents(
 
 export function renderEvCertificatePdf(payload: EvCertificatePayload): Uint8Array {
   const built = evCertificateContents(uppercaseEvCertificate(payload), 'Ev');
+  if (payload.draft)
+    built.contents = built.contents.map(
+      (content) => `${content}\n${textAt('DRAFT - NOT ISSUED', 205, 816, 13, '0.78 0.12 0.09')}`,
+    );
   return renderPageContents(built.contents, built.images);
 }
 
@@ -1113,15 +1123,29 @@ function thermalCertificateContents(
 
 export function renderThermalCertificatePdf(payload: ThermalCertificatePayload): Uint8Array {
   const built = thermalCertificateContents(uppercaseThermalCertificate(payload), 'Thermal');
+  if (payload.draft)
+    built.contents = built.contents.map(
+      (content) => `${content}\n${textAt('DRAFT - NOT ISSUED', 205, 816, 13, '0.78 0.12 0.09')}`,
+    );
   return renderPageContents(built.contents, built.images);
 }
 
 export function renderCertificatePdf(payload: CertificatePayload): Uint8Array {
-  if (payload.evCertificate !== undefined) return renderEvCertificatePdf(payload.evCertificate);
+  if (payload.evCertificate !== undefined)
+    return renderEvCertificatePdf({
+      ...payload.evCertificate,
+      ...(payload.draft === undefined ? {} : { draft: payload.draft }),
+    });
   if (payload.thermalCertificate !== undefined)
-    return renderThermalCertificatePdf(payload.thermalCertificate);
+    return renderThermalCertificatePdf({
+      ...payload.thermalCertificate,
+      ...(payload.draft === undefined ? {} : { draft: payload.draft }),
+    });
   const uppercasePayload = uppercaseCertificate(payload);
-  return renderPages([certificateLines(uppercasePayload)], uppercasePayload.logoJpegBase64);
+  return renderPages(
+    [[...(payload.draft ? ['DRAFT - NOT ISSUED', ''] : []), ...certificateLines(uppercasePayload)]],
+    uppercasePayload.logoJpegBase64,
+  );
 }
 
 export function renderVisitReportPdf(payload: VisitReportPayload): Uint8Array {

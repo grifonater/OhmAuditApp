@@ -25,9 +25,11 @@ describe('inspection resubmission consistency', () => {
   it('replaces the current defect set before storing the latest submission', async () => {
     const deleteMany = vi.fn();
     const createMany = vi.fn();
+    const draftDeleteMany = vi.fn();
     const transaction = {
       inspectionRevision: { create: vi.fn().mockResolvedValue({ id: 'revision-a' }) },
       defect: { deleteMany, createMany },
+      inspectionDraft: { deleteMany: draftDeleteMany },
       inspection: { update: vi.fn() },
       auditEvent: { create: vi.fn() },
     };
@@ -64,6 +66,9 @@ describe('inspection resubmission consistency', () => {
       where: { organisationId: 'organisation-a', inspectionId: 'inspection-a' },
     });
     expect(createMany).toHaveBeenCalledTimes(1);
+    expect(draftDeleteMany).toHaveBeenCalledWith({
+      where: { organisationId: 'organisation-a', inspectionId: 'inspection-a' },
+    });
     expect(deleteMany.mock.invocationCallOrder[0]).toBeLessThan(
       createMany.mock.invocationCallOrder[0]!,
     );

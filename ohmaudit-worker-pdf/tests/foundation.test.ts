@@ -67,6 +67,52 @@ describe('PDF worker', () => {
     expect(text).not.toContain('Demo Electrical Ltd');
     expect(pdf.byteLength).toBeGreaterThan(500);
   });
+  it('marks generic and thermal draft certificates as not issued', () => {
+    const generic = new TextDecoder().decode(
+      renderCertificatePdf({
+        draft: true,
+        title: 'Draft inspection',
+        organisationName: 'Demo Electrical Ltd',
+        customerName: 'Customer',
+        siteName: 'Site',
+        inspectionType: 'Inspection',
+        effectiveDate: '2026-09-13',
+        revisionNumber: 0,
+        engineerName: 'Engineer',
+        outcome: 'Recorded',
+        summaryLines: [],
+      }),
+    );
+    const thermalHtml = renderThermalReportHtml({
+      draft: true,
+      organisationName: 'Demo Electrical Ltd',
+      customerName: 'Customer',
+      siteName: 'Site',
+      siteAddress: [],
+      reportDate: '2026-09-13',
+      engineerName: 'Engineer',
+      reportReference: 'DRAFT-1',
+      outcome: 'Recorded',
+      targets: [],
+    });
+    const thermalPdf = new TextDecoder().decode(
+      renderThermalCertificatePdf({
+        draft: true,
+        organisationName: 'Demo Electrical Ltd',
+        customerName: 'Customer',
+        siteName: 'Site',
+        siteAddress: [],
+        reportDate: '2026-09-13',
+        engineerName: 'Engineer',
+        reportReference: 'DRAFT-1',
+        outcome: 'Recorded',
+        targets: [],
+      }),
+    );
+    expect(generic).toContain('DRAFT - NOT ISSUED');
+    expect(thermalHtml).toContain('DRAFT - NOT ISSUED');
+    expect(thermalPdf).toContain('DRAFT - NOT ISSUED');
+  });
   it('groups a visit into a cover page and one page per certificate', () => {
     const certificate = {
       title: 'EV Charging Inspection Certificate',

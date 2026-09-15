@@ -950,7 +950,15 @@ export class PortfolioService {
                   ? await this.prisma.emergencyLightingFitting.findFirst({
                       where: { id: entityId, organisationId },
                     })
-                  : null;
+                  : entityType === 'EmergencyLightingLocation'
+                    ? await this.prisma.emergencyLightingLocation.findFirst({
+                        where: { id: entityId, organisationId },
+                      })
+                    : entityType === 'EmergencyLightingDevice'
+                      ? await this.prisma.emergencyLightingDevice.findFirst({
+                          where: { id: entityId, organisationId },
+                        })
+                      : null;
     if (exists === null)
       throw new DomainError('ENTITY_NOT_FOUND', 'The related record was not found.', 404);
   }

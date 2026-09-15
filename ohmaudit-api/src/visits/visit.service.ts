@@ -1,6 +1,26 @@
 import type { Prisma, PrismaClient } from '../generated/prisma/client';
 import { DomainError } from '../shared/domain-error';
 
+export interface EngineerEvAssetInput {
+  assetReference: string;
+  displayName: string;
+  manufacturer?: string | undefined;
+  model?: string | undefined;
+  serialNumber?: string | undefined;
+  maximumPowerKw?: number | undefined;
+  dcRcdType: 'TYPE_B' | 'RDC_DD' | 'NONE';
+}
+
+export interface AddEvChargerPayload {
+  localIds: {
+    assetId: string;
+    chargePointId: string;
+    taskId: string;
+    inspectionId: string;
+  };
+  asset: EngineerEvAssetInput;
+}
+
 function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
@@ -8,6 +28,20 @@ function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
 async function hashToken(token: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (typeof value === 'object' && value !== null)
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`;
+  return JSON.stringify(value);
+}
+
+function jsonValue(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 export class VisitService {
@@ -236,6 +270,7 @@ export class VisitService {
               include: {
                 revisions: { orderBy: { revisionNumber: 'desc' }, take: 1 },
                 defects: true,
+                draft: { select: { updatedAt: true } },
               },
             },
           },
@@ -258,6 +293,16 @@ export class VisitService {
       ...visit,
       tasks: visit.tasks.map((task) => ({
         ...task,
+        inspection:
+          task.inspection === null
+            ? null
+            : {
+                ...task.inspection,
+                draft: {
+                  available: task.inspection.draft !== null,
+                  updatedAt: task.inspection.draft?.updatedAt ?? null,
+                },
+              },
         asset:
           task.asset === null
             ? null
@@ -501,15 +546,7 @@ export class VisitService {
     visitId: string,
     actorUserId: string | undefined,
     correlationId: string,
-    input: {
-      assetReference: string;
-      displayName: string;
-      manufacturer?: string | undefined;
-      model?: string | undefined;
-      serialNumber?: string | undefined;
-      maximumPowerKw?: number | undefined;
-      dcRcdType: 'TYPE_B' | 'RDC_DD' | 'NONE';
-    },
+    input: EngineerEvAssetInput,
   ) {
     const visit = await this.prisma.visit.findFirst({
       where: { id: visitId, organisationId },
@@ -603,6 +640,41 @@ export class VisitService {
     }
   }
 
+  async addEvAssetWithInspection(
+    organisationId: string,
+    visitId: string,
+    actorUserId: string | undefined,
+    correlationId: string,
+    input: EngineerEvAssetInput,
+  ) {
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const visit = await transaction.visit.findFirst({
+          where: { id: visitId, organisationId },
+          include: { tasks: { select: { displayOrder: true } } },
+        });
+        if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+        this.requireActiveDiscoveryVisit(visit);
+        return this.createEvAssetRecords(
+          transaction,
+          visit,
+          actorUserId,
+          correlationId,
+          input,
+          true,
+        );
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error))
+        throw new DomainError(
+          'ASSET_REFERENCE_EXISTS',
+          'This asset reference is already used by another asset at this site.',
+          409,
+        );
+      throw error;
+    }
+  }
+
   async guestLink(organisationId: string, visitId: string, validDays = 7) {
     const visit = await this.requireVisit(organisationId, visitId);
     this.rejectArchived(visit.archivedAt);
@@ -673,6 +745,85 @@ export class VisitService {
     };
   }
 
+  async setGuestIdentity(token: string, displayName: string, correlationId: string) {
+    const normalisedName = displayName.trim();
+    return this.prisma.$transaction(async (transaction) => {
+      const access = await transaction.guestAccessToken.findUnique({
+        where: { tokenHash: await hashToken(token) },
+        include: { visit: true },
+      });
+      this.validateGuestAccess(access);
+      const visit = access.visit;
+      if (visit.guestEngineerName?.trim() === normalisedName)
+        return {
+          identity: { displayName: visit.guestEngineerName, email: visit.guestEmail },
+          visit,
+        };
+      if (visit.guestEngineerName !== null || visit.guestEmail !== null)
+        throw new DomainError(
+          'GUEST_IDENTITY_CONFLICT',
+          'The guest engineer identity is already configured for this job.',
+          409,
+        );
+      const updated = await transaction.visit.updateMany({
+        where: {
+          id: visit.id,
+          organisationId: visit.organisationId,
+          guestEngineerName: null,
+          guestEmail: null,
+        },
+        data: { guestEngineerName: normalisedName },
+      });
+      if (updated.count === 0) {
+        const current = await transaction.visit.findUnique({ where: { id: visit.id } });
+        if (current?.guestEngineerName?.trim() === normalisedName)
+          return {
+            identity: { displayName: current.guestEngineerName, email: current.guestEmail },
+            visit: current,
+          };
+        throw new DomainError(
+          'GUEST_IDENTITY_CONFLICT',
+          'The guest engineer identity is already configured for this job.',
+          409,
+        );
+      }
+      const current = await transaction.visit.findUniqueOrThrow({ where: { id: visit.id } });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId: visit.organisationId,
+          correlationId,
+          eventType: 'GuestEngineerIdentitySet',
+          entityType: 'Visit',
+          entityId: visit.id,
+          data: { displayName: normalisedName },
+        },
+      });
+      return {
+        identity: { displayName: current.guestEngineerName!, email: current.guestEmail },
+        visit: current,
+      };
+    });
+  }
+
+  async guestVisitScope(token: string) {
+    const access = await this.prisma.guestAccessToken.findUnique({
+      where: { tokenHash: await hashToken(token) },
+      include: { visit: true },
+    });
+    this.validateGuestAccess(access);
+    await this.prisma.guestAccessToken.update({
+      where: { id: access.id },
+      data: { lastUsedAt: new Date() },
+    });
+    return access.visit;
+  }
+
+  async requireEvDiscoveryVisit(organisationId: string, visitId: string) {
+    const visit = await this.requireVisit(organisationId, visitId);
+    this.requireActiveDiscoveryVisit(visit);
+    return visit;
+  }
+
   async guestMedia(token: string, mediaId: string) {
     const visit = await this.guestPack(token);
     const assetIds = new Set(
@@ -713,24 +864,307 @@ export class VisitService {
     operation: string,
     payload: Record<string, unknown>,
   ) {
-    const existing = await this.prisma.syncMutation.findUnique({
-      where: { organisationId_clientMutationId: { organisationId, clientMutationId } },
-    });
+    const existing = await this.syncReplay(
+      organisationId,
+      visitId,
+      clientMutationId,
+      entityType,
+      operation,
+      payload,
+    );
     if (existing !== null) return existing;
     await this.detail(organisationId, visitId);
-    return this.prisma.syncMutation.create({
-      data: {
+    try {
+      return await this.prisma.syncMutation.create({
+        data: {
+          organisationId,
+          visitId,
+          clientMutationId,
+          entityType,
+          operation,
+          payload: payload as Prisma.InputJsonValue,
+          status: 'APPLIED',
+          result: { accepted: true },
+          appliedAt: new Date(),
+        },
+      });
+    } catch (error: unknown) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const replay = await this.syncReplay(
         organisationId,
         visitId,
         clientMutationId,
         entityType,
         operation,
-        payload: payload as Prisma.InputJsonValue,
-        status: 'APPLIED',
-        result: { accepted: true },
-        appliedAt: new Date(),
+        payload,
+      );
+      if (replay !== null) return replay;
+      throw error;
+    }
+  }
+
+  async syncReplay(
+    organisationId: string,
+    visitId: string,
+    clientMutationId: string,
+    entityType: string,
+    operation: string,
+    payload: Record<string, unknown>,
+  ) {
+    const existing = await this.prisma.syncMutation.findUnique({
+      where: { organisationId_clientMutationId: { organisationId, clientMutationId } },
+    });
+    if (existing === null) return null;
+    if (
+      existing.visitId !== visitId ||
+      existing.entityType !== entityType ||
+      existing.operation !== operation ||
+      canonicalJson(existing.payload) !== canonicalJson(payload)
+    )
+      throw new DomainError(
+        'SYNC_MUTATION_CONFLICT',
+        'This client mutation ID has already been used for a different mutation.',
+        409,
+      );
+    return existing;
+  }
+
+  async addEvChargerSync(
+    organisationId: string,
+    visitId: string,
+    clientMutationId: string,
+    entityType: string,
+    payload: AddEvChargerPayload,
+    actorUserId: string | undefined,
+    correlationId: string,
+  ) {
+    const replay = await this.syncReplay(
+      organisationId,
+      visitId,
+      clientMutationId,
+      entityType,
+      'ADD_EV_CHARGER',
+      payload as unknown as Record<string, unknown>,
+    );
+    if (replay !== null) return replay;
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const concurrent = await transaction.syncMutation.findUnique({
+          where: { organisationId_clientMutationId: { organisationId, clientMutationId } },
+        });
+        if (concurrent !== null) {
+          if (
+            concurrent.visitId !== visitId ||
+            concurrent.entityType !== entityType ||
+            concurrent.operation !== 'ADD_EV_CHARGER' ||
+            canonicalJson(concurrent.payload) !== canonicalJson(payload)
+          )
+            throw new DomainError(
+              'SYNC_MUTATION_CONFLICT',
+              'This client mutation ID has already been used for a different mutation.',
+              409,
+            );
+          return concurrent;
+        }
+        const visit = await transaction.visit.findFirst({
+          where: { id: visitId, organisationId },
+          include: { tasks: { select: { displayOrder: true } } },
+        });
+        if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+        this.requireActiveDiscoveryVisit(visit);
+        const created = await this.createEvAssetRecords(
+          transaction,
+          visit,
+          actorUserId,
+          correlationId,
+          payload.asset,
+          true,
+        );
+        if (created.inspection === undefined)
+          throw new Error('Atomic EV charger creation did not create an inspection.');
+        const chargePoint = created.asset.evChargePoint;
+        if (chargePoint === null)
+          throw new Error('Atomic EV charger creation did not create EV data.');
+        const result = {
+          asset: created.asset,
+          chargePoint,
+          task: created.task,
+          inspection: created.inspection,
+          idMap: {
+            assetId: { local: payload.localIds.assetId, server: created.asset.id },
+            chargePointId: { local: payload.localIds.chargePointId, server: chargePoint.id },
+            taskId: { local: payload.localIds.taskId, server: created.task.id },
+            inspectionId: { local: payload.localIds.inspectionId, server: created.inspection.id },
+          },
+        };
+        return transaction.syncMutation.create({
+          data: {
+            organisationId,
+            visitId,
+            clientMutationId,
+            entityType,
+            operation: 'ADD_EV_CHARGER',
+            payload: jsonValue(payload),
+            status: 'APPLIED',
+            result: jsonValue(result),
+            appliedAt: new Date(),
+          },
+        });
+      });
+    } catch (error: unknown) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const replayAfterConflict = await this.syncReplay(
+        organisationId,
+        visitId,
+        clientMutationId,
+        entityType,
+        'ADD_EV_CHARGER',
+        payload as unknown as Record<string, unknown>,
+      );
+      if (replayAfterConflict !== null) return replayAfterConflict;
+      throw new DomainError(
+        'ASSET_REFERENCE_EXISTS',
+        'This asset reference is already used by another asset at this site.',
+        409,
+      );
+    }
+  }
+
+  private async createEvAssetRecords(
+    transaction: Prisma.TransactionClient,
+    visit: {
+      id: string;
+      organisationId: string;
+      customerId: string;
+      siteId: string;
+      tasks: Array<{ displayOrder: number }>;
+    },
+    actorUserId: string | undefined,
+    correlationId: string,
+    input: EngineerEvAssetInput,
+    startInspection: boolean,
+  ) {
+    let assetModelId: string | undefined;
+    if (input.manufacturer && input.model) {
+      const assetModel = await transaction.assetModel.upsert({
+        where: {
+          manufacturer_model_category: {
+            manufacturer: input.manufacturer,
+            model: input.model,
+            category: 'EV Charger',
+          },
+        },
+        create: {
+          manufacturer: input.manufacturer,
+          model: input.model,
+          category: 'EV Charger',
+        },
+        update: {},
+      });
+      assetModelId = assetModel.id;
+    }
+    const asset = await transaction.asset.create({
+      data: {
+        organisationId: visit.organisationId,
+        customerId: visit.customerId,
+        siteId: visit.siteId,
+        assetType: 'EV Charger',
+        assetReference: input.assetReference,
+        displayName: input.displayName,
+        status: 'PROPOSED',
+        ...(input.manufacturer === undefined ? {} : { manufacturer: input.manufacturer }),
+        ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.serialNumber === undefined ? {} : { serialNumber: input.serialNumber }),
+        ...(assetModelId === undefined ? {} : { assetModelId }),
+        evChargePoint: {
+          create: {
+            organisationId: visit.organisationId,
+            dcRcdType: input.dcRcdType,
+            ...(input.maximumPowerKw === undefined ? {} : { maximumPowerKw: input.maximumPowerKw }),
+          },
+        },
+      },
+      include: { evChargePoint: true },
+    });
+    const task = await transaction.visitTask.create({
+      data: {
+        organisationId: visit.organisationId,
+        visitId: visit.id,
+        assetId: asset.id,
+        moduleKey: 'ev-charging',
+        title: 'EV charger inspection',
+        status: startInspection ? 'IN_PROGRESS' : 'PENDING',
+        displayOrder: Math.max(-1, ...visit.tasks.map(({ displayOrder }) => displayOrder)) + 1,
       },
     });
+    const inspection = startInspection
+      ? await transaction.inspection.create({
+          data: {
+            organisationId: visit.organisationId,
+            visitId: visit.id,
+            visitTaskId: task.id,
+            customerId: visit.customerId,
+            siteId: visit.siteId,
+            assetId: asset.id,
+            moduleKey: 'ev-charging',
+            inspectionType: task.title,
+            status: 'IN_PROGRESS',
+          },
+        })
+      : undefined;
+    if (startInspection)
+      await transaction.visit.update({
+        where: { id: visit.id },
+        data: { status: 'IN_PROGRESS' },
+      });
+    await transaction.auditEvent.create({
+      data: {
+        organisationId: visit.organisationId,
+        ...(actorUserId === undefined ? {} : { actorUserId }),
+        correlationId,
+        eventType: 'EngineerEvAssetCreated',
+        entityType: 'Asset',
+        entityId: asset.id,
+        data: {
+          visitId: visit.id,
+          siteId: visit.siteId,
+          taskId: task.id,
+          ...(inspection === undefined ? {} : { inspectionId: inspection.id }),
+        },
+      },
+    });
+    return { asset, task, inspection };
+  }
+
+  private requireActiveDiscoveryVisit(visit: {
+    archivedAt?: Date | null;
+    status?: string;
+    evDiscoveryEnabled: boolean;
+  }) {
+    this.rejectArchived(visit.archivedAt ?? null);
+    if (!['DRAFT', 'SCHEDULED', 'IN_PROGRESS'].includes(visit.status ?? 'SCHEDULED'))
+      throw new DomainError(
+        'VISIT_NOT_ACTIVE',
+        'Chargers can only be added to an active job.',
+        409,
+      );
+    if (!visit.evDiscoveryEnabled)
+      throw new DomainError(
+        'EV_DISCOVERY_NOT_ENABLED',
+        'Adding chargers is not enabled for this job.',
+        403,
+      );
+  }
+
+  private validateGuestAccess<
+    T extends { revokedAt: Date | null; expiresAt: Date; visit: unknown },
+  >(access: T | null): asserts access is T {
+    if (access === null || access.revokedAt !== null || access.expiresAt <= new Date())
+      throw new DomainError(
+        'GUEST_LINK_INVALID',
+        'This guest link is invalid or has expired.',
+        401,
+      );
   }
 
   private async requireVisit(organisationId: string, visitId: string) {

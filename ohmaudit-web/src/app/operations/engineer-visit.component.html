@@ -55,7 +55,65 @@
             </div>
           </dl>
         </article>
-        <div class="job-information-grid">
+        <article class="card offline-readiness-card" [class.ready]="offlineDownloadedAt()">
+          <div class="offline-readiness-icon" aria-hidden="true">↓</div>
+          <div>
+            <p class="eyebrow">Work without signal</p>
+            <h2>{{ offlineStatusLabel() }}</h2>
+            @if (offlineDownloadedAt()) {
+              <p>Downloaded {{ formatVisitDate(offlineDownloadedAt(), true) }}</p>
+              <small>Refresh before travelling if job details may have changed.</small>
+            } @else {
+              <p>Save job details, tasks, RAMS and supported inspection data to this device.</p>
+            }
+          </div>
+          <button
+            class="button primary touch-button"
+            type="button"
+            (click)="downloadPack()"
+            [disabled]="downloadingPack() || !offline.online()"
+          >
+            @if (downloadingPack()) {
+              <span class="oa-spinner" aria-hidden="true"></span>
+            }
+            {{
+              downloadingPack()
+                ? 'Preparing job…'
+                : offlineDownloadedAt()
+                  ? 'Update offline job'
+                  : 'Download offline job'
+            }}
+          </button>
+          @if (!offline.online()) {
+            <small class="offline-readiness-note">Reconnect to update this offline copy.</small>
+          }
+        </article>
+        @if (guestIdentityRequired()) {
+          <article class="card guest-identity-card">
+            <p class="eyebrow">Before you start</p>
+            <h2>Confirm your identity</h2>
+            <p>Your full name is required for RAMS acknowledgements and inspection signatures.</p>
+            <form [formGroup]="guestIdentityForm" (ngSubmit)="saveGuestIdentity()">
+              <label class="field"
+                >Full name<input
+                  formControlName="displayName"
+                  autocomplete="name"
+                  placeholder="Enter your full name"
+              /></label>
+              <button
+                class="button primary touch-button"
+                type="submit"
+                [disabled]="busy() || !offline.online() || guestIdentityForm.invalid"
+              >
+                {{ busy() ? 'Saving identity…' : 'Confirm identity' }}
+              </button>
+            </form>
+            @if (!offline.online()) {
+              <small>Reconnect once to confirm your identity before signing or inspecting.</small>
+            }
+          </article>
+        }
+        <div class="job-information-grid landing-details">
           <article class="card job-info-card">
             <p class="eyebrow">Client and site</p>
             <h2>{{ currentVisit.customer.name }}</h2>
@@ -108,22 +166,11 @@
             </dl>
           </article>
         </div>
-        <article class="card briefing-card">
+        <article class="card briefing-card landing-briefing">
           <p class="eyebrow">Briefing</p>
           <h2>Engineer instructions</h2>
           <p>{{ currentVisit.engineerNotes || 'No special job instructions.' }}</p>
         </article>
-        <button
-          class="button secondary touch-button"
-          type="button"
-          (click)="downloadPack()"
-          [disabled]="busy()"
-        >
-          @if (busy()) {
-            <span class="oa-spinner" aria-hidden="true"></span>
-          }
-          {{ busy() ? 'Preparing offline pack…' : '↓ Download job for offline use' }}
-        </button>
         <div class="engineer-task-summary">
           <strong>{{ currentVisit.tasks.length }}</strong
           ><span>inspection tasks</span>
@@ -201,7 +248,10 @@
                       class="button primary touch-button"
                       type="button"
                       [disabled]="
-                        !offline.online() || !ramsSignature() || signingRamsId() === rams.id
+                        !offline.online() ||
+                        guestIdentityRequired() ||
+                        !ramsSignature() ||
+                        signingRamsId() === rams.id
                       "
                       (click)="signOn(rams)"
                     >
@@ -209,6 +259,8 @@
                     </button>
                     @if (!offline.online()) {
                       <small>Reconnect to sign onto RAMS.</small>
+                    } @else if (guestIdentityRequired()) {
+                      <small>Confirm your full name above before signing.</small>
                     }
                   </div>
                 } @else if (rams.status !== 'APPROVED') {
@@ -235,26 +287,86 @@
                   Create the charger now, then record its supplies, connectors and tests normally.
                 </p>
               </div>
-              <button
-                class="button secondary"
-                type="button"
-                (click)="addingCharger.set(!addingCharger())"
-                [disabled]="!offline.online()"
-              >
+              <button class="button secondary" type="button" (click)="toggleAddCharger()">
                 {{ addingCharger() ? 'Cancel' : '+ Add charger' }}
               </button>
             </div>
-            @if (!offline.online()) {
-              <p class="muted">
-                Reconnect before adding a new site asset. Existing tasks remain available offline.
-              </p>
-            }
             @if (addingCharger()) {
               <form
                 [formGroup]="newChargerForm"
                 (ngSubmit)="addCharger()"
                 class="form-grid engineer-add-form"
               >
+                <section class="new-charger-data-plate full" aria-labelledby="new-data-plate-title">
+                  <div>
+                    <strong id="new-data-plate-title">Charger nameplate</strong>
+                    <small
+                      >Capture this separately as durable evidence. Suggestions never replace your
+                      entries unless you apply them.</small
+                    >
+                  </div>
+                  <div class="data-plate-actions">
+                    <label class="button secondary touch-button data-plate-capture">
+                      Gallery
+                      <input
+                        hidden
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        [disabled]="newChargerDataPlateBusy()"
+                        (change)="selectNewChargerDataPlate($event)"
+                      />
+                    </label>
+                    <label class="button touch-button data-plate-capture">
+                      {{ newChargerDataPlateBusy() ? 'Saving…' : 'Take photo' }}
+                      <input
+                        hidden
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        capture="environment"
+                        [disabled]="newChargerDataPlateBusy()"
+                        (change)="selectNewChargerDataPlate($event)"
+                      />
+                    </label>
+                  </div>
+                  @if (newChargerDataPlatePreviewUrl()) {
+                    <img
+                      class="data-plate-preview"
+                      [src]="newChargerDataPlatePreviewUrl()"
+                      alt="Selected charger nameplate"
+                    />
+                  }
+                  @if (newChargerDataPlateError()) {
+                    <p class="data-plate-message" role="status">
+                      {{ newChargerDataPlateError() }}
+                    </p>
+                  }
+                  @if (newChargerDataPlateCandidates().length) {
+                    <div class="data-plate-results">
+                      @for (candidate of newChargerDataPlateCandidates(); track candidate.field) {
+                        <article>
+                          <span
+                            ><small>{{ dataPlateFieldLabel(candidate.field) }}</small
+                            ><strong>{{ candidate.value }}</strong></span
+                          >
+                          <button
+                            class="button secondary compact"
+                            type="button"
+                            [disabled]="
+                              newChargerAppliedDataPlateFields().includes(candidate.field)
+                            "
+                            (click)="applyNewChargerDataPlateCandidate(candidate)"
+                          >
+                            {{
+                              newChargerAppliedDataPlateFields().includes(candidate.field)
+                                ? 'Applied'
+                                : 'Apply'
+                            }}
+                          </button>
+                        </article>
+                      }
+                    </div>
+                  }
+                </section>
                 <label class="field"
                   >Site asset reference<input
                     formControlName="assetReference"
@@ -292,7 +404,13 @@
                     @if (busy()) {
                       <span class="oa-spinner" aria-hidden="true"></span>
                     }
-                    {{ busy() ? 'Adding charger…' : 'Add provisional charger &amp; inspect' }}
+                    {{
+                      busy()
+                        ? 'Saving charger…'
+                        : offline.online()
+                          ? 'Add charger & inspect'
+                          : 'Save charger & inspect offline'
+                    }}
                   </button>
                 </div>
               </form>
@@ -304,24 +422,39 @@
             <article
               class="card task-card"
               [class.recent-task]="recentlySubmittedTaskId() === task.id"
+              [class.pending-sync]="pendingAddTaskIds().has(task.id)"
             >
               <div class="section-heading">
                 <div>
-                  <span class="badge">{{ task.moduleKey }}</span>
-                  <h2>{{ task.asset?.displayName || 'Site-level inspection' }}</h2>
+                  <span class="badge">{{ friendlyModuleLabel(task.moduleKey) }}</span>
+                  <h2>{{ task.title }}</h2>
+                  <strong class="task-asset-name">{{
+                    task.asset?.displayName || 'Site-level inspection'
+                  }}</strong>
                   <p>
                     {{ task.asset?.assetReference }} ·
                     {{ task.asset?.manufacturer || 'Make not set' }} {{ task.asset?.model || '' }} ·
                     {{ task.asset?.serialNumber || 'No serial' }}
                   </p>
                 </div>
-                <span
-                  class="badge"
-                  [class.success]="task.status === 'COMPLETED' || task.status === 'SUBMITTED'"
-                  >{{ task.status }}</span
-                >
+                <span>
+                  @if (pendingAddTaskIds().has(task.id)) {
+                    <span class="badge warning">Pending sync</span>
+                  } @else {
+                    <span
+                      class="badge"
+                      [class.success]="task.status === 'COMPLETED' || task.status === 'SUBMITTED'"
+                      >{{ task.status }}</span
+                    >
+                  }
+                </span>
               </div>
-              <button class="button primary touch-button" type="button" (click)="openTask(task)">
+              <button
+                class="button primary touch-button"
+                type="button"
+                [disabled]="guestIdentityRequired()"
+                (click)="openTask(task)"
+              >
                 {{
                   task.status === 'SUBMITTED' || task.status === 'COMPLETED'
                     ? 'View submitted inspection'
@@ -584,7 +717,7 @@
                         hidden
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
-                        [disabled]="normalPhotoDescription.invalid || photographing()"
+                        [disabled]="photographing()"
                         (change)="capturePhoto($event, 'normal-state')"
                       />
                     </label>
@@ -598,7 +731,7 @@
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
                         capture="environment"
-                        [disabled]="normalPhotoDescription.invalid || photographing()"
+                        [disabled]="photographing()"
                         (change)="capturePhoto($event, 'normal-state')"
                       />
                     </label>
@@ -651,9 +784,18 @@
                           </select></label
                         ><label class="field"
                           >Protective device<select formControlName="protectiveDeviceType">
-                            <option value="MCB">MCB</option>
-                            <option value="RCBO">RCBO</option>
-                            <option value="AFDD">AFDD</option>
+                            @if (
+                              !protectiveDeviceTypes.includes(
+                                $any(supply.controls.protectiveDeviceType.value)
+                              )
+                            ) {
+                              <option [value]="supply.controls.protectiveDeviceType.value">
+                                {{ supply.controls.protectiveDeviceType.value }}
+                              </option>
+                            }
+                            @for (deviceType of protectiveDeviceTypes; track deviceType) {
+                              <option [value]="deviceType">{{ deviceType }}</option>
+                            }
                           </select></label
                         ><label class="field"
                           >Rating (A)<input
@@ -1043,19 +1185,36 @@
                       placeholder="Describe the location, damage, risk, and any immediate action taken…"
                     ></textarea>
                   </label>
-                  <label class="button secondary touch-button fault-photo-button">
-                    @if (photographing()) {
-                      <span class="oa-spinner" aria-hidden="true"></span>
-                    }
-                    {{ photographing() ? '📷 Saving photo…' : '📷 Add fault photo'
-                    }}<input
-                      hidden
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      [disabled]="photographing()"
-                      (change)="capturePhoto($event)"
-                  /></label>
+                  <div class="data-plate-actions fault-photo-actions">
+                    <label class="button secondary touch-button fault-photo-button">
+                      @if (photographing()) {
+                        <span class="oa-spinner" aria-hidden="true"></span>
+                      }
+                      {{ photographing() ? 'Saving photo…' : 'Upload fault photo'
+                      }}<input
+                        hidden
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        [disabled]="photographing()"
+                        (change)="capturePhoto($event)"
+                    /></label>
+                    <label class="button touch-button fault-photo-button">
+                      @if (photographing()) {
+                        <span class="oa-spinner" aria-hidden="true"></span>
+                      }
+                      {{ photographing() ? 'Saving photo…' : 'Take fault photo'
+                      }}<input
+                        hidden
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        capture="environment"
+                        [disabled]="photographing()"
+                        (change)="capturePhoto($event)"
+                    /></label>
+                  </div>
+                  @if (error()) {
+                    <p class="error condition-photo-error" role="alert">{{ error() }}</p>
+                  }
                   <p class="muted">{{ photoCount() }} fault photo(s) saved on this device</p>
                 </div>
               } @else {

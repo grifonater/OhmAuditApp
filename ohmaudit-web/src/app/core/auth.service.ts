@@ -13,6 +13,8 @@ export interface UserProfile {
   mobile: string;
 }
 
+const LAST_AUTHENTICATED_USER_KEY = 'ohmaudit.lastAuthenticatedUserId';
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly config = inject(AppConfigService);
@@ -22,6 +24,12 @@ export class AuthService {
   readonly session = this.sessionState.asReadonly();
   readonly signedIn = computed(() => this.sessionState() !== null);
   readonly recoveringPassword = this.passwordRecoveryState.asReadonly();
+
+  lastAuthenticatedUserId(): string | undefined {
+    return (
+      this.sessionState()?.user.id ?? localStorage.getItem(LAST_AUTHENTICATED_USER_KEY) ?? undefined
+    );
+  }
 
   private get client(): SupabaseClient {
     this.clientValue ??= createClient(
@@ -33,17 +41,27 @@ export class AuthService {
 
   async initialise(): Promise<void> {
     this.client.auth.onAuthStateChange((event, session) => this.handleAuthChange(event, session));
-    const { data } = await this.client.auth.getSession();
-    this.sessionState.set(data.session);
+    try {
+      const { data } = await this.client.auth.getSession();
+      this.setSession(data.session);
+    } catch {
+      // A previously authenticated user's downloaded work remains available without Supabase.
+      this.sessionState.set(null);
+    }
     if (globalThis.location?.hash.includes('type=recovery') === true) {
       this.passwordRecoveryState.set(true);
     }
   }
 
   private handleAuthChange(event: AuthChangeEvent, session: Session | null): void {
-    this.sessionState.set(session);
+    this.setSession(session);
     if (event === 'PASSWORD_RECOVERY') this.passwordRecoveryState.set(true);
     if (event === 'SIGNED_OUT') this.passwordRecoveryState.set(false);
+  }
+
+  private setSession(session: Session | null): void {
+    this.sessionState.set(session);
+    if (session !== null) localStorage.setItem(LAST_AUTHENTICATED_USER_KEY, session.user.id);
   }
 
   async signIn(email: string, password: string): Promise<boolean> {
@@ -102,6 +120,8 @@ export class AuthService {
   async signOut(): Promise<void> {
     const { error } = await this.client.auth.signOut();
     if (error !== null) throw error;
+    localStorage.removeItem(LAST_AUTHENTICATED_USER_KEY);
+    this.sessionState.set(null);
   }
 
   async enrollMfa(): Promise<{ id: string; qrCode: string; secret: string }> {

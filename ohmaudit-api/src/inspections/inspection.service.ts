@@ -209,6 +209,48 @@ export class InspectionService {
     return { ...inspection, defects, evidenceMedia };
   }
 
+  async upsertDraft(
+    organisationId: string,
+    inspectionId: string,
+    payload: Record<string, unknown>,
+  ) {
+    const inspection = await this.prisma.inspection.findFirst({
+      where: { id: inspectionId, organisationId },
+      select: { id: true, status: true },
+    });
+    if (inspection === null)
+      throw new DomainError('INSPECTION_NOT_FOUND', 'The inspection was not found.', 404);
+    if (inspection.status !== 'DRAFT' && inspection.status !== 'IN_PROGRESS')
+      throw new DomainError(
+        'INSPECTION_DRAFT_NOT_EDITABLE',
+        'Draft data can only be saved before the inspection is submitted.',
+        409,
+      );
+    return this.prisma.inspectionDraft.upsert({
+      where: { inspectionId },
+      create: {
+        organisationId,
+        inspectionId,
+        payload: payload as Prisma.InputJsonValue,
+      },
+      update: { payload: payload as Prisma.InputJsonValue },
+      select: { inspectionId: true, updatedAt: true },
+    });
+  }
+
+  async draft(organisationId: string, inspectionId: string) {
+    const draft = await this.prisma.inspectionDraft.findFirst({
+      where: { inspectionId, organisationId },
+    });
+    if (draft === null)
+      throw new DomainError(
+        'INSPECTION_DRAFT_NOT_FOUND',
+        'No saved inspection draft was found.',
+        404,
+      );
+    return draft;
+  }
+
   async overrideSubmission(
     organisationId: string,
     inspectionId: string,
@@ -660,6 +702,7 @@ export class InspectionService {
           effectiveDate: new Date(),
         },
       });
+      await transaction.inspectionDraft.deleteMany({ where: { organisationId, inspectionId } });
       if (inspection.visitTaskId !== null)
         await transaction.visitTask.update({
           where: { id: inspection.visitTaskId },

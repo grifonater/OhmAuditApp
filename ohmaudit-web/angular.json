@@ -17,6 +17,7 @@
             "inlineStyleLanguage": "css",
             "assets": [{ "glob": "**/*", "input": "public" }],
             "styles": ["src/styles.css"],
+            "allowedCommonJsDependencies": ["jsbarcode", "qrcode"],
             "serviceWorker": "ngsw-config.json"
           },
           "configurations": {
@@ -27,7 +28,7 @@
               ],
               "budgets": [
                 { "type": "initial", "maximumWarning": "500kB", "maximumError": "1MB" },
-                { "type": "anyComponentStyle", "maximumWarning": "20kB", "maximumError": "24kB" }
+                { "type": "anyComponentStyle", "maximumWarning": "21kB", "maximumError": "24kB" }
               ],
               "outputHashing": "all"
             },

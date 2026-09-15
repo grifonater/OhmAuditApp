@@ -176,61 +176,64 @@ model User {
 }
 
 model Organisation {
-  id                           String                           @id @default(uuid()) @db.Uuid
-  name                         String
-  slug                         String                           @unique
-  status                       OrganisationStatus               @default(ACTIVE)
-  requireMfaForPrivilegedRoles Boolean                          @default(false) @map("require_mfa_for_privileged_roles")
-  createdAt                    DateTime                         @default(now()) @map("created_at")
-  updatedAt                    DateTime                         @updatedAt @map("updated_at")
-  memberships                  OrganisationMembership[]
-  roles                        Role[]
-  auditEvents                  AuditEvent[]
-  brandProfile                 OrganisationBrandProfile?
-  accreditations               OrganisationAccreditation[]
-  invitations                  OrganisationInvitation[]
-  moduleEntitlements           OrganisationModuleEntitlement[]
-  billingCustomer              BillingCustomer?
-  customers                    Customer[]
-  sites                        Site[]
-  assets                       Asset[]
-  contacts                     Contact[]
-  tags                         Tag[]
-  entityTags                   EntityTag[]
-  media                        Media[]
-  documents                    Document[]
-  scheduleRules                ScheduleRule[]
-  scheduleOccurrences          ScheduleOccurrence[]
-  notificationPreference       NotificationPreference?
-  notificationEvents           NotificationEvent[]
-  visits                       Visit[]
-  visitTasks                   VisitTask[]
-  inspections                  Inspection[]
-  inspectionRevisions          InspectionRevision[]
-  defects                      Defect[]
-  customFieldDefinitions       CustomFieldDefinition[]
-  reportTemplates              ReportTemplate[]
-  syncMutations                SyncMutation[]
-  proposedAssetChanges         ProposedAssetChange[]
-  evChargePoints               EvChargePoint[]
-  evSupplies                   EvSupply[]
-  evConnectors                 EvConnector[]
-  emergencyLightingSystems     EmergencyLightingSystem[]
-  emergencyLightingLocations   EmergencyLightingLocation[]
-  emergencyLightingGroups      EmergencyLightingGroup[]
-  emergencyLightingKeyswitches EmergencyLightingKeyswitch[]
-  emergencyLightingFittings    EmergencyLightingFitting[]
-  emergencyLightingResults     EmergencyLightingFittingResult[]
-  equipment                    OrganisationEquipment[]
-  jobCategories                JobCategory[]
-  supportSessions              PlatformSupportSession[]
-  rams                         Rams[]
-  ramsRevisions                RamsRevision[]
-  ramsTemplates                RamsTemplate[]
-  ramsMethodStatementGroups    RamsMethodStatementGroup[]
-  ramsHazardLibraryItems       RamsHazardLibraryItem[]
-  ramsRequirementDefaults      RamsRequirementDefaults?
-  ramsAcknowledgements         RamsAcknowledgement[]
+  id                            String                           @id @default(uuid()) @db.Uuid
+  name                          String
+  slug                          String                           @unique
+  status                        OrganisationStatus               @default(ACTIVE)
+  requireMfaForPrivilegedRoles  Boolean                          @default(false) @map("require_mfa_for_privileged_roles")
+  createdAt                     DateTime                         @default(now()) @map("created_at")
+  updatedAt                     DateTime                         @updatedAt @map("updated_at")
+  memberships                   OrganisationMembership[]
+  roles                         Role[]
+  auditEvents                   AuditEvent[]
+  brandProfile                  OrganisationBrandProfile?
+  accreditations                OrganisationAccreditation[]
+  invitations                   OrganisationInvitation[]
+  moduleEntitlements            OrganisationModuleEntitlement[]
+  billingCustomer               BillingCustomer?
+  customers                     Customer[]
+  sites                         Site[]
+  assets                        Asset[]
+  contacts                      Contact[]
+  tags                          Tag[]
+  entityTags                    EntityTag[]
+  media                         Media[]
+  documents                     Document[]
+  scheduleRules                 ScheduleRule[]
+  scheduleOccurrences           ScheduleOccurrence[]
+  notificationPreference        NotificationPreference?
+  notificationEvents            NotificationEvent[]
+  visits                        Visit[]
+  visitTasks                    VisitTask[]
+  inspections                   Inspection[]
+  inspectionDrafts              InspectionDraft[]
+  inspectionRevisions           InspectionRevision[]
+  defects                       Defect[]
+  customFieldDefinitions        CustomFieldDefinition[]
+  reportTemplates               ReportTemplate[]
+  syncMutations                 SyncMutation[]
+  proposedAssetChanges          ProposedAssetChange[]
+  evChargePoints                EvChargePoint[]
+  evSupplies                    EvSupply[]
+  evConnectors                  EvConnector[]
+  emergencyLightingSystems      EmergencyLightingSystem[]
+  emergencyLightingLocations    EmergencyLightingLocation[]
+  emergencyLightingGroups       EmergencyLightingGroup[]
+  emergencyLightingKeyswitches  EmergencyLightingKeyswitch[]
+  emergencyLightingFittings     EmergencyLightingFitting[]
+  emergencyLightingResults      EmergencyLightingFittingResult[]
+  emergencyLightingFittingTypes EmergencyLightingFittingType[]
+  emergencyLightingDevices      EmergencyLightingDevice[]
+  equipment                     OrganisationEquipment[]
+  jobCategories                 JobCategory[]
+  supportSessions               PlatformSupportSession[]
+  rams                          Rams[]
+  ramsRevisions                 RamsRevision[]
+  ramsTemplates                 RamsTemplate[]
+  ramsMethodStatementGroups     RamsMethodStatementGroup[]
+  ramsHazardLibraryItems        RamsHazardLibraryItem[]
+  ramsRequirementDefaults       RamsRequirementDefaults?
+  ramsAcknowledgements          RamsAcknowledgement[]
 
   @@map("organisations")
 }
@@ -356,6 +359,7 @@ model Site {
   ppeRequirements      String?        @map("ppe_requirements")
   inductionInformation String?        @map("induction_information")
   internalNotes        String?        @map("internal_notes")
+  emergencyLightingLabelSettings Json? @map("emergency_lighting_label_settings")
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
   organisation         Organisation   @relation(fields: [organisationId], references: [id])
@@ -914,6 +918,7 @@ model Inspection {
   site                     Site                             @relation(fields: [siteId], references: [id])
   asset                    Asset?                           @relation(fields: [assetId], references: [id])
   revisions                InspectionRevision[]
+  draft                    InspectionDraft?
   defects                  Defect[]
   proposedAssetChanges     ProposedAssetChange[]
   emergencyLightingResults EmergencyLightingFittingResult[] @relation("EmergencyLightingDraftResults")
@@ -921,6 +926,20 @@ model Inspection {
   @@index([organisationId, status, createdAt])
   @@index([organisationId, siteId])
   @@map("inspections")
+}
+
+model InspectionDraft {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @map("organisation_id") @db.Uuid
+  inspectionId   String       @unique @map("inspection_id") @db.Uuid
+  payload        Json
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  inspection     Inspection   @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  @@index([organisationId, updatedAt])
+  @@map("inspection_drafts")
 }
 
 model InspectionRevision {
@@ -1140,22 +1159,63 @@ model EvInspectionData {
 }
 
 model EmergencyLightingSystem {
-  id             String                       @id @default(uuid()) @db.Uuid
-  organisationId String                       @map("organisation_id") @db.Uuid
-  assetId        String                       @unique @map("asset_id") @db.Uuid
+  id             String                         @id @default(uuid()) @db.Uuid
+  organisationId String                         @map("organisation_id") @db.Uuid
+  assetId        String                         @unique @map("asset_id") @db.Uuid
   description    String?
   notes          String?
-  createdAt      DateTime                     @default(now()) @map("created_at")
-  updatedAt      DateTime                     @updatedAt @map("updated_at")
-  organisation   Organisation                 @relation(fields: [organisationId], references: [id])
-  asset          Asset                        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdAt      DateTime                       @default(now()) @map("created_at")
+  updatedAt      DateTime                       @updatedAt @map("updated_at")
+  organisation   Organisation                   @relation(fields: [organisationId], references: [id])
+  asset          Asset                          @relation(fields: [assetId], references: [id], onDelete: Cascade)
   locations      EmergencyLightingLocation[]
   groups         EmergencyLightingGroup[]
   keyswitches    EmergencyLightingKeyswitch[]
   fittings       EmergencyLightingFitting[]
+  fittingTypes   EmergencyLightingFittingType[]
+  devices        EmergencyLightingDevice[]
 
   @@index([organisationId])
   @@map("emergency_lighting_systems")
+}
+
+model EmergencyLightingFittingType {
+  id             String                    @id @default(uuid()) @db.Uuid
+  organisationId String                    @map("organisation_id") @db.Uuid
+  systemId       String                    @map("system_id") @db.Uuid
+  name           String
+  displayOrder   Int                       @default(0) @map("display_order")
+  isDefault      Boolean                   @default(false) @map("is_default")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+  organisation   Organisation              @relation(fields: [organisationId], references: [id])
+  system         EmergencyLightingSystem   @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  devices        EmergencyLightingDevice[]
+
+  @@unique([systemId, name])
+  @@index([organisationId, systemId])
+  @@map("emergency_lighting_fitting_types")
+}
+
+model EmergencyLightingDevice {
+  id             String                        @id @default(uuid()) @db.Uuid
+  organisationId String                        @map("organisation_id") @db.Uuid
+  systemId       String                        @map("system_id") @db.Uuid
+  fittingTypeId  String?                       @map("fitting_type_id") @db.Uuid
+  make           String
+  model          String
+  description    String?
+  notes          String?
+  createdAt      DateTime                      @default(now()) @map("created_at")
+  updatedAt      DateTime                      @updatedAt @map("updated_at")
+  organisation   Organisation                  @relation(fields: [organisationId], references: [id])
+  system         EmergencyLightingSystem       @relation(fields: [systemId], references: [id], onDelete: Cascade)
+  fittingType    EmergencyLightingFittingType? @relation(fields: [fittingTypeId], references: [id], onDelete: SetNull)
+  fittings       EmergencyLightingFitting[]
+
+  @@unique([systemId, model])
+  @@index([organisationId, systemId])
+  @@map("emergency_lighting_devices")
 }
 
 model EmergencyLightingLocation {
@@ -1231,6 +1291,7 @@ model EmergencyLightingFitting {
   organisationId       String                           @map("organisation_id") @db.Uuid
   systemId             String                           @map("system_id") @db.Uuid
   locationId           String?                          @map("location_id") @db.Uuid
+  deviceId             String?                          @map("device_id") @db.Uuid
   reference            String
   description          String?
   fittingType          String?                          @map("fitting_type")
@@ -1246,6 +1307,7 @@ model EmergencyLightingFitting {
   organisation         Organisation                     @relation(fields: [organisationId], references: [id])
   system               EmergencyLightingSystem          @relation(fields: [systemId], references: [id], onDelete: Cascade)
   location             EmergencyLightingLocation?       @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  device               EmergencyLightingDevice?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   groupMappings        EmergencyLightingFittingGroup[]
   results              EmergencyLightingFittingResult[]
 

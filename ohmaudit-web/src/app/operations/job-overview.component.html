@@ -444,15 +444,27 @@
               @if (rams.reviewComment) {
                 <p class="rams-review-note">{{ rams.reviewComment }}</p>
               }
-              <a
-                class="button secondary compact"
-                [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', rams.id]"
-                >{{
-                  rams.status === 'DRAFT' || rams.status === 'RETURNED'
-                    ? 'Continue RAMS'
-                    : 'View RAMS'
-                }}</a
-              >
+              <div class="rams-record-actions">
+                <a
+                  class="button secondary compact"
+                  [routerLink]="['/app/org', organisationId, 'visits', visitId, 'rams', rams.id]"
+                  >{{
+                    rams.status === 'DRAFT' || rams.status === 'RETURNED'
+                      ? 'Continue RAMS'
+                      : 'View RAMS'
+                  }}</a
+                >
+                @if (canManageRams()) {
+                  <button
+                    class="button danger compact"
+                    type="button"
+                    [disabled]="busy()"
+                    (click)="unlinkRams(rams)"
+                  >
+                    Remove from job
+                  </button>
+                }
+              </div>
             </article>
           } @empty {
             <div class="empty-state">
@@ -614,6 +626,16 @@
                     @if (inspection.status === 'SUBMITTED' && inspection.submittedAt) {
                       <small>Submitted {{ formatDate(inspection.submittedAt) }}</small>
                     }
+                    @if (canDownloadDraft(task)) {
+                      <button
+                        class="button secondary compact draft-download"
+                        type="button"
+                        [disabled]="busy()"
+                        (click)="downloadDraft(task)"
+                      >
+                        Download draft PDF
+                      </button>
+                    }
                   }
                   <a
                     class="button ghost compact"
@@ -657,10 +679,16 @@
                     <dt>Type</dt>
                     <dd>{{ statusLabel(entry.asset.assetType) }}</dd>
                   </div>
-                  @if (entry.asset.manufacturer || entry.asset.model) {
+                  @if (entry.asset.manufacturer) {
                     <div>
-                      <dt>Make / model</dt>
-                      <dd>{{ entry.asset.manufacturer || '—' }} {{ entry.asset.model || '' }}</dd>
+                      <dt>Make</dt>
+                      <dd>{{ entry.asset.manufacturer }}</dd>
+                    </div>
+                  }
+                  @if (entry.asset.model) {
+                    <div class="asset-model">
+                      <dt>Model</dt>
+                      <dd>{{ entry.asset.model }}</dd>
                     </div>
                   }
                   @if (entry.asset.evChargePoint?.maximumPowerKw; as power) {
@@ -672,7 +700,15 @@
                   @if (entry.asset.evChargePoint?.phaseCount; as phases) {
                     <div>
                       <dt>Phase</dt>
-                      <dd>{{ phases }}</dd>
+                      <dd>
+                        {{
+                          phases === 1
+                            ? 'Single phase'
+                            : phases === 3
+                              ? 'Three phase'
+                              : phases + '-phase'
+                        }}
+                      </dd>
                     </div>
                   }
                   <div>

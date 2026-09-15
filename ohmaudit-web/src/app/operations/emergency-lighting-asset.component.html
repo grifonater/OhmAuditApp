@@ -1,20 +1,59 @@
-<main class="page operations-page emergency-page">
+<main class="page operations-page emergency-page emergency-register-page">
   @if (asset(); as current) {
-    <nav class="breadcrumbs" aria-label="Breadcrumb">
-      <a [routerLink]="['/app/org', organisationId, 'portfolio', 'clients', current.customer.id]">{{
-        current.customer.name
-      }}</a
-      ><span>›</span>
-      <strong>{{ current.site.name }}</strong>
+    <nav class="register-breadcrumbs" aria-label="Breadcrumb">
+      <a [routerLink]="['/app/org', organisationId, 'portfolio']">Assets</a>
+      <span aria-hidden="true">/</span>
+      <a
+        [routerLink]="[
+          '/app/org',
+          organisationId,
+          'portfolio',
+          'clients',
+          current.customer.id,
+          'sites',
+          current.site.id,
+        ]"
+        >{{ current.site.name }}</a
+      >
+      <span aria-hidden="true">/</span>
+      <strong>Emergency lighting</strong>
     </nav>
-    <header class="emergency-hero">
-      <div>
-        <p class="eyebrow">Emergency lighting asset register</p>
-        <h1>{{ current.displayName }}</h1>
-        <p>{{ current.assetReference }} · {{ current.site.name }}</p>
+
+    <header class="register-page-header">
+      <div class="register-title-group">
+        <span class="register-title-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M9 3h6v3h3v15H6V6h3V3Zm2 3h2V5h-2v1Zm-3 2v11h8V8H8Zm2 2h4v2h-4v-2Zm0 4h4v3h-4v-3Z"
+            />
+          </svg>
+        </span>
+        <div>
+          <h1>Emergency Lighting Register</h1>
+          <p>{{ current.displayName }} · {{ current.assetReference }} · {{ current.site.name }}</p>
+        </div>
       </div>
-      <button class="button primary" type="button" (click)="addFitting()">+ Add fitting</button>
+      <div class="register-header-actions">
+        <a class="button ghost" [routerLink]="labelStudioPath">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M6 3h12v4h2v10h-3v4H7v-4H4V7h2V3Zm2 2v4h8V5H8Zm1 10v4h6v-4H9Zm8-5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"
+            />
+          </svg>
+          Label studio
+        </a>
+        <button class="button ghost" type="button" (click)="showView('setup')">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 2a4 4 0 0 1 4 4c0 .7-.18 1.37-.5 1.95A6 6 0 0 1 20 13.77V16h-2v-2.23A4 4 0 0 0 14 10h-4a4 4 0 0 0-4 3.77V16H4v-2.23a6 6 0 0 1 4.5-5.82A4 4 0 0 1 12 2Zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-7 13h14v5h-2v-3H7v3H5v-5Z"
+            />
+          </svg>
+          Manage register
+        </button>
+        <button class="button primary" type="button" (click)="addFitting()">+ Add fitting</button>
+      </div>
     </header>
+
     @if (notice()) {
       <p class="notice" role="status">{{ notice() }}</p>
     }
@@ -22,243 +61,683 @@
       <p class="error" role="alert">{{ error() }}</p>
     }
 
-    <section class="stat-grid" aria-label="Register summary">
+    <section class="register-stat-grid" aria-label="Register summary">
       <article>
-        <span>Total fittings</span><strong>{{ stats().total }}</strong>
+        <span class="stat-icon green" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M7 2h10v3h3v17H4V5h3V2Zm2 3h6V4H9v1ZM6 7v13h12V7H6Zm3 2h6v2H9V9Zm0 4h6v2H9v-2Z"
+            />
+          </svg>
+        </span>
+        <div>
+          <small>Total fittings</small><strong>{{ stats().total }}</strong>
+          <p>Across this site</p>
+        </div>
       </article>
       <article>
-        <span>Maintained</span><strong>{{ stats().maintained }}</strong>
+        <span class="stat-icon blue" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="m9.5 16.2-3.7-3.7-1.4 1.4 5.1 5.1L20 8.5l-1.4-1.4-9.1 9.1Z" />
+          </svg>
+        </span>
+        <div>
+          <small>Active fittings</small><strong>{{ stats().active }}</strong>
+          <p>Available for testing</p>
+        </div>
       </article>
       <article>
-        <span>On keyswitch</span><strong>{{ stats().withKeyswitch }}</strong>
+        <span class="stat-icon amber" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M9 2h6v4h3l-1 16H7L6 6h3V2Zm2 4h2V4h-2v2Zm-3 2 .75 12h6.5L16 8H8Z" />
+          </svg>
+        </span>
+        <div>
+          <small>Maintained</small><strong>{{ stats().maintained }}</strong>
+          <p>Continuous operation</p>
+        </div>
       </article>
-      <article [class.alert-stat]="stats().attention">
-        <span>Needs attention</span><strong>{{ stats().attention }}</strong>
+      <article>
+        <span class="stat-icon teal" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2 3 7v15h18V7l-9-5Zm0 2.3L18 7.6V20h-4v-6h-4v6H5V7.6l7-3.3Z" />
+          </svg>
+        </span>
+        <div>
+          <small>Rooms / areas</small><strong>{{ current.locations.length }}</strong>
+          <p>Mapped locations</p>
+        </div>
+      </article>
+      <article>
+        <span class="stat-icon violet" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M8 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm8 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM8 13c4 0 7 2 7 5v3H1v-3c0-3 3-5 7-5Zm8 0c3.5 0 7 1.6 7 5v3h-6v-3c0-1.9-.8-3.5-2.2-4.7.4-.2.8-.3 1.2-.3Z"
+            />
+          </svg>
+        </span>
+        <div>
+          <small>Test groups</small><strong>{{ current.groups.length }}</strong>
+          <p>{{ stats().withKeyswitch }} fittings controlled</p>
+        </div>
+      </article>
+      <article [class.alert-stat]="stats().attention > 0">
+        <span class="stat-icon red" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 2 1 21h22L12 2Zm0 4 7.5 13h-15L12 6Zm-1 4v5h2v-5h-2Zm0 7v2h2v-2h-2Z" />
+          </svg>
+        </span>
+        <div>
+          <small>Needs attention</small><strong>{{ stats().attention }}</strong>
+          <p>Inactive or archived</p>
+        </div>
       </article>
     </section>
 
-    <section class="register-layout">
-      <article class="card panel register-main">
-        <div class="section-heading">
+    @if (editorOpen()) {
+      <section class="register-editor" [class.new-entry]="!editingId()">
+        <div class="register-editor-heading">
           <div>
-            <h2>Fittings</h2>
-            <p>{{ filteredFittings().length }} of {{ stats().total }} shown</p>
+            <span>{{ editingId() ? 'Edit register entry' : 'New register entry' }}</span>
+            <h2>{{ editingId() ? 'Edit fitting' : 'Add fitting' }}</h2>
           </div>
+          <button class="register-close" type="button" aria-label="Close" (click)="closeEditor()">
+            ×
+          </button>
         </div>
-        <div class="register-filters">
-          <label class="field search-wide"
-            >Search<input
-              type="search"
-              placeholder="Reference, location, make or model"
-              [value]="query()"
-              (input)="query.set($any($event.target).value)"
+        <form
+          class="form-grid register-editor-form"
+          [formGroup]="fittingForm"
+          (ngSubmit)="saveFitting()"
+        >
+          <label class="field"
+            >Reference<input formControlName="reference" placeholder="EL-001"
           /></label>
           <label class="field"
-            >Room / location<select
-              [value]="locationFilter()"
-              (change)="locationFilter.set($any($event.target).value)"
-            >
-              <option value="">All rooms</option>
-              @for (location of current.locations; track location.id) {
-                <option [value]="location.id">{{ location.name }}</option>
+            >Description<input formControlName="description" placeholder="Exit above main door"
+          /></label>
+          <label class="field"
+            >Room / location<select formControlName="locationId">
+              <option value="">Unassigned</option>
+              @for (item of current.locations; track item.id) {
+                <option [value]="item.id">{{ item.name }}</option>
               }
             </select></label
           >
           <label class="field"
-            >Group<select
-              [value]="groupFilter()"
-              (change)="groupFilter.set($any($event.target).value)"
-            >
-              <option value="">All groups</option>
-              @for (group of current.groups; track group.id) {
-                <option [value]="group.id">{{ group.name }}</option>
+            >Groups<select formControlName="groupIds" multiple>
+              @for (item of current.groups; track item.id) {
+                <option [value]="item.id">{{ item.name }}</option>
               }
             </select></label
           >
+          <label class="field"
+            >Device / series<select formControlName="deviceId" (change)="onDeviceChange()">
+              <option value="">No linked device</option>
+              @for (device of current.devices; track device.id) {
+                <option [value]="device.id">{{ device.make }} {{ device.model }}</option>
+              }
+            </select></label
+          >
+          <label class="field"
+            >Fitting type<input
+              formControlName="fittingType"
+              list="fitting-type-options"
+              placeholder="Bulkhead, exit sign..."
+              [disabled]="deviceSelected()"
+          /></label>
+          <datalist id="fitting-type-options">
+            @for (type of current.fittingTypes; track type.id) {
+              <option [value]="type.name"></option>
+            }
+          </datalist>
+          <label class="field"
+            >Make<input formControlName="manufacturer" [disabled]="deviceSelected()"
+          /></label>
+          <label class="field"
+            >Model<input formControlName="model" [disabled]="deviceSelected()"
+          /></label>
+          @if (deviceSelected()) {
+            <p class="field-note full">
+              Make, model and type are locked to the linked device series.
+            </p>
+          }
+          <label class="check-field full"
+            ><input type="checkbox" formControlName="maintained" /> Maintained fitting</label
+          >
+          <label class="field full">Notes<textarea formControlName="notes"></textarea></label>
+          <footer class="form-actions full">
+            <button class="button ghost" type="button" (click)="closeEditor()">Cancel</button>
+            <button class="button primary" type="submit" [disabled]="busy() || fittingForm.invalid">
+              {{ busy() ? 'Saving...' : 'Save fitting' }}
+            </button>
+          </footer>
+        </form>
+      </section>
+    }
+
+    <section class="register-console">
+      <nav class="register-tabs" aria-label="Register views">
+        <button
+          type="button"
+          [class.active]="activeView() === 'fittings'"
+          (click)="showView('fittings')"
+        >
+          Fitting register
+        </button>
+        <button type="button" [class.active]="activeView() === 'setup'" (click)="showView('setup')">
+          Keyswitches & test groups
+        </button>
+      </nav>
+
+      @if (activeView() === 'fittings') {
+        <div class="register-filterbar">
+          <label class="register-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M10 3a7 7 0 1 0 4.9 12l5.1 5 1.4-1.4-5.1-5A7 7 0 0 0 10 3Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"
+              />
+            </svg>
+            <input
+              type="search"
+              aria-label="Search fittings"
+              placeholder="Search reference, description, make or model..."
+              [value]="query()"
+              (input)="query.set($any($event.target).value)"
+            />
+          </label>
+          <select
+            aria-label="Filter by room"
+            [value]="locationFilter()"
+            (change)="locationFilter.set($any($event.target).value)"
+          >
+            <option value="">All rooms</option>
+            @for (item of current.locations; track item.id) {
+              <option [value]="item.id">{{ item.name }}</option>
+            }
+          </select>
+          <select
+            aria-label="Filter by group"
+            [value]="groupFilter()"
+            (change)="groupFilter.set($any($event.target).value)"
+          >
+            <option value="">All groups</option>
+            @for (item of current.groups; track item.id) {
+              <option [value]="item.id">{{ item.name }}</option>
+            }
+          </select>
+          <button class="button ghost compact" type="button" (click)="showView('setup')">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 5h18v2H3V5Zm3 6h12v2H6v-2Zm4 6h4v2h-4v-2Z" />
+            </svg>
+            Manage filters
+          </button>
         </div>
-        <div class="fitting-table">
-          <div class="fitting-row fitting-head">
-            <span>Fitting</span><span>Location</span><span>Type</span><span>Controls</span
-            ><span></span>
-          </div>
-          @for (fitting of filteredFittings(); track fitting.id) {
-            <article class="fitting-row">
-              <span class="fitting-identity"
-                ><strong>{{ fitting.reference }}</strong
-                ><small
-                  >{{ fitting.manufacturer || 'Make optional' }} {{ fitting.model || '' }}</small
-                ></span
-              >
-              <span data-label="Location"
-                >{{ fitting.location?.name || 'Unassigned'
-                }}<small>{{ groupName(fitting) }}</small></span
-              >
-              <span data-label="Type"
-                >{{ fitting.fittingType || 'Not recorded'
-                }}<small>{{
-                  fitting.operationMode === 'MAINTAINED' ? 'Maintained' : 'Non-maintained'
-                }}</small></span
-              >
-              <span data-label="Controls">{{ keyswitchFor(fitting) || 'No keyswitch' }}</span>
-              <span class="row-actions"
-                ><label class="button ghost compact"
-                  >Camera<input
+
+        <div class="register-workspace">
+          <section class="register-list-pane">
+            <div class="fitting-table register-table">
+              <div class="fitting-row fitting-head">
+                <span></span><span>Reference / fitting</span><span>Location</span><span>Group</span
+                ><span>Type</span><span>Status</span><span>Actions</span>
+              </div>
+              @for (fitting of filteredFittings(); track fitting.id) {
+                <article
+                  class="fitting-row"
+                  [class.selected]="selectedFitting()?.id === fitting.id"
+                >
+                  <span class="row-selector">
+                    <button
+                      type="button"
+                      [attr.aria-label]="'Select ' + fitting.reference"
+                      (click)="selectFitting(fitting)"
+                    >
+                      <span></span>
+                    </button>
+                  </span>
+                  <button
+                    class="fitting-identity row-primary"
+                    type="button"
+                    (click)="selectFitting(fitting)"
+                  >
+                    <strong>{{ fitting.reference }}</strong>
+                    <small>{{ fitting.description || 'No description' }}</small>
+                  </button>
+                  <span data-label="Location"
+                    ><strong>{{ fitting.location?.name || 'Unassigned' }}</strong
+                    ><small
+                      >{{ fitting.manufacturer || 'Make not recorded' }}
+                      {{ fitting.model || '' }}</small
+                    ></span
+                  >
+                  <span data-label="Group"
+                    ><strong>{{ groupName(fitting) }}</strong
+                    ><small>{{ keyswitchFor(fitting) || 'No keyswitch' }}</small></span
+                  >
+                  <span data-label="Type"
+                    ><strong>{{ fitting.fittingType || 'Not recorded' }}</strong
+                    ><small>{{
+                      fitting.operationMode === 'MAINTAINED' ? 'Maintained' : 'Non-maintained'
+                    }}</small></span
+                  >
+                  <span data-label="Status"
+                    ><span class="status-pill" [class.inactive]="fitting.status !== 'ACTIVE'">{{
+                      fitting.status === 'ACTIVE' ? 'Active' : fitting.status
+                    }}</span></span
+                  >
+                  <span class="row-actions">
+                    <a
+                      class="table-icon-button"
+                      [routerLink]="fittingPath(fitting)"
+                      title="View fitting"
+                      aria-label="View fitting"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M12 5c5.5 0 9.5 5.6 9.5 7s-4 7-9.5 7S2.5 13.4 2.5 12 6.5 5 12 5Zm0 2c-3.6 0-6.5 3.2-7.4 5 .9 1.8 3.8 5 7.4 5s6.5-3.2 7.4-5c-.9-1.8-3.8-5-7.4-5Zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6Z"
+                        />
+                      </svg>
+                    </a>
+                    <button
+                      class="table-icon-button"
+                      type="button"
+                      title="Edit fitting"
+                      aria-label="Edit fitting"
+                      (click)="editFitting(fitting)"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="m16.9 3.6 3.5 3.5L8.5 19H5v-3.5L16.9 3.6Zm0 2.8L7 16.3V17h.7l9.9-9.9-.7-.7Z"
+                        />
+                      </svg>
+                    </button>
+                  </span>
+                </article>
+              } @empty {
+                <div class="inline-empty">No fittings match these filters.</div>
+              }
+            </div>
+            <footer class="register-table-footer">
+              <span>Showing {{ filteredFittings().length }} of {{ stats().total }} fittings</span>
+              <span>Register: {{ current.assetReference }}</span>
+            </footer>
+          </section>
+
+          <aside class="register-detail-pane">
+            @if (selectedFitting(); as selected) {
+              <header class="selection-header">
+                <span class="selection-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M9 2h6v4h3l-1 16H7L6 6h3V2Zm2 4h2V4h-2v2Zm-3 2 .75 12h6.5L16 8H8Z" />
+                  </svg>
+                </span>
+                <div>
+                  <strong>{{ selected.reference }}</strong
+                  ><span class="status-pill" [class.inactive]="selected.status !== 'ACTIVE'">{{
+                    selected.status === 'ACTIVE' ? 'Active' : selected.status
+                  }}</span>
+                  <p>{{ selected.description || 'No description recorded' }}</p>
+                </div>
+              </header>
+              <div class="selection-actions">
+                <a class="button primary compact" [routerLink]="fittingPath(selected)"
+                  >View fitting</a
+                >
+                <button class="button ghost compact" type="button" (click)="editFitting(selected)">
+                  Edit details
+                </button>
+                <label class="button ghost compact"
+                  >Add photo<input
                     hidden
                     type="file"
                     accept="image/*"
                     capture="environment"
                     [disabled]="busy()"
-                    (change)="uploadImage(fitting, $event)" /></label
-                ><button
-                  class="button secondary compact"
-                  type="button"
-                  (click)="editFitting(fitting)"
-                >
-                  Edit</button
-                ><button
-                  class="button danger compact"
-                  type="button"
-                  (click)="deleteFitting(fitting)"
-                >
-                  Delete
-                </button></span
+                    (change)="uploadImage(selected, $event)"
+                /></label>
+              </div>
+              <div class="selection-metrics">
+                <article>
+                  <small>Location</small
+                  ><strong>{{ selected.location?.name || 'Unassigned' }}</strong>
+                  <p>Room / area</p>
+                </article>
+                <article>
+                  <small>Test group</small><strong>{{ groupName(selected) }}</strong>
+                  <p>Assigned group</p>
+                </article>
+                <article>
+                  <small>Control</small><strong>{{ keyswitchFor(selected) || 'None' }}</strong>
+                  <p>Keyswitch</p>
+                </article>
+                <article>
+                  <small>Operation</small
+                  ><strong>{{
+                    selected.operationMode === 'MAINTAINED' ? 'Maintained' : 'Non-maintained'
+                  }}</strong>
+                  <p>Lighting mode</p>
+                </article>
+              </div>
+              <section class="selection-section">
+                <header>
+                  <h3>Fitting specification</h3>
+                  <a [routerLink]="fittingPath(selected)">View full record</a>
+                </header>
+                <dl>
+                  <div>
+                    <dt>Fitting type</dt>
+                    <dd>{{ selected.fittingType || 'Not recorded' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Manufacturer</dt>
+                    <dd>{{ selected.manufacturer || 'Not recorded' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Model</dt>
+                    <dd>{{ selected.model || 'Not recorded' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Device series</dt>
+                    <dd>
+                      {{
+                        selected.device
+                          ? selected.device.make + ' ' + selected.device.model
+                          : 'Not linked'
+                      }}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+              <section class="selection-section">
+                <header>
+                  <h3>Linked controls</h3>
+                  <button type="button" (click)="showView('setup')">Manage</button>
+                </header>
+                <div class="control-diagram">
+                  <div class="diagram-fitting">
+                    {{ selected.reference }}<small>{{ selected.fittingType || 'Fitting' }}</small>
+                  </div>
+                  <span></span>
+                  <div class="diagram-node">
+                    {{ groupName(selected)
+                    }}<small>{{ keyswitchFor(selected) || 'No keyswitch' }}</small>
+                  </div>
+                </div>
+              </section>
+              <button
+                class="selection-delete"
+                type="button"
+                [disabled]="busy()"
+                (click)="deleteFitting(selected)"
               >
-            </article>
-          } @empty {
-            <div class="inline-empty">No fittings match these filters.</div>
-          }
+                Delete fitting
+              </button>
+            } @else {
+              <div class="selection-empty">
+                <strong>No fitting selected</strong>
+                <p>Select a fitting from the register to see its details.</p>
+              </div>
+            }
+          </aside>
         </div>
-      </article>
-
-      <aside class="register-setup">
-        <section class="card panel">
-          <h2>Rooms & locations</h2>
-          <div class="chip-list">
-            @for (item of current.locations; track item.id) {
-              <span>{{ item.name }}</span>
-            }
+      } @else {
+        <div class="setup-header">
+          <div>
+            <h2>Keyswitches & test groups</h2>
+            <p>
+              Manage the rooms, controls, groups, fitting types and device series used by this
+              register.
+            </p>
           </div>
-          <div class="quick-add">
-            <input
-              aria-label="New location"
-              placeholder="e.g. Ground floor"
-              [formControl]="locationForm"
-            /><button class="button secondary compact" type="button" (click)="addLocation()">
-              Add
-            </button>
-          </div>
-        </section>
-        <section class="card panel">
-          <h2>Test groups</h2>
-          <div class="chip-list">
-            @for (item of current.groups; track item.id) {
-              <span>{{ item.name }}</span>
-            }
-          </div>
-          <div class="quick-add">
-            <input
-              aria-label="New group"
-              placeholder="e.g. Group A"
-              [formControl]="groupForm"
-            /><button class="button secondary compact" type="button" (click)="addGroup()">
-              Add
-            </button>
-          </div>
-        </section>
-        <section class="card panel">
-          <h2>Keyswitches</h2>
-          <div class="chip-list">
-            @for (item of current.keyswitches; track item.id) {
-              <span>{{ item.reference }}</span>
-            }
-          </div>
-          <form class="keyswitch-add" [formGroup]="keyswitchForm" (ngSubmit)="addKeyswitch()">
-            <input
-              aria-label="New keyswitch"
-              placeholder="e.g. KS-01"
-              formControlName="reference"
-            /><select aria-label="Keyswitch location" formControlName="locationId">
-              <option value="">No location</option>
+          <button class="button primary" type="button" (click)="addFitting()">+ Add fitting</button>
+        </div>
+        <div class="register-setup-grid">
+          <section class="setup-card">
+            <header>
+              <span class="setup-icon green">R</span>
+              <div>
+                <h3>Rooms & locations</h3>
+                <p>{{ current.locations.length }} mapped areas</p>
+              </div>
+            </header>
+            <div class="setup-list">
               @for (item of current.locations; track item.id) {
-                <option [value]="item.id">{{ item.name }}</option>
-              }</select
-            ><select aria-label="Keyswitch group" formControlName="groupId">
-              <option value="">No group</option>
-              @for (item of current.groups; track item.id) {
-                <option [value]="item.id">{{ item.name }}</option>
-              }</select
-            ><button class="button secondary compact" type="submit">Add</button>
-          </form>
-        </section>
-      </aside>
-    </section>
-
-    @if (editorOpen()) {
-      <div
-        class="modal-backdrop"
-        tabindex="0"
-        (click)="closeEditor($event)"
-        (keydown.escape)="closeEditor()"
-      >
-        <section
-          class="component-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="fitting-title"
-        >
-          <header>
-            <div>
-              <p class="eyebrow">Asset register</p>
-              <h2 id="fitting-title">{{ editingId() ? 'Edit fitting' : 'Add fitting' }}</h2>
+                <article>
+                  <div>
+                    <strong>{{ item.name }}</strong
+                    ><small>{{ item.media?.length || 0 }} room photos</small>
+                  </div>
+                  <div class="setup-actions">
+                    <label class="table-icon-button" title="Add room image"
+                      ><svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          d="M9 4 7.5 6H4v14h16V6h-3.5L15 4H9Zm1 2h4l1.5 2H18v10H6V8h2.5L10 6Zm2 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"
+                        /></svg
+                      ><input
+                        hidden
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        (change)="uploadRoomImage(item, $event)"
+                    /></label>
+                    <button
+                      class="table-icon-button"
+                      type="button"
+                      title="Rename"
+                      (click)="updateLocation(item)"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      class="table-icon-button danger"
+                      type="button"
+                      title="Delete"
+                      (click)="deleteLocation(item)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </article>
+              } @empty {
+                <p class="chip-empty">No rooms recorded.</p>
+              }
             </div>
-            <button class="icon-button" type="button" aria-label="Close" (click)="closeEditor()">
-              ×
-            </button>
-          </header>
-          <form class="form-grid modal-form" [formGroup]="fittingForm" (ngSubmit)="saveFitting()">
-            <label class="field"
-              >Reference<input formControlName="reference" placeholder="EL-001" /></label
-            ><label class="field"
-              >Description<input formControlName="description" placeholder="Exit above main door"
-            /></label>
-            <label class="field"
-              >Room / location<select formControlName="locationId">
-                <option value="">Unassigned</option>
+            <div class="setup-add">
+              <input
+                aria-label="New location"
+                placeholder="New room or area"
+                [formControl]="locationForm"
+              /><button class="button primary compact" type="button" (click)="addLocation()">
+                Add room
+              </button>
+            </div>
+          </section>
+
+          <section class="setup-card">
+            <header>
+              <span class="setup-icon violet">G</span>
+              <div>
+                <h3>Test groups</h3>
+                <p>{{ current.groups.length }} active groups</p>
+              </div>
+            </header>
+            <div class="setup-list">
+              @for (item of current.groups; track item.id) {
+                <article>
+                  <div>
+                    <strong>{{ item.name }}</strong
+                    ><small>Fitting test group</small>
+                  </div>
+                  <div class="setup-actions">
+                    <button class="table-icon-button" type="button" (click)="updateGroup(item)">
+                      Edit</button
+                    ><button
+                      class="table-icon-button danger"
+                      type="button"
+                      (click)="deleteGroup(item)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </article>
+              } @empty {
+                <p class="chip-empty">No groups recorded.</p>
+              }
+            </div>
+            <div class="setup-add">
+              <input
+                aria-label="New group"
+                placeholder="New test group"
+                [formControl]="groupForm"
+              /><button class="button primary compact" type="button" (click)="addGroup()">
+                Add group
+              </button>
+            </div>
+          </section>
+
+          <section class="setup-card">
+            <header>
+              <span class="setup-icon blue">K</span>
+              <div>
+                <h3>Keyswitches</h3>
+                <p>{{ current.keyswitches.length }} controls</p>
+              </div>
+            </header>
+            <div class="setup-list">
+              @for (item of current.keyswitches; track item.id) {
+                <article>
+                  <div>
+                    <strong>{{ item.reference }}</strong
+                    ><small>{{ item.location?.name || 'No location' }}</small>
+                  </div>
+                  <div class="setup-actions">
+                    <button class="table-icon-button" type="button" (click)="updateKeyswitch(item)">
+                      Edit</button
+                    ><button
+                      class="table-icon-button danger"
+                      type="button"
+                      (click)="deleteKeyswitch(item)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </article>
+              } @empty {
+                <p class="chip-empty">No keyswitches recorded.</p>
+              }
+            </div>
+            <form class="setup-form" [formGroup]="keyswitchForm" (ngSubmit)="addKeyswitch()">
+              <input
+                aria-label="New keyswitch"
+                placeholder="Reference e.g. KS-01"
+                formControlName="reference"
+              />
+              <select aria-label="Keyswitch location" formControlName="locationId">
+                <option value="">No location</option>
                 @for (item of current.locations; track item.id) {
                   <option [value]="item.id">{{ item.name }}</option>
                 }
-              </select></label
-            ><label class="field"
-              >Groups<select formControlName="groupIds" multiple>
+              </select>
+              <select aria-label="Keyswitch group" formControlName="groupId">
+                <option value="">No group</option>
                 @for (item of current.groups; track item.id) {
                   <option [value]="item.id">{{ item.name }}</option>
                 }
-              </select></label
-            >
-            <label class="field"
-              >Fitting type<input
-                formControlName="fittingType"
-                placeholder="Bulkhead, exit sign..."
-            /></label>
-            <label class="field">Make (optional)<input formControlName="manufacturer" /></label
-            ><label class="field">Model (optional)<input formControlName="model" /></label>
-            <label class="check-field full"
-              ><input type="checkbox" formControlName="maintained" /> Maintained fitting</label
-            ><label class="field full">Notes<textarea formControlName="notes"></textarea></label>
-            <footer class="form-actions full">
-              <button class="button ghost" type="button" (click)="closeEditor()">Cancel</button
-              ><button
-                class="button primary"
-                type="submit"
-                [disabled]="busy() || fittingForm.invalid"
-              >
-                {{ busy() ? 'Saving...' : 'Save fitting' }}
+              </select>
+              <button class="button primary compact" type="submit">Add keyswitch</button>
+            </form>
+          </section>
+
+          <section class="setup-card">
+            <header>
+              <span class="setup-icon amber">T</span>
+              <div>
+                <h3>Fitting types</h3>
+                <p>{{ current.fittingTypes.length }} available types</p>
+              </div>
+            </header>
+            <div class="type-chip-list">
+              @for (item of current.fittingTypes; track item.id) {
+                <span
+                  >{{ item.name }}
+                  @if (!item.isDefault) {
+                    <button type="button" title="Delete" (click)="deleteFittingType(item)">
+                      ×
+                    </button>
+                  }
+                </span>
+              }
+            </div>
+            <div class="setup-add">
+              <input
+                aria-label="New fitting type"
+                placeholder="New fitting type"
+                [formControl]="fittingTypeForm"
+              /><button class="button primary compact" type="button" (click)="addFittingType()">
+                Add type
               </button>
-            </footer>
-          </form>
-        </section>
-      </div>
-    }
+            </div>
+          </section>
+
+          <section class="setup-card setup-card-wide">
+            <header>
+              <span class="setup-icon teal">D</span>
+              <div>
+                <h3>Device register</h3>
+                <p>{{ current.devices.length }} make and model series</p>
+              </div>
+            </header>
+            <div class="device-table">
+              <div class="device-row device-head">
+                <span>Make</span><span>Model</span><span>Fitting type</span><span>Description</span
+                ><span></span>
+              </div>
+              @for (item of current.devices; track item.id) {
+                <article class="device-row">
+                  <strong>{{ item.make }}</strong
+                  ><span>{{ item.model }}</span
+                  ><span>{{ item.fittingType?.name || 'No type' }}</span
+                  ><small>{{ item.description || 'No description' }}</small
+                  ><button
+                    class="table-icon-button danger"
+                    type="button"
+                    (click)="deleteDevice(item)"
+                  >
+                    ×
+                  </button>
+                </article>
+              } @empty {
+                <p class="chip-empty">No devices recorded.</p>
+              }
+            </div>
+            <form class="device-add-form" [formGroup]="deviceForm" (ngSubmit)="addDevice()">
+              <input
+                aria-label="Device make"
+                placeholder="Make e.g. Eaton"
+                formControlName="make"
+              />
+              <input
+                aria-label="Device model"
+                placeholder="Model e.g. EPT-500"
+                formControlName="model"
+              />
+              <select aria-label="Device fitting type" formControlName="fittingTypeId">
+                <option value="">No type</option>
+                @for (type of current.fittingTypes; track type.id) {
+                  <option [value]="type.id">{{ type.name }}</option>
+                }
+              </select>
+              <input
+                aria-label="Device description"
+                placeholder="Description"
+                formControlName="description"
+              />
+              <button class="button primary compact" type="submit">Add device</button>
+            </form>
+          </section>
+        </div>
+      }
+    </section>
   } @else if (busy()) {
     <div class="loading-state"><span class="oa-spinner"></span> Loading register...</div>
   } @else {

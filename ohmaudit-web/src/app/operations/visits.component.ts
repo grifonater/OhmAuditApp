@@ -307,6 +307,11 @@ export class VisitsComponent {
     }
   }
 
+  protected prepareOfflineNotifications(): void {
+    if (this.offline.notificationPermission() === 'default')
+      void this.offline.requestNotificationPermission();
+  }
+
   protected async createCategory(): Promise<void> {
     const name = this.newCategoryName.value.trim();
     if (!this.canManageCategories() || name.length < 2) return;

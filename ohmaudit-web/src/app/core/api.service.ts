@@ -236,12 +236,29 @@ export interface EmergencyLightingLocation {
   name: string;
   description?: string;
   displayOrder?: number;
+  media?: AssetMedia[];
 }
 export interface EmergencyLightingGroup {
   id: string;
   name: string;
   locationId?: string;
   description?: string;
+}
+export interface EmergencyLightingFittingType {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+  displayOrder?: number;
+}
+export interface EmergencyLightingDevice {
+  id: string;
+  make: string;
+  model: string;
+  fittingTypeId?: string | null;
+  fittingType?: EmergencyLightingFittingType | null;
+  description?: string;
+  notes?: string;
+  media?: AssetMedia[];
 }
 export interface EmergencyLightingKeyswitch {
   id: string;
@@ -259,6 +276,8 @@ export interface EmergencyLightFitting {
   description?: string;
   locationId?: string;
   location?: EmergencyLightingLocation;
+  deviceId?: string;
+  device?: EmergencyLightingDevice | null;
   groupIds?: string[];
   groupMappings?: Array<{ groupId: string; group: EmergencyLightingGroup }>;
   manufacturer?: string;
@@ -269,7 +288,29 @@ export interface EmergencyLightFitting {
   ratedDurationMinutes?: number;
   status: string;
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
   media?: AssetMedia[];
+  locationMedia?: AssetMedia[];
+  keyswitches?: EmergencyLightingKeyswitch[];
+}
+export interface EmergencyLightingFittingTestHistory {
+  id: string;
+  outcome: EmergencyLightTestResult;
+  testType: 'FUNCTIONAL' | 'DURATION';
+  durationMinutes?: number | null;
+  notes?: string | null;
+  isOverride: boolean;
+  recordedAt: string;
+  revisionNumber?: number | null;
+  inspection?: {
+    id: string;
+    inspectionType: string;
+    status: string;
+    effectiveDate?: string | null;
+    submittedAt?: string | null;
+    approvedAt?: string | null;
+  } | null;
 }
 export interface EmergencyLightingAsset extends AssetSummary {
   customer: { id: string; name: string };
@@ -277,7 +318,104 @@ export interface EmergencyLightingAsset extends AssetSummary {
   locations: EmergencyLightingLocation[];
   groups: EmergencyLightingGroup[];
   keyswitches: EmergencyLightingKeyswitch[];
+  fittingTypes: EmergencyLightingFittingType[];
+  devices: EmergencyLightingDevice[];
   fittings: EmergencyLightFitting[];
+}
+export interface EmergencyLightingFittingDetail {
+  asset: {
+    id: string;
+    assetReference: string;
+    displayName: string;
+    customer?: { id: string; name: string };
+    site?: { id: string; name: string };
+  };
+  system: {
+    id: string;
+    locations: EmergencyLightingLocation[];
+    groups: EmergencyLightingGroup[];
+    fittingTypes: EmergencyLightingFittingType[];
+    devices: EmergencyLightingDevice[];
+  };
+  fitting: EmergencyLightFitting;
+  testHistory: EmergencyLightingFittingTestHistory[];
+}
+export interface EmergencyLightingLabelSettings {
+  preset: 'L7160' | 'L7162' | 'L7163' | 'CUSTOM';
+  rows: number;
+  columns: number;
+  labelWidthMm: number;
+  labelHeightMm: number;
+  marginTopMm: number;
+  marginLeftMm: number;
+  gapXmm: number;
+  gapYmm: number;
+  paddingMm: number;
+  fontScale: number;
+  layout: 'SMART' | 'COMPACT' | 'DETAILED';
+  alignment: 'LEFT' | 'CENTER';
+  sortBy: 'REFERENCE' | 'LOCATION' | 'ASSET';
+  border: boolean;
+  borderColour: string;
+  accentColour: string;
+  showOrganisationName: boolean;
+  showOrganisationAddress: boolean;
+  showOrganisationTelephone: boolean;
+  showOrganisationEmail: boolean;
+  showOrganisationWebsite: boolean;
+  showCustomerName: boolean;
+  showSiteName: boolean;
+  showSiteAddress: boolean;
+  showFittingReference: boolean;
+  showFittingDescription: boolean;
+  showFittingType: boolean;
+  showLocation: boolean;
+  showAssetReference: boolean;
+  showManufacturer: boolean;
+  showModel: boolean;
+  showSerialNumber: boolean;
+  showOperationMode: boolean;
+  showQrCode: boolean;
+  showBarcode: boolean;
+  showCustomText: boolean;
+  customText: string;
+}
+export interface EmergencyLightingLabelFitting extends EmergencyLightFitting {
+  asset: { id: string; assetReference: string; displayName: string };
+}
+export interface EmergencyLightingLabelStudio {
+  site: {
+    id: string;
+    name: string;
+    reference?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    county?: string | null;
+    postcode?: string | null;
+    countryCode: string;
+    emergencyLightingLabelSettings?: EmergencyLightingLabelSettings | null;
+    customer: { id: string; name: string };
+  };
+  organisation: {
+    id: string;
+    name: string;
+    brandProfile?: {
+      tradingName?: string | null;
+      registeredName?: string | null;
+      addressLine1?: string | null;
+      addressLine2?: string | null;
+      city?: string | null;
+      county?: string | null;
+      postcode?: string | null;
+      telephone?: string | null;
+      email?: string | null;
+      website?: string | null;
+      primaryColour: string;
+      secondaryColour: string;
+    } | null;
+  };
+  fittings: EmergencyLightingLabelFitting[];
 }
 export interface EmergencyLightingInspectionResult {
   id?: string;
@@ -311,14 +449,16 @@ export interface EmergencyLightingInspectionContext {
 export interface EmergencyLightFittingInput {
   reference: string;
   description?: string;
-  locationId?: string;
+  locationId?: string | null;
   groupIds?: string[];
+  deviceId?: string | null;
   manufacturer?: string;
   model?: string;
   fittingType?: string;
   operationMode?: string;
   serialNumber?: string;
   ratedDurationMinutes?: number;
+  status?: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
   notes?: string;
 }
 export type AssetMediaMetadataUpdate = { mediaId: string } & Partial<
@@ -511,6 +651,7 @@ export interface VisitTask {
     currentRevisionNumber: number;
     submittedAt?: string;
     approvedAt?: string;
+    draft?: { available: boolean; updatedAt?: string | null };
     revisions?: Array<{ id: string; revisionNumber: number; data: Record<string, unknown> }>;
     defects?: Array<{
       id: string;
@@ -519,6 +660,16 @@ export interface VisitTask {
       severity: string;
       status: string;
     }>;
+  };
+}
+export interface VisitMutationResult {
+  mutation: {
+    result?: {
+      asset?: AssetSummary & { evChargePoint?: EvChargePoint };
+      task?: VisitTask;
+      inspection?: InspectionSummary;
+      idMap?: Record<string, { local: string; server: string }>;
+    };
   };
 }
 export interface TimelineEvent {
@@ -1211,7 +1362,14 @@ export class ApiService {
     organisationId: string,
     input: {
       entityType:
-        'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection' | 'EmergencyLightFitting';
+        | 'Organisation'
+        | 'Customer'
+        | 'Site'
+        | 'Asset'
+        | 'Inspection'
+        | 'EmergencyLightFitting'
+        | 'EmergencyLightingLocation'
+        | 'EmergencyLightingDevice';
       entityId: string;
       category: string;
       caption?: string;
@@ -1492,6 +1650,20 @@ export class ApiService {
     if (!response.ok) {
       const body: { message?: string } = await response.json();
       throw new Error(body.message ?? 'The PDF could not be generated.');
+    }
+    return response.blob();
+  }
+  async downloadInspectionDraftPdf(organisationId: string, inspectionId: string): Promise<Blob> {
+    const accessToken = this.auth.session()?.access_token;
+    if (accessToken === undefined) throw new Error('Sign in to continue.');
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}/inspections/${encodeURIComponent(inspectionId)}/draft.pdf?organisationId=${encodeURIComponent(organisationId)}`,
+      { headers: this.authenticatedHeaders(accessToken), cache: 'no-store' },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as
+        { message?: string } | undefined;
+      throw new Error(body?.message ?? 'The draft PDF could not be generated.');
     }
     return response.blob();
   }
@@ -2015,9 +2187,24 @@ export class ApiService {
       `/guest/visits/${encodeURIComponent(token)}`,
     );
   }
+  setGuestVisitIdentity(token: string, displayName: string) {
+    return this.publicRequest<{
+      identity: { displayName: string };
+      visit?: VisitSummary;
+    }>(`/guest/visits/${encodeURIComponent(token)}/identity`, {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName }),
+    });
+  }
   getGuestInspection(token: string, inspectionId: string) {
     return this.publicRequest<{ inspection: InspectionSummary }>(
       `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}`,
+    );
+  }
+  saveGuestInspectionDraft(token: string, inspectionId: string, payload: Record<string, unknown>) {
+    return this.publicRequest<{ draft: { inspectionId: string; updatedAt: string } }>(
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${encodeURIComponent(inspectionId)}/draft`,
+      { method: 'PUT', body: JSON.stringify(payload) },
     );
   }
   addGuestVisitEvAsset(
@@ -2070,7 +2257,7 @@ export class ApiService {
     organisationId: string,
     inspectionId: string,
     photo: Blob,
-    kind: 'fault' | 'normal-state',
+    kind: 'fault' | 'normal-state' | 'data-plate',
     description: string,
     clientUploadId: string,
   ) {
@@ -2087,7 +2274,7 @@ export class ApiService {
     token: string,
     inspectionId: string,
     photo: Blob,
-    kind: 'fault' | 'normal-state',
+    kind: 'fault' | 'normal-state' | 'data-plate',
     description: string,
     clientUploadId: string,
   ) {
@@ -2172,6 +2359,25 @@ export class ApiService {
       { method: 'POST', headers: { 'content-type': image.type }, body: image },
     );
   }
+  analyseVisitChargerDataPlate(organisationId: string, visitId: string, image: Blob) {
+    return this.request<{
+      candidates: ChargerDataPlateCandidate[];
+      missingFields: ChargerDataPlateField[];
+    }>(
+      `/visits/${encodeURIComponent(visitId)}/charger-data-plate-analysis?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', headers: { 'content-type': image.type }, body: image },
+    );
+  }
+  analyseGuestVisitChargerDataPlate(token: string, image: Blob) {
+    return this.publicRequest<{
+      candidates: ChargerDataPlateCandidate[];
+      missingFields: ChargerDataPlateField[];
+    }>(`/guest/visits/${encodeURIComponent(token)}/charger-data-plate-analysis`, {
+      method: 'POST',
+      headers: { 'content-type': image.type },
+      body: image,
+    });
+  }
   debugDataPlateExtraction(image: Blob, model: ChargerDataPlateModel) {
     return this.request<ChargerDataPlateDebug>(
       `/platform/ai/dataplate/debug?model=${encodeURIComponent(model)}`,
@@ -2190,6 +2396,16 @@ export class ApiService {
   getInspection(organisationId: string, inspectionId: string) {
     return this.request<{ inspection: InspectionSummary }>(
       `/inspections/${inspectionId}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  saveInspectionDraft(
+    organisationId: string,
+    inspectionId: string,
+    payload: Record<string, unknown>,
+  ) {
+    return this.request<{ draft: { inspectionId: string; updatedAt: string } }>(
+      `/inspections/${encodeURIComponent(inspectionId)}/draft?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
     );
   }
   updateInspectionMediaBulk(
@@ -2338,8 +2554,22 @@ export class ApiService {
       payload: Record<string, unknown>;
     },
   ) {
-    return this.request(
+    return this.request<VisitMutationResult>(
       `/visits/${visitId}/sync?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
+  syncGuestVisitMutation(
+    token: string,
+    input: {
+      clientMutationId: string;
+      entityType: string;
+      operation: string;
+      payload: Record<string, unknown>;
+    },
+  ) {
+    return this.publicRequest<VisitMutationResult>(
+      `/guest/visits/${encodeURIComponent(token)}/sync`,
       { method: 'POST', body: JSON.stringify(input) },
     );
   }
@@ -2415,6 +2645,8 @@ export class ApiService {
             locations: EmergencyLightingLocation[];
             groups: EmergencyLightingGroup[];
             keyswitches: EmergencyLightingKeyswitch[];
+            fittingTypes: EmergencyLightingFittingType[];
+            devices: EmergencyLightingDevice[];
           };
         };
       }>(`/modules/emergency-lighting/assets/${assetId}?${query}`),
@@ -2430,9 +2662,111 @@ export class ApiService {
         locations: emergencySystem?.locations ?? [],
         groups: emergencySystem?.groups ?? [],
         keyswitches: emergencySystem?.keyswitches ?? [],
+        fittingTypes: emergencySystem?.fittingTypes ?? [],
+        devices: emergencySystem?.devices ?? [],
         fittings: list.fittings ?? list.items ?? [],
       } satisfies EmergencyLightingAsset,
     };
+  }
+
+  addEmergencyLightingFittingType(
+    organisationId: string,
+    assetId: string,
+    input: Pick<EmergencyLightingFittingType, 'name'>,
+  ) {
+    return this.emergencyAssetChild<{ fittingType: EmergencyLightingFittingType }>(
+      organisationId,
+      assetId,
+      'fitting-types',
+      'POST',
+      input,
+    );
+  }
+  updateEmergencyLightingFittingType(
+    organisationId: string,
+    assetId: string,
+    fittingTypeId: string,
+    input: Pick<EmergencyLightingFittingType, 'name'>,
+  ) {
+    return this.emergencyAssetChild<{ fittingType: EmergencyLightingFittingType }>(
+      organisationId,
+      assetId,
+      `fitting-types/${fittingTypeId}`,
+      'PATCH',
+      input,
+    );
+  }
+  deleteEmergencyLightingFittingType(
+    organisationId: string,
+    assetId: string,
+    fittingTypeId: string,
+  ) {
+    return this.emergencyAssetChild<{ deleted: true }>(
+      organisationId,
+      assetId,
+      `fitting-types/${fittingTypeId}`,
+      'DELETE',
+    );
+  }
+  addEmergencyLightingDevice(
+    organisationId: string,
+    assetId: string,
+    input: Pick<
+      EmergencyLightingDevice,
+      'make' | 'model' | 'fittingTypeId' | 'description' | 'notes'
+    >,
+  ) {
+    return this.emergencyAssetChild<{ device: EmergencyLightingDevice }>(
+      organisationId,
+      assetId,
+      'devices',
+      'POST',
+      input,
+    );
+  }
+  updateEmergencyLightingDevice(
+    organisationId: string,
+    assetId: string,
+    deviceId: string,
+    input: Partial<
+      Pick<EmergencyLightingDevice, 'make' | 'model' | 'fittingTypeId' | 'description' | 'notes'>
+    >,
+  ) {
+    return this.emergencyAssetChild<{ device: EmergencyLightingDevice }>(
+      organisationId,
+      assetId,
+      `devices/${deviceId}`,
+      'PATCH',
+      input,
+    );
+  }
+  deleteEmergencyLightingDevice(organisationId: string, assetId: string, deviceId: string) {
+    return this.emergencyAssetChild<{ deleted: true }>(
+      organisationId,
+      assetId,
+      `devices/${deviceId}`,
+      'DELETE',
+    );
+  }
+  getEmergencyLightingFitting(organisationId: string, assetId: string, fittingId: string) {
+    return this.request<EmergencyLightingFittingDetail>(
+      `/modules/emergency-lighting/assets/${assetId}/fittings/${fittingId}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  getEmergencyLightingLabelStudio(organisationId: string, assetId: string) {
+    return this.request<EmergencyLightingLabelStudio>(
+      `/modules/emergency-lighting/assets/${assetId}/label-studio?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  saveEmergencyLightingLabelSettings(
+    organisationId: string,
+    assetId: string,
+    settings: EmergencyLightingLabelSettings,
+  ) {
+    return this.request<{ settings: EmergencyLightingLabelSettings }>(
+      `/modules/emergency-lighting/assets/${assetId}/label-settings?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PUT', body: JSON.stringify(settings) },
+    );
   }
   addEmergencyLightingLocation(
     organisationId: string,

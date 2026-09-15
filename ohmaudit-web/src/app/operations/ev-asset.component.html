@@ -41,18 +41,30 @@
           <h2>Asset images</h2>
           <p>Images are shown to engineers before testing.</p>
         </div>
-        <label class="button secondary compact">
-          @if (busy()) {
-            <span class="oa-spinner" aria-hidden="true"></span>
-          }
-          {{ busy() ? 'Uploading…' : '+ Add image'
-          }}<input
-            hidden
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            [disabled]="busy()"
-            (change)="uploadImage($event)"
-        /></label>
+        <div class="asset-image-actions">
+          <label class="button secondary compact">
+            @if (busy()) {
+              <span class="oa-spinner" aria-hidden="true"></span>
+            }
+            {{ busy() ? 'Uploading…' : '+ Add image'
+            }}<input
+              hidden
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              [disabled]="busy()"
+              (change)="uploadImage($event)"
+          /></label>
+          <label class="button primary compact">
+            {{ busy() ? 'Uploading…' : 'Take photo'
+            }}<input
+              hidden
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              capture="environment"
+              [disabled]="busy()"
+              (change)="uploadImage($event)"
+          /></label>
+        </div>
       </div>
       <div class="asset-image-grid">
         @for (image of images(); track image.id) {
@@ -324,9 +336,19 @@
             <label class="field"
               >Protective device<select formControlName="protectiveDeviceType">
                 <option value="">Not recorded</option>
-                <option value="MCB">MCB</option>
-                <option value="RCBO">RCBO</option>
-                <option value="AFDD">AFDD</option>
+                @if (
+                  supplyForm.controls.protectiveDeviceType.value &&
+                  !protectiveDeviceTypes.includes(
+                    $any(supplyForm.controls.protectiveDeviceType.value)
+                  )
+                ) {
+                  <option [value]="supplyForm.controls.protectiveDeviceType.value">
+                    {{ supplyForm.controls.protectiveDeviceType.value }}
+                  </option>
+                }
+                @for (deviceType of protectiveDeviceTypes; track deviceType) {
+                  <option [value]="deviceType">{{ deviceType }}</option>
+                }
               </select></label
             >
             <label class="field"

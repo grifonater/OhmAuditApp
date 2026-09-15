@@ -11,6 +11,7 @@
     "APP_ENV": "local",
     "APP_VERSION": "0.1.0",
     "AI_MODEL_ID": "configure-per-environment",
+    "AI_MODEL_CHAIN": "@cf/moondream/moondream3.1-9B-A2B,@cf/meta/llama-4-scout-17b-16e-instruct,@cf/mistralai/mistral-small-3.1-24b-instruct",
   },
   "observability": {
     "enabled": true,
@@ -28,6 +29,7 @@
         "APP_ENV": "production",
         "APP_VERSION": "0.1.0",
         "AI_MODEL_ID": "@cf/moondream/moondream3.1-9B-A2B",
+        "AI_MODEL_CHAIN": "@cf/moondream/moondream3.1-9B-A2B,@cf/meta/llama-4-scout-17b-16e-instruct,@cf/mistralai/mistral-small-3.1-24b-instruct",
         "RAMS_EMBEDDING_MODEL_ID": "@cf/baai/bge-base-en-v1.5",
         "RAMS_SIMILARITY_THRESHOLD": "0.78",
       },

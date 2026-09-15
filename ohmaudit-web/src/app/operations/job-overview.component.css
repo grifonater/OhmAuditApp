@@ -391,6 +391,10 @@ dd {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+.draft-download {
+  border-color: var(--oa-warning, #b86f00);
+  color: var(--oa-warning, #8a5400);
+}
 .asset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
@@ -420,8 +424,16 @@ dd {
 }
 .asset-meta div {
   display: grid;
-  grid-template-columns: 6rem 1fr;
+  grid-template-columns: minmax(5rem, 0.7fr) minmax(0, 1.3fr);
   gap: 0.5rem;
+}
+.asset-meta dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.asset-meta .asset-model dd {
+  font-weight: 700;
+  word-break: normal;
 }
 .timeline-list {
   display: grid;
@@ -486,6 +498,11 @@ dd {
 .rams-record {
   display: grid;
   gap: 0.75rem;
+}
+.rams-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 .rams-header-actions {
   display: flex;
@@ -623,6 +640,10 @@ dd {
   }
   .rams-record-meta {
     grid-template-columns: 1fr 1fr;
+  }
+  .rams-record-actions,
+  .rams-record-actions .button {
+    width: 100%;
   }
   .combined-report-card {
     grid-template-columns: 1fr;

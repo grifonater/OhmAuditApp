@@ -42,6 +42,7 @@ function serviceFixture(
       deleteMany: draftDeleteMany,
     },
     defect: { deleteMany: vi.fn(), createMany: vi.fn() },
+    inspectionDraft: { deleteMany: vi.fn() },
     inspection: { update: vi.fn() },
     auditEvent: { create: vi.fn() },
   };

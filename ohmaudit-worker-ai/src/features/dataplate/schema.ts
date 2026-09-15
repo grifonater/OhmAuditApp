@@ -14,6 +14,10 @@ interface ModelCandidate {
   confidence?: unknown;
 }
 
+const maximumCandidateLength = 500;
+const placeholderValue =
+  /^(?:-|--|unknown|n\/?a|none|null|nil|unreadable|illegible|unclear|missing|absent|not (?:available|applicable|known|readable)|cannot read|can't read)$/iu;
+
 /**
  * Builds a candidate marked for human confirmation.
  */
@@ -33,10 +37,21 @@ export function createCandidate(
  */
 function candidateValue(field: ChargerDataPlateField, value: unknown): string | undefined {
   if (field === 'maximumPowerKw') {
-    const number = typeof value === 'number' ? value : Number(value);
+    const number =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && /^\d+(?:\.\d+)?$/u.test(value.trim())
+          ? Number(value.trim())
+          : Number.NaN;
     return Number.isFinite(number) && number > 0 && number <= 1000 ? String(number) : undefined;
   }
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  return normalized !== '' &&
+    normalized.length <= maximumCandidateLength &&
+    !placeholderValue.test(normalized)
+    ? normalized
+    : undefined;
 }
 
 function jsonFromAnswer(answer: string): unknown {

@@ -1,8 +1,15 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { debounceTime, merge } from 'rxjs';
+import { debounceTime, fromEvent, merge } from 'rxjs';
 import {
   ApiService,
   type ChargerDataPlateCandidate,
@@ -19,11 +26,21 @@ import {
 import { compressImage, compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
 import {
+  applyDataPlateCandidate as applyCandidate,
+  moduleLabel,
+  type LocalEvChargerIds,
+} from '../core/offline-visit.helpers';
+import {
   emergencyLightingInspectionPath,
   guestEmergencyLightingInspectionPath,
 } from '../core/emergency-lighting-routes';
 import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
 import { SignaturePadComponent } from '../shared/signature-pad.component';
+import {
+  connectorSupplyIds,
+  isSupportedImageMimeType,
+  PROTECTIVE_DEVICE_TYPES,
+} from './ev-visit-helpers';
 
 type ResultChoice = 'PASS' | 'FAIL' | 'NOT_TESTED';
 type SupplyTestGroup = FormGroup<{
@@ -57,7 +74,7 @@ type ConnectorTestGroup = FormGroup<{
   selector: 'oa-engineer-visit',
   imports: [ReactiveFormsModule, RamsReadOnlyComponent, SignaturePadComponent],
   templateUrl: './engineer-visit.component.html',
-  styleUrls: ['./operations.css', './engineer-visit.mobile.css'],
+  styleUrls: ['./operations.css', './engineer-visit.mobile.css', './engineer-visit.landing.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class EngineerVisitComponent {
@@ -81,6 +98,8 @@ export class EngineerVisitComponent {
   protected readonly inspection = signal<InspectionSummary | undefined>(undefined);
   protected readonly assetImageUrl = signal('');
   protected readonly busy = signal(false);
+  protected readonly downloadingPack = signal(false);
+  protected readonly offlineDownloadedAt = signal('');
   protected readonly error = signal('');
   protected readonly saved = signal('');
   protected readonly photoCount = signal(0);
@@ -88,6 +107,14 @@ export class EngineerVisitComponent {
   protected readonly submitted = signal(false);
   protected readonly recentlySubmittedTaskId = signal('');
   protected readonly addingCharger = signal(false);
+  protected readonly newChargerDataPlateBusy = signal(false);
+  protected readonly newChargerDataPlateError = signal('');
+  protected readonly newChargerDataPlatePreviewUrl = signal('');
+  protected readonly newChargerDataPlateCandidates = signal<ChargerDataPlateCandidate[]>([]);
+  protected readonly newChargerMissingDataPlateFields = signal<ChargerDataPlateField[]>([]);
+  protected readonly newChargerAppliedDataPlateFields = signal<ChargerDataPlateField[]>([]);
+  protected readonly pendingAddTaskIds = signal<Set<string>>(new Set());
+  private readonly newChargerLocalIds = signal<LocalEvChargerIds | undefined>(undefined);
   protected readonly recordingFault = signal(false);
   protected readonly dataPlateBusy = signal(false);
   protected readonly dataPlateError = signal('');
@@ -103,6 +130,11 @@ export class EngineerVisitComponent {
   protected readonly activeStep = signal(0);
   protected readonly savingDraft = signal(false);
   protected readonly photographing = signal(false);
+  protected readonly protectiveDeviceTypes = PROTECTIVE_DEVICE_TYPES;
+  protected readonly guestIdentityRequired = computed(() => {
+    const visit = this.visit();
+    return Boolean(this.guestToken && visit && !visit.guestEngineerName && !visit.guestEmail);
+  });
 
   protected readonly form = new FormGroup({
     outcome: new FormControl('PASS', { nonNullable: true, validators: Validators.required }),
@@ -145,9 +177,15 @@ export class EngineerVisitComponent {
     maximumPowerKw: new FormControl<number | null>(null),
     dcRcdType: new FormControl<'TYPE_B' | 'RDC_DD' | 'NONE'>('NONE', { nonNullable: true }),
   });
+  protected readonly guestIdentityForm = new FormGroup({
+    displayName: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.minLength(2), Validators.maxLength(120)],
+    }),
+  });
   protected readonly normalPhotoDescription = new FormControl('', {
     nonNullable: true,
-    validators: [Validators.required, Validators.maxLength(500)],
+    validators: [Validators.maxLength(500)],
   });
   constructor() {
     merge(
@@ -161,9 +199,15 @@ export class EngineerVisitComponent {
     merge(this.evAssetForm.controls.dcRcdType.valueChanges, this.connectorTests.valueChanges)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyAutomaticRcdOutcome());
+    fromEvent<PopStateEvent>(window, 'popstate')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.selectedTask()) void this.returnToTasks();
+      });
     this.destroyRef.onDestroy(() => {
       this.revokeAssetImage();
       this.revokeDataPlatePreview();
+      this.revokeNewChargerDataPlatePreview();
       if (this.helpStep() !== '') document.body.style.overflow = '';
     });
     void this.load();
@@ -176,7 +220,11 @@ export class EngineerVisitComponent {
   protected async downloadPack(): Promise<void> {
     const visit = this.visit();
     if (!visit) return;
-    await this.run(async () => {
+    if (this.offline.notificationPermission() === 'default')
+      void this.offline.requestNotificationPermission();
+    this.downloadingPack.set(true);
+    this.error.set('');
+    try {
       if (this.guestToken) {
         const tasks = await Promise.all(
           visit.tasks.map(async (task) =>
@@ -205,6 +253,41 @@ export class EngineerVisitComponent {
       if (verified === undefined)
         throw new Error('The job could not be verified for offline use on this device.');
       this.saved.set('Offline ready — job verified on this device');
+      await this.refreshOfflineMetadata();
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'Unable to prepare the offline job.');
+    } finally {
+      this.downloadingPack.set(false);
+    }
+  }
+
+  protected offlineStatusLabel(): string {
+    if (this.downloadingPack()) return 'Preparing offline pack';
+    if (!this.offline.online())
+      return this.offlineDownloadedAt() ? 'Offline ready' : 'Not available offline';
+    return this.offlineDownloadedAt() ? 'Ready offline' : 'Download for offline use';
+  }
+
+  protected friendlyModuleLabel(moduleKey: string): string {
+    return moduleLabel(moduleKey);
+  }
+
+  protected async saveGuestIdentity(): Promise<void> {
+    const visit = this.visit();
+    if (!visit || !this.guestToken || this.guestIdentityForm.invalid || !this.offline.online())
+      return;
+    const displayName = this.guestIdentityForm.controls.displayName.value.trim();
+    await this.run(async () => {
+      const result = await this.api.setGuestVisitIdentity(this.guestToken, displayName);
+      const updated = {
+        ...(result.visit ?? visit),
+        guestEngineerName: result.identity.displayName,
+      };
+      this.visit.set(updated);
+      this.currentSignerName.set(result.identity.displayName);
+      this.form.controls.signerName.setValue(result.identity.displayName);
+      await this.offline.updateCachedVisit(updated, this.guestToken);
+      this.saved.set('Identity confirmed');
     });
   }
 
@@ -225,7 +308,13 @@ export class EngineerVisitComponent {
 
   protected async signOn(rams: EngineerRamsRecord): Promise<void> {
     const signatureData = this.ramsSignature();
-    if (rams.status !== 'APPROVED' || rams.signedOn || !signatureData || !this.offline.online())
+    if (
+      rams.status !== 'APPROVED' ||
+      rams.signedOn ||
+      !signatureData ||
+      !this.offline.online() ||
+      this.guestIdentityRequired()
+    )
       return;
     this.signingRamsId.set(rams.id);
     await this.run(async () => {
@@ -316,6 +405,7 @@ export class EngineerVisitComponent {
       this.setFaultRecording(false, false);
       this.selectedTask.set(task);
       this.activeStep.set(0);
+      history.pushState({ ...history.state, oaEngineerTask: `${this.visitId}:${task.id}` }, '');
       let inspection = task.inspection as InspectionSummary | undefined;
       if (!inspection)
         inspection = this.guestToken
@@ -517,6 +607,7 @@ export class EngineerVisitComponent {
 
   protected addSupply(): void {
     this.supplyTests.push(this.supplyGroup());
+    this.assignOnlySupplyToUnmappedConnectors();
   }
 
   protected removeSupply(index: number): void {
@@ -525,6 +616,7 @@ export class EngineerVisitComponent {
     for (const connector of this.connectorTests.controls)
       if (connector.controls.supplyIds.value.includes(id))
         connector.controls.supplyIds.setValue([]);
+    this.assignOnlySupplyToUnmappedConnectors();
   }
 
   protected addConnector(): void {
@@ -549,7 +641,7 @@ export class EngineerVisitComponent {
       this.dataPlateError.set('Connect to the internet to analyse a data plate.');
       return;
     }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    if (!isSupportedImageMimeType(file.type)) {
       this.dataPlateError.set('Use a JPEG, PNG, or WebP photo.');
       return;
     }
@@ -604,13 +696,83 @@ export class EngineerVisitComponent {
     }[field];
   }
 
+  protected toggleAddCharger(): void {
+    if (this.addingCharger()) {
+      this.addingCharger.set(false);
+      this.resetNewChargerDataPlate();
+      return;
+    }
+    this.newChargerLocalIds.set(this.createLocalChargerIds());
+    this.addingCharger.set(true);
+  }
+
+  protected async selectNewChargerDataPlate(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    const visit = this.visit();
+    if (!file || !visit) return;
+    if (!isSupportedImageMimeType(file.type)) {
+      this.newChargerDataPlateError.set('Use a JPEG, PNG, or WebP photo.');
+      return;
+    }
+    this.newChargerDataPlateBusy.set(true);
+    this.newChargerDataPlateError.set('');
+    try {
+      const image = await compressImage(file, { maxDimension: 3072, targetBytes: 1_000_000 });
+      if (image.size > 2_000_000) throw new Error('The photo is too large. Try moving closer.');
+      const localIds = this.newChargerLocalIds() ?? this.createLocalChargerIds();
+      this.newChargerLocalIds.set(localIds);
+      await this.offline.storePhoto(
+        visit.organisationId,
+        visit.id,
+        localIds.inspectionId,
+        localIds.assetId,
+        this.guestToken || undefined,
+        image,
+        'data-plate',
+        'EV charger data plate',
+      );
+      this.revokeNewChargerDataPlatePreview();
+      this.newChargerDataPlatePreviewUrl.set(URL.createObjectURL(image));
+      this.newChargerDataPlateCandidates.set([]);
+      this.newChargerMissingDataPlateFields.set([]);
+      this.newChargerAppliedDataPlateFields.set([]);
+      if (!this.offline.online()) {
+        this.newChargerDataPlateError.set(
+          'Photo saved. Add the charger now; analysis will be available when online.',
+        );
+        return;
+      }
+      const result = this.guestToken
+        ? await this.api.analyseGuestVisitChargerDataPlate(this.guestToken, image)
+        : await this.api.analyseVisitChargerDataPlate(this.organisationId, visit.id, image);
+      this.newChargerDataPlateCandidates.set(result.candidates);
+      this.newChargerMissingDataPlateFields.set(result.missingFields);
+      if (result.candidates.length === 0)
+        this.newChargerDataPlateError.set(
+          'No supported details were readable. Enter them manually.',
+        );
+    } catch (error: unknown) {
+      this.newChargerDataPlateError.set(
+        error instanceof Error ? error.message : 'The data plate could not be saved.',
+      );
+    } finally {
+      this.newChargerDataPlateBusy.set(false);
+    }
+  }
+
+  protected applyNewChargerDataPlateCandidate(candidate: ChargerDataPlateCandidate): void {
+    const next = applyCandidate(this.newChargerForm.getRawValue(), candidate);
+    this.newChargerForm.patchValue(next);
+    this.newChargerAppliedDataPlateFields.update((fields) =>
+      fields.includes(candidate.field) ? fields : [...fields, candidate.field],
+    );
+  }
+
   protected async addCharger(): Promise<void> {
     const visit = this.visit();
     if (!visit || this.newChargerForm.invalid) return;
-    if (!this.offline.online()) {
-      this.error.set('Connect to the internet before adding a charger to this site.');
-      return;
-    }
     const raw = this.newChargerForm.getRawValue();
     await this.run(async () => {
       const input = {
@@ -622,14 +784,16 @@ export class EngineerVisitComponent {
         ...(raw.maximumPowerKw === null ? {} : { maximumPowerKw: raw.maximumPowerKw }),
         dcRcdType: raw.dcRcdType,
       };
-      const created = this.guestToken
-        ? await this.api.addGuestVisitEvAsset(this.guestToken, input)
-        : await this.api.addVisitEvAsset(this.organisationId, visit.id, input);
-      const refreshed = this.guestToken
-        ? (await this.api.guestVisit(this.guestToken)).visit
-        : (await this.api.getVisit(this.organisationId, visit.id)).visit;
-      this.visit.set(refreshed);
+      const localIds = this.newChargerLocalIds() ?? this.createLocalChargerIds();
+      const created = await this.offline.queueAddEvCharger(
+        visit,
+        input,
+        this.guestToken || undefined,
+        localIds,
+      );
+      this.visit.set(created.visit);
       this.recentlySubmittedTaskId.set(created.task.id);
+      this.pendingAddTaskIds.set(await this.offline.pendingAddTaskIdsForVisit(visit.id));
       this.addingCharger.set(false);
       this.newChargerForm.reset({
         assetReference: '',
@@ -640,7 +804,13 @@ export class EngineerVisitComponent {
         maximumPowerKw: null,
         dcRcdType: 'NONE',
       });
-      this.saved.set('Charger recorded for office approval and added to this job');
+      this.resetNewChargerDataPlate();
+      this.saved.set(
+        this.offline.online()
+          ? 'Charger added and synchronization requested'
+          : 'Charger saved on this device — pending sync',
+      );
+      await this.openTask(created.task);
     });
   }
 
@@ -689,15 +859,12 @@ export class EngineerVisitComponent {
     const visit = this.visit();
     const assetId = this.selectedTask()?.asset?.id;
     if (!file || !inspection || !visit || !assetId) return;
+    this.error.set('');
     const description =
       kind === 'normal-state'
-        ? this.normalPhotoDescription.value.trim()
+        ? this.normalPhotoDescription.value.trim() || 'EV charger condition before testing'
         : this.form.controls.defectTitle.value.trim() || 'Engineer inspection evidence';
-    if (description === '') {
-      this.error.set('Add a description before selecting the charger image.');
-      return;
-    }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    if (!isSupportedImageMimeType(file.type)) {
       this.error.set('Use a JPEG, PNG, or WebP photo.');
       return;
     }
@@ -721,6 +888,11 @@ export class EngineerVisitComponent {
       this.photoCount.set(await this.offline.photoCount(inspection.id, 'fault'));
       this.normalPhotoCount.set(await this.offline.photoCount(inspection.id, 'normal-state'));
       if (kind === 'normal-state') this.normalPhotoDescription.reset('');
+      await this.saveDraft();
+    } catch (error: unknown) {
+      this.error.set(
+        error instanceof Error ? error.message : 'The image could not be saved. Try another image.',
+      );
     } finally {
       this.photographing.set(false);
     }
@@ -821,17 +993,26 @@ export class EngineerVisitComponent {
       this.recentlySubmittedTaskId.set(task.id);
       const updatedVisit = this.markTaskSubmitted(visit, new Set([task.id]));
       this.visit.set(updatedVisit);
-      await this.offline.storePack(
-        updatedVisit.organisationId,
-        updatedVisit,
-        this.guestToken || undefined,
-      );
+      await this.offline.updateCachedVisit(updatedVisit, this.guestToken || undefined);
       const queued = (await this.offline.pendingTaskIds(updatedVisit)).has(task.id);
       this.saved.set(queued ? 'Queued safely — will sync when online' : 'Inspection submitted');
     });
   }
 
   protected async backToTasks(): Promise<void> {
+    const historyState = history.state as unknown;
+    const taskMarker =
+      typeof historyState === 'object' && historyState !== null
+        ? (historyState as Record<string, unknown>)['oaEngineerTask']
+        : undefined;
+    if (taskMarker === `${this.visitId}:${this.selectedTask()?.id}`) {
+      history.back();
+      return;
+    }
+    await this.returnToTasks();
+  }
+
+  private async returnToTasks(): Promise<void> {
     if (this.offline.online()) {
       try {
         const refreshed = this.guestToken
@@ -868,6 +1049,7 @@ export class EngineerVisitComponent {
     for (const supply of ev?.supplies ?? []) this.supplyTests.push(this.supplyGroup(supply));
     for (const connector of ev?.connectors ?? [])
       this.connectorTests.push(this.connectorGroup(connector));
+    this.assignOnlySupplyToUnmappedConnectors();
   }
 
   private supplyGroup(supply?: EvChargePoint['supplies'][number]): SupplyTestGroup {
@@ -878,15 +1060,10 @@ export class EngineerVisitComponent {
         validators: Validators.required,
       }),
       phaseCount: new FormControl(supply?.phaseCount ?? 1, { nonNullable: true }),
-      protectiveDeviceType: new FormControl(
-        ['MCB', 'RCBO', 'AFDD'].includes(supply?.protectiveDeviceType ?? '')
-          ? (supply?.protectiveDeviceType ?? 'MCB')
-          : 'MCB',
-        {
-          nonNullable: true,
-          validators: Validators.required,
-        },
-      ),
+      protectiveDeviceType: new FormControl(supply?.protectiveDeviceType ?? 'MCB', {
+        nonNullable: true,
+        validators: Validators.required,
+      }),
       protectiveDeviceRating: new FormControl<number | null>(
         supply?.protectiveDeviceRating ?? null,
       ),
@@ -907,7 +1084,10 @@ export class EngineerVisitComponent {
       }),
       connectorType: new FormControl(connector?.connectorType ?? 'Type 2', { nonNullable: true }),
       supplyIds: new FormControl(
-        connector?.supplyMappings[0] === undefined ? [] : [connector.supplyMappings[0].supplyId],
+        connectorSupplyIds(
+          connector?.supplyMappings.map(({ supplyId }) => supplyId) ?? [],
+          this.supplyTests.getRawValue(),
+        ).slice(0, 1),
         { nonNullable: true },
       ),
       pePreTest: new FormControl<ResultChoice>('NOT_TESTED', { nonNullable: true }),
@@ -927,6 +1107,30 @@ export class EngineerVisitComponent {
     const url = this.dataPlatePreviewUrl();
     if (url) URL.revokeObjectURL(url);
     this.dataPlatePreviewUrl.set('');
+  }
+
+  private revokeNewChargerDataPlatePreview(): void {
+    const url = this.newChargerDataPlatePreviewUrl();
+    if (url) URL.revokeObjectURL(url);
+    this.newChargerDataPlatePreviewUrl.set('');
+  }
+
+  private resetNewChargerDataPlate(): void {
+    this.revokeNewChargerDataPlatePreview();
+    this.newChargerDataPlateCandidates.set([]);
+    this.newChargerMissingDataPlateFields.set([]);
+    this.newChargerAppliedDataPlateFields.set([]);
+    this.newChargerDataPlateError.set('');
+    this.newChargerLocalIds.set(undefined);
+  }
+
+  private createLocalChargerIds(): LocalEvChargerIds {
+    return {
+      assetId: crypto.randomUUID(),
+      chargePointId: crypto.randomUUID(),
+      taskId: crypto.randomUUID(),
+      inspectionId: crypto.randomUUID(),
+    };
   }
 
   private buildEvSubmission(task: VisitTask): Record<string, unknown> {
@@ -1061,7 +1265,18 @@ export class EngineerVisitComponent {
         this.connectorTests.push(group);
       }
     }
+    this.assignOnlySupplyToUnmappedConnectors();
     this.applyAutomaticRcdOutcome();
+  }
+
+  private assignOnlySupplyToUnmappedConnectors(): void {
+    const supplies = this.supplyTests.getRawValue();
+    for (const connector of this.connectorTests.controls) {
+      const current = connector.controls.supplyIds.value;
+      const assigned = connectorSupplyIds(current, supplies).slice(0, 1);
+      if (assigned.length !== current.length || assigned[0] !== current[0])
+        connector.controls.supplyIds.setValue(assigned);
+    }
   }
 
   private async loadAssetImage(task: VisitTask): Promise<void> {
@@ -1111,6 +1326,11 @@ export class EngineerVisitComponent {
         if (cached !== undefined) {
           this.visit.set(await this.applyPendingTaskStatuses(cached));
           this.linkedRams.set(cached.rams ?? []);
+          const signer = cached.guestEngineerName || cached.guestEmail;
+          if (signer) {
+            this.currentSignerName.set(signer);
+            this.form.controls.signerName.setValue(signer);
+          }
           return;
         }
         throw new Error(
@@ -1122,6 +1342,7 @@ export class EngineerVisitComponent {
           const account = await this.api.currentUser();
           this.currentUserId.set(account.user.id);
           this.currentSignerName.set(account.user.displayName || account.user.email);
+          this.form.controls.signerName.setValue(account.user.displayName || account.user.email);
         }
         const result = this.guestToken
           ? await this.api.guestVisit(this.guestToken)
@@ -1132,7 +1353,12 @@ export class EngineerVisitComponent {
               result.visit.guestEmail ||
               'the assigned guest engineer',
           );
+        if (this.guestToken && (result.visit.guestEngineerName || result.visit.guestEmail))
+          this.form.controls.signerName.setValue(
+            result.visit.guestEngineerName || result.visit.guestEmail || '',
+          );
         this.visit.set(await this.applyPendingTaskStatuses(result.visit));
+        this.pendingAddTaskIds.set(await this.offline.pendingAddTaskIdsForVisit(result.visit.id));
         await this.loadLinkedRams(result.visit);
       } catch (error) {
         if (cached !== undefined) {
@@ -1141,6 +1367,12 @@ export class EngineerVisitComponent {
         } else throw error;
       }
     });
+    await this.refreshOfflineMetadata();
+  }
+
+  private async refreshOfflineMetadata(): Promise<void> {
+    const metadata = await this.offline.packMetadata(this.visitId, this.guestToken || undefined);
+    this.offlineDownloadedAt.set(metadata?.downloadedAt ?? '');
   }
 
   private async loadLinkedRams(visit = this.visit()): Promise<void> {

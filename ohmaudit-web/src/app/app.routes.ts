@@ -9,7 +9,9 @@ import { authGuard } from './core/auth.guard';
 import { authorizationGuard } from './core/authorization.guard';
 import {
   emergencyLightingAssetRoute,
+  emergencyLightingFittingRoute,
   emergencyLightingInspectionRoute,
+  emergencyLightingLabelStudioRoute,
   guestEmergencyLightingInspectionRoute,
 } from './core/emergency-lighting-routes';
 
@@ -285,6 +287,30 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./operations/emergency-lighting-asset.component').then(
             (module) => module.EmergencyLightingAssetComponent,
+          ),
+      },
+      {
+        path: emergencyLightingLabelStudioRoute.path,
+        canActivate: [authorizationGuard],
+        data: {
+          capabilities: [...emergencyLightingLabelStudioRoute.capabilities],
+          module: 'emergency-lighting',
+        },
+        loadComponent: () =>
+          import('./operations/emergency-lighting-label-studio.component').then(
+            (module) => module.EmergencyLightingLabelStudioComponent,
+          ),
+      },
+      {
+        path: emergencyLightingFittingRoute.path,
+        canActivate: [authorizationGuard],
+        data: {
+          capabilities: [...emergencyLightingFittingRoute.capabilities],
+          module: 'emergency-lighting',
+        },
+        loadComponent: () =>
+          import('./operations/emergency-lighting-fitting-detail.component').then(
+            (module) => module.EmergencyLightingFittingDetailComponent,
           ),
       },
       {

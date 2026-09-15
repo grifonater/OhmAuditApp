@@ -1,0 +1,535 @@
+<main class="label-studio-shell">
+  <header class="studio-header no-print">
+    <div>
+      <a class="back-link" [routerLink]="backPath">&larr; Emergency lighting register</a>
+      <p class="eyebrow">Emergency lighting</p>
+      <h1>Label Studio</h1>
+      <p>
+        Create a print-ready A4 sheet for any combination of fittings at
+        {{ studio()?.site?.name || 'this site' }}.
+      </p>
+    </div>
+    <div class="header-actions">
+      <button
+        class="button button-secondary"
+        type="button"
+        (click)="saveSettings()"
+        [disabled]="saving() || settingsForm.invalid"
+      >
+        {{ saving() ? 'Saving...' : 'Save site defaults' }}
+      </button>
+      <button
+        class="button button-primary"
+        type="button"
+        (click)="print()"
+        [disabled]="selectedIds().size === 0 || !geometryFits()"
+      >
+        Print {{ pages().length }} sheet{{ pages().length === 1 ? '' : 's' }}
+      </button>
+    </div>
+  </header>
+
+  @if (error()) {
+    <div class="banner banner-error no-print">{{ error() }}</div>
+  }
+  @if (notice()) {
+    <div class="banner banner-success no-print">{{ notice() }}</div>
+  }
+  @if (loading()) {
+    <section class="loading-panel">
+      <span class="spinner"></span>
+      <p>Preparing fittings and label data...</p>
+    </section>
+  } @else {
+    <div class="studio-workspace">
+      <aside class="studio-controls no-print">
+        <nav class="settings-tabs" aria-label="Label customisation" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === 'SHEET'"
+            [class.active]="activeTab() === 'SHEET'"
+            (click)="activeTab.set('SHEET')"
+          >
+            <span>01</span>Sheet
+          </button>
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === 'FITTINGS'"
+            [class.active]="activeTab() === 'FITTINGS'"
+            (click)="activeTab.set('FITTINGS')"
+          >
+            <span>02</span>Fittings <small>{{ selectedIds().size }}</small>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === 'CONTENT'"
+            [class.active]="activeTab() === 'CONTENT'"
+            (click)="activeTab.set('CONTENT')"
+          >
+            <span>03</span>Content
+          </button>
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === 'STYLE'"
+            [class.active]="activeTab() === 'STYLE'"
+            (click)="activeTab.set('STYLE')"
+          >
+            <span>04</span>Style
+          </button>
+        </nav>
+        <div class="controls-scroll">
+          <form [formGroup]="settingsForm">
+            @if (activeTab() === 'SHEET') {
+              <section class="control-section intro-section">
+                <span class="step-number">01</span>
+                <div>
+                  <h2>Sheet setup</h2>
+                  <p>Choose standard stock or enter exact A4 measurements.</p>
+                </div>
+              </section>
+              <div class="preset-grid">
+                @for (preset of presets; track preset.key) {
+                  <button
+                    type="button"
+                    class="preset-card"
+                    [class.active]="settings().preset === preset.key"
+                    (click)="applyPreset(preset.key)"
+                  >
+                    <strong>{{ preset.name }}</strong
+                    ><span>{{ preset.detail }}</span>
+                  </button>
+                }
+                <button
+                  type="button"
+                  class="preset-card"
+                  [class.active]="settings().preset === 'CUSTOM'"
+                  (click)="applyPreset('CUSTOM')"
+                >
+                  <strong>Custom A4</strong><span>Set every measurement</span>
+                </button>
+              </div>
+              <div class="measurement-grid">
+                <label
+                  >Columns<input type="number" formControlName="columns" (input)="markCustom()"
+                /></label>
+                <label
+                  >Rows<input type="number" formControlName="rows" (input)="markCustom()"
+                /></label>
+                <label
+                  >Width (mm)<input
+                    type="number"
+                    step="0.1"
+                    formControlName="labelWidthMm"
+                    (input)="markCustom()"
+                /></label>
+                <label
+                  >Height (mm)<input
+                    type="number"
+                    step="0.1"
+                    formControlName="labelHeightMm"
+                    (input)="markCustom()"
+                /></label>
+                <label
+                  >Top margin<input
+                    type="number"
+                    step="0.1"
+                    formControlName="marginTopMm"
+                    (input)="markCustom()"
+                /></label>
+                <label
+                  >Left margin<input
+                    type="number"
+                    step="0.1"
+                    formControlName="marginLeftMm"
+                    (input)="markCustom()"
+                /></label>
+                <label
+                  >Horizontal gap<input
+                    type="number"
+                    step="0.1"
+                    formControlName="gapXmm"
+                    (input)="markCustom()"
+                /></label>
+                <label
+                  >Vertical gap<input
+                    type="number"
+                    step="0.1"
+                    formControlName="gapYmm"
+                    (input)="markCustom()"
+                /></label>
+              </div>
+              @if (!geometryFits()) {
+                <p class="geometry-warning">These measurements extend beyond an A4 page.</p>
+              }
+            }
+            @if (activeTab() === 'FITTINGS') {
+              <section class="control-section intro-section">
+                <span class="step-number">02</span>
+                <div>
+                  <h2>Fittings</h2>
+                  <p>Choose one, some, or every fitting on this site.</p>
+                </div>
+              </section>
+              <div class="selection-toolbar">
+                <input
+                  type="search"
+                  placeholder="Search reference, room or asset"
+                  [value]="search()"
+                  (input)="search.set($any($event.target).value)"
+                />
+                <div>
+                  <button type="button" (click)="selectVisible()">Select shown</button
+                  ><button type="button" (click)="clearSelection()">Clear</button>
+                </div>
+              </div>
+              <div class="fitting-picker">
+                @for (fitting of filteredFittings(); track fitting.id) {
+                  <label class="fitting-option">
+                    <input
+                      type="checkbox"
+                      [checked]="selectedIds().has(fitting.id)"
+                      (change)="toggleFitting(fitting.id)"
+                    />
+                    <span
+                      ><strong>{{ fitting.reference }}</strong
+                      ><small
+                        >{{ fitting.location?.name || 'No location' }} &middot;
+                        {{ fitting.asset.assetReference }}</small
+                      ></span
+                    >
+                    <a [routerLink]="fittingPath(fitting)" target="_blank" title="Open fitting"
+                      >&nearr;</a
+                    >
+                  </label>
+                } @empty {
+                  <p class="empty-copy">No fittings match this search.</p>
+                }
+              </div>
+              <div class="print-run-grid">
+                <label
+                  >Copies per fitting<input
+                    type="number"
+                    min="1"
+                    max="20"
+                    [value]="copies()"
+                    (input)="setCopies($event)"
+                /></label>
+                <label
+                  >Start at label<input
+                    type="number"
+                    min="1"
+                    [max]="capacity()"
+                    [value]="startPosition()"
+                    (input)="setStartPosition($event)"
+                /></label>
+              </div>
+              <p class="selection-summary">
+                <strong>{{ selectedIds().size }}</strong> fittings,
+                <strong>{{ selectedIds().size * copies() }}</strong> labels,
+                <strong>{{ pages().length }}</strong> A4 sheet{{ pages().length === 1 ? '' : 's' }}
+              </p>
+            }
+            @if (activeTab() === 'CONTENT') {
+              <section class="control-section intro-section">
+                <span class="step-number">03</span>
+                <div>
+                  <h2>Content</h2>
+                  <p>Only selected information appears on each label.</p>
+                </div>
+              </section>
+              <h3 class="field-heading">Identity</h3>
+              <div class="check-grid">
+                <label
+                  ><input type="checkbox" formControlName="showFittingReference" /> Fitting
+                  reference</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showFittingDescription" /> Name /
+                  description</label
+                >
+                <label><input type="checkbox" formControlName="showLocation" /> Location</label>
+                <label
+                  ><input type="checkbox" formControlName="showFittingType" /> Fitting type</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showAssetReference" /> Asset
+                  reference</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showOperationMode" /> Operation
+                  mode</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showManufacturer" /> Manufacturer</label
+                >
+                <label><input type="checkbox" formControlName="showModel" /> Model</label>
+                <label
+                  ><input type="checkbox" formControlName="showSerialNumber" /> Serial number</label
+                >
+              </div>
+              <h3 class="field-heading">Site and organisation</h3>
+              <div class="check-grid">
+                <label
+                  ><input type="checkbox" formControlName="showOrganisationName" /> Organisation
+                  name</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showOrganisationAddress" /> Organisation
+                  address</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showOrganisationTelephone" />
+                  Telephone</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showOrganisationEmail" /> Email</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showOrganisationWebsite" />
+                  Website</label
+                >
+                <label
+                  ><input type="checkbox" formControlName="showCustomerName" /> Customer name</label
+                >
+                <label><input type="checkbox" formControlName="showSiteName" /> Site name</label>
+                <label
+                  ><input type="checkbox" formControlName="showSiteAddress" /> Site address</label
+                >
+              </div>
+              <h3 class="field-heading">Machine-readable</h3>
+              <div class="check-grid">
+                <label><input type="checkbox" formControlName="showQrCode" /> QR code</label>
+                <label
+                  ><input type="checkbox" formControlName="showBarcode" /> Code 128 barcode</label
+                >
+              </div>
+              <label class="custom-text-toggle"
+                ><input type="checkbox" formControlName="showCustomText" /> Custom text</label
+              >
+              @if (settings().showCustomText) {
+                <textarea
+                  rows="2"
+                  maxlength="240"
+                  formControlName="customText"
+                  placeholder="Inspection instructions, service phone number or other text"
+                ></textarea>
+              }
+            }
+            @if (activeTab() === 'STYLE') {
+              <section class="control-section intro-section">
+                <span class="step-number">04</span>
+                <div>
+                  <h2>Style</h2>
+                  <p>Fine-tune hierarchy and print treatment.</p>
+                </div>
+              </section>
+              <div class="style-grid">
+                <label
+                  >Layout<select formControlName="layout">
+                    <option value="SMART">Smart fit</option>
+                    <option value="COMPACT">Compact</option>
+                    <option value="DETAILED">Detailed</option>
+                  </select></label
+                >
+                <label
+                  >Alignment<select formControlName="alignment">
+                    <option value="LEFT">Left</option>
+                    <option value="CENTER">Centred</option>
+                  </select></label
+                >
+                <label
+                  >Sort labels<select formControlName="sortBy">
+                    <option value="REFERENCE">Reference</option>
+                    <option value="LOCATION">Location</option>
+                    <option value="ASSET">Asset</option>
+                  </select></label
+                >
+                <label
+                  >Inner padding<input type="number" step="0.5" formControlName="paddingMm"
+                /></label>
+                <label
+                  >Type scale<input
+                    type="range"
+                    min="60"
+                    max="160"
+                    formControlName="fontScale"
+                  /><span>{{ settings().fontScale }}%</span></label
+                >
+                <label>Accent colour<input type="color" formControlName="accentColour" /></label>
+              </div>
+              <label class="border-toggle"
+                ><input type="checkbox" formControlName="border" /> Print label border</label
+              >
+              @if (settings().border) {
+                <label class="colour-row"
+                  >Border colour<input type="color" formControlName="borderColour"
+                /></label>
+              }
+            }
+          </form>
+        </div>
+      </aside>
+
+      <section class="preview-stage" aria-label="A4 print preview">
+        <div class="preview-heading no-print">
+          <div>
+            <span>LIVE A4 PREVIEW</span
+            ><strong>{{ settings().columns }} x {{ settings().rows }} grid</strong>
+          </div>
+          <p>Print at 100% / actual size. Disable browser headers and footers.</p>
+        </div>
+        <div class="sheets">
+          @for (page of pages(); track $index; let pageIndex = $index) {
+            <div class="sheet-wrap">
+              <span class="sheet-number no-print">Sheet {{ pageIndex + 1 }}</span>
+              <div
+                class="label-sheet"
+                [style.--sheet-columns]="settings().columns"
+                [style.--sheet-rows]="settings().rows"
+                [style.--label-width]="settings().labelWidthMm + 'mm'"
+                [style.--label-height]="settings().labelHeightMm + 'mm'"
+                [style.--margin-top]="settings().marginTopMm + 'mm'"
+                [style.--margin-left]="settings().marginLeftMm + 'mm'"
+                [style.--gap-x]="settings().gapXmm + 'mm'"
+                [style.--gap-y]="settings().gapYmm + 'mm'"
+                [style.--label-padding]="settings().paddingMm + 'mm'"
+                [style.--font-scale]="settings().fontScale / 100"
+                [style.--accent]="settings().accentColour"
+                [style.--border-colour]="settings().borderColour"
+              >
+                @for (fitting of page; track $index) {
+                  @if (fitting) {
+                    <article
+                      class="asset-label"
+                      [class.label--bordered]="settings().border"
+                      [class.label--center]="settings().alignment === 'CENTER'"
+                      [class.label--compact]="settings().layout === 'COMPACT'"
+                      [class.label--detailed]="settings().layout === 'DETAILED'"
+                      [class.label--small]="
+                        settings().layout === 'SMART' &&
+                        (settings().labelHeightMm < 36 || settings().labelWidthMm < 60)
+                      "
+                    >
+                      <div class="label-copy">
+                        @if (settings().showOrganisationName) {
+                          <p class="label-brand">{{ organisationName() }}</p>
+                        }
+                        @if (settings().showFittingReference) {
+                          <h2>{{ fitting.reference }}</h2>
+                        }
+                        @if (settings().showFittingDescription && fitting.description) {
+                          <p class="label-description">{{ fitting.description }}</p>
+                        }
+                        <dl>
+                          @if (settings().showLocation && fitting.location?.name) {
+                            <div>
+                              <dt>Location</dt>
+                              <dd>{{ fitting.location.name }}</dd>
+                            </div>
+                          }
+                          @if (settings().showFittingType && fittingType(fitting)) {
+                            <div>
+                              <dt>Type</dt>
+                              <dd>{{ fittingType(fitting) }}</dd>
+                            </div>
+                          }
+                          @if (settings().showAssetReference) {
+                            <div>
+                              <dt>Asset</dt>
+                              <dd>{{ fitting.asset.assetReference }}</dd>
+                            </div>
+                          }
+                          @if (
+                            settings().showManufacturer &&
+                            (fitting.device?.make || fitting.manufacturer)
+                          ) {
+                            <div>
+                              <dt>Make</dt>
+                              <dd>{{ fitting.device?.make || fitting.manufacturer }}</dd>
+                            </div>
+                          }
+                          @if (settings().showModel && (fitting.device?.model || fitting.model)) {
+                            <div>
+                              <dt>Model</dt>
+                              <dd>{{ fitting.device?.model || fitting.model }}</dd>
+                            </div>
+                          }
+                          @if (settings().showSerialNumber && fitting.serialNumber) {
+                            <div>
+                              <dt>Serial</dt>
+                              <dd>{{ fitting.serialNumber }}</dd>
+                            </div>
+                          }
+                          @if (settings().showOperationMode && fitting.operationMode) {
+                            <div>
+                              <dt>Mode</dt>
+                              <dd>{{ fitting.operationMode }}</dd>
+                            </div>
+                          }
+                        </dl>
+                        <div class="label-context">
+                          @if (settings().showCustomerName) {
+                            <span>{{ studio()?.site?.customer?.name }}</span>
+                          }
+                          @if (settings().showSiteName) {
+                            <span>{{ studio()?.site?.name }}</span>
+                          }
+                          @if (settings().showSiteAddress && siteAddress()) {
+                            <span>{{ siteAddress() }}</span>
+                          }
+                          @if (settings().showOrganisationAddress && organisationAddress()) {
+                            <span>{{ organisationAddress() }}</span>
+                          }
+                          @if (
+                            settings().showOrganisationTelephone &&
+                            studio()?.organisation?.brandProfile?.telephone
+                          ) {
+                            <span>{{ studio()?.organisation?.brandProfile?.telephone }}</span>
+                          }
+                          @if (
+                            settings().showOrganisationEmail &&
+                            studio()?.organisation?.brandProfile?.email
+                          ) {
+                            <span>{{ studio()?.organisation?.brandProfile?.email }}</span>
+                          }
+                          @if (
+                            settings().showOrganisationWebsite &&
+                            studio()?.organisation?.brandProfile?.website
+                          ) {
+                            <span>{{ studio()?.organisation?.brandProfile?.website }}</span>
+                          }
+                          @if (settings().showCustomText && settings().customText) {
+                            <span class="custom-copy">{{ settings().customText }}</span>
+                          }
+                        </div>
+                      </div>
+                      @if (settings().showQrCode || settings().showBarcode) {
+                        <div class="machine-codes">
+                          @if (settings().showQrCode) {
+                            <img [src]="qrCodes()[fitting.id]" alt="" class="label-qr" />
+                          }
+                          @if (settings().showBarcode) {
+                            <svg
+                              class="label-barcode"
+                              [attr.data-label-barcode]="fitting.reference"
+                            ></svg>
+                          }
+                        </div>
+                      }
+                    </article>
+                  } @else {
+                    <div class="used-label" aria-label="Used label position"></div>
+                  }
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+    </div>
+  }
+</main>

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { OfflineVisitService, type StoredVisitPack } from '../core/offline-visit.service';
 
 @Component({
@@ -10,7 +10,6 @@ import { OfflineVisitService, type StoredVisitPack } from '../core/offline-visit
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OfflineJobsComponent {
-  private readonly router = inject(Router);
   protected readonly offline = inject(OfflineVisitService);
   protected readonly packs = signal<StoredVisitPack[]>([]);
 
@@ -32,10 +31,6 @@ export class OfflineJobsComponent {
   }
 
   private async load(): Promise<void> {
-    if (this.offline.online()) {
-      await this.router.navigate(['/app']);
-      return;
-    }
     this.packs.set(await this.offline.allPacks());
   }
 }

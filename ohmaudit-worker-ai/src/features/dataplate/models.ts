@@ -6,6 +6,18 @@ export const dataPlateDebugModels = [
 
 export type DataPlateDebugModel = (typeof dataPlateDebugModels)[number];
 
+export const defaultDataPlateModelChain = dataPlateDebugModels;
+
 export function isDataPlateDebugModel(value: string): value is DataPlateDebugModel {
   return dataPlateDebugModels.some((model) => model === value);
+}
+
+export function dataPlateModelChain(configuredChain?: string): DataPlateDebugModel[] {
+  const models = (configuredChain ?? '')
+    .split(',')
+    .map((model) => model.trim())
+    .filter(isDataPlateDebugModel)
+    .filter((model, index, models) => models.indexOf(model) === index)
+    .slice(0, 3);
+  return models.length > 0 ? models : [...defaultDataPlateModelChain];
 }

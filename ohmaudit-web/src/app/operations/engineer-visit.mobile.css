@@ -1,17 +1,17 @@
 /* Mobile-first inspection workspace. Kept separate from the shared operations stylesheet so the
    high-touch engineer controls never leak into the desktop administration screens. */
 :host {
-  --inspection-navy: #041b3a;
-  --inspection-navy-soft: #08264c;
-  --inspection-blue: #075ed1;
-  --inspection-amber: #ffb000;
-  --inspection-green: #168a53;
+  --inspection-navy: var(--oa-navy-950);
+  --inspection-navy-soft: var(--oa-navy-900);
+  --inspection-blue: var(--oa-teal-600);
+  --inspection-amber: var(--oa-amber-500);
+  --inspection-green: var(--oa-success);
   --inspection-green-soft: #eaf8f0;
-  --inspection-red: #cf2434;
+  --inspection-red: var(--oa-danger);
   --inspection-red-soft: #fff1f2;
-  --inspection-border: #d3dce8;
+  --inspection-border: var(--oa-line);
   --inspection-surface: #ffffff;
-  --inspection-canvas: #f5f7fa;
+  --inspection-canvas: var(--oa-canvas);
 }
 .job-landing {
   display: grid;
@@ -19,10 +19,100 @@
   padding: 0.7rem;
 }
 .job-landing-hero {
+  order: 1;
   margin: -0.7rem -0.7rem 0;
   padding: 1rem;
   background: linear-gradient(145deg, var(--inspection-navy), var(--inspection-navy-soft));
   color: white;
+}
+.offline-readiness-card {
+  order: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 2px solid color-mix(in srgb, var(--oa-teal-500) 35%, var(--oa-line));
+  background: linear-gradient(135deg, var(--oa-teal-50), white);
+  box-shadow: var(--oa-shadow-md);
+}
+.offline-readiness-card.ready {
+  border-color: color-mix(in srgb, var(--oa-success) 45%, var(--oa-line));
+  background: linear-gradient(135deg, #edf9f4, white);
+}
+.offline-readiness-icon {
+  width: 2.8rem;
+  height: 2.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.7rem;
+  background: var(--oa-navy-900);
+  color: white;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+.offline-readiness-card h2,
+.offline-readiness-card p {
+  margin: 0.15rem 0;
+}
+.offline-readiness-card p,
+.offline-readiness-card small {
+  color: var(--oa-ink-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.offline-readiness-card .button,
+.offline-readiness-note {
+  grid-column: 1 / -1;
+}
+.offline-readiness-card .button {
+  width: 100%;
+  min-height: 3rem;
+}
+.guest-identity-card {
+  order: 3;
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+  border-left: 5px solid var(--oa-amber-500);
+}
+.guest-identity-card h2,
+.guest-identity-card p {
+  margin: 0;
+}
+.guest-identity-card form {
+  display: grid;
+  gap: 0.65rem;
+}
+.guest-identity-card input {
+  min-height: 3rem;
+}
+.job-rams-section {
+  order: 4;
+}
+.engineer-task-summary {
+  order: 5;
+}
+.record-list {
+  order: 6;
+}
+.landing-details {
+  order: 7;
+}
+.landing-briefing {
+  order: 8;
+}
+.engineer-add-asset {
+  order: 9;
+}
+.task-asset-name {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--oa-ink-secondary);
+  font-size: 0.78rem;
+}
+.task-card.pending-sync {
+  border-color: var(--oa-amber-500);
 }
 .job-landing-hero .eyebrow,
 .job-landing-hero p {
@@ -202,6 +292,49 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+@media (min-width: 64rem) {
+  .job-landing {
+    grid-template-columns: minmax(0, 1.45fr) minmax(20rem, 0.75fr);
+    align-items: start;
+    gap: 1rem;
+    max-width: 82rem;
+    margin: 0 auto;
+  }
+  .job-landing-hero {
+    grid-column: 1 / -1;
+    margin: -1rem -1rem 0;
+    padding: 1.5rem;
+  }
+  .offline-readiness-card {
+    grid-column: 1;
+  }
+  .guest-identity-card {
+    grid-column: 2;
+  }
+  .job-rams-section {
+    grid-column: 2;
+    grid-row: span 3;
+  }
+  .engineer-task-summary,
+  .record-list {
+    grid-column: 1;
+  }
+  .landing-details,
+  .landing-briefing {
+    grid-column: 1;
+  }
+  .engineer-add-asset {
+    grid-column: 2;
+  }
+  .offline-readiness-card .button {
+    grid-column: auto;
+    width: auto;
+    min-width: 13rem;
+  }
+  .offline-readiness-note {
+    grid-column: 2 / -1;
+  }
+}
 
 .inspection-active {
   width: 100%;
@@ -250,14 +383,15 @@
 
 .ev-step-pager {
   position: fixed;
-  inset: auto 0 auto;
+  left: 50%;
   bottom: calc(3.3rem + 0.6rem);
   z-index: 25;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3rem minmax(0, 1fr);
   align-items: center;
   gap: 0.55rem;
   width: min(100%, 38rem);
-  margin: 0 auto;
+  transform: translateX(-50%);
   padding: 0.65rem 0.75rem calc(0.65rem + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--inspection-border);
   background: #ffffffed;
@@ -266,7 +400,7 @@
 }
 
 .ev-step-pager .ev-step-counter {
-  flex: 1;
+  min-width: 0;
   text-align: center;
   color: var(--inspection-navy);
   font-size: 0.68rem;
@@ -275,8 +409,11 @@
 }
 
 .ev-step-pager .button {
-  min-width: 5.6rem;
+  width: 100%;
+  min-width: 0;
   min-height: 3.1rem;
+  padding-inline: 0.55rem;
+  white-space: nowrap;
 }
 
 .ev-mobile-app .inspection-titlebar {
@@ -579,6 +716,23 @@
 .ev-mobile-app .normal-state-photo p {
   margin: 0;
   font-size: 0.68rem;
+}
+
+.fault-photo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.fault-photo-actions .fault-photo-button {
+  width: 100%;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.condition-photo-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.7rem;
 }
 
 .ev-mobile-app .data-plate-intro {
@@ -1109,6 +1263,18 @@
 
   .ev-step-pager {
     bottom: calc(1rem + 3.3rem + 0.6rem);
+  }
+}
+
+@media (min-width: 62.01rem) {
+  :host-context(.app-main) .ev-step-pager {
+    left: calc(50% + 7.5rem);
+  }
+}
+
+@media (min-width: 62.01rem) {
+  :host-context(.app-frame) .ev-step-pager {
+    left: calc(50% + 7.5rem);
   }
 }
 

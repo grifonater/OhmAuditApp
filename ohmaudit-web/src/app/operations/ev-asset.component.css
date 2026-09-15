@@ -223,3 +223,8 @@
     border-radius: 1rem 1rem 0 0;
   }
 }
+.asset-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}

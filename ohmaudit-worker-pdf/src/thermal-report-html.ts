@@ -258,6 +258,7 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
     html, body { margin: 0; padding: 0; }
     body { background: ${BRAND.canvas}; font-size: 10pt; line-height: 1.42; }
     .screen-note { width: 210mm; margin: 18px auto 10px; padding: 10px 14px; border: 1px solid ${BRAND.line}; border-radius: 8px; background: #fff; color: ${BRAND.muted}; text-align: center; font-size: 9pt; }
+    .draft-marker { position: fixed; z-index: 20; top: 4mm; left: 50%; transform: translateX(-50%); padding: 2mm 8mm; border: 1px solid ${BRAND.danger}; color: ${BRAND.danger}; background: #fff; font-size: 10pt; font-weight: 800; letter-spacing: .12em; }
     .report-page { position: relative; width: 210mm; min-height: 297mm; margin: 10mm auto; padding: 15mm 15mm 17mm; background: #fff; box-shadow: 0 10px 34px rgba(7, 27, 52, .12); break-after: page; page-break-after: always; }
     .report-page:last-of-type { break-after: auto; page-break-after: auto; }
     .cover-page::before { content: ''; position: absolute; inset: 0 0 auto; height: 8mm; background: ${BRAND.navy}; }
@@ -377,6 +378,7 @@ export function renderThermalReportHtml(payload: ThermalCertificatePayload): str
   </style>
 </head>
 <body>
+  ${payload.draft ? '<div class="draft-marker">DRAFT - NOT ISSUED</div>' : ''}
   <div class="screen-note">A4 PRINT PREVIEW · USE THE DOWNLOAD PDF ACTION IN OHMAUDIT FOR THE CLIENT COPY</div>
   <section class="report-page cover-page">
     <div class="brand-row">

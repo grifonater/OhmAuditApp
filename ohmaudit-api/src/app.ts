@@ -201,6 +201,8 @@ const mediaInput = z.object({
     'Asset',
     'Inspection',
     'EmergencyLightingFitting',
+    'EmergencyLightingLocation',
+    'EmergencyLightingDevice',
   ]),
   entityId: z.uuid(),
   category: z.string().trim().min(1).max(80),
@@ -278,6 +280,7 @@ const emergencyLightingKeyswitchInput = z.object({
 const emergencyLightingFittingInput = z.object({
   reference: z.string().trim().min(1).max(100),
   locationId: z.uuid().nullable().optional(),
+  deviceId: z.uuid().nullable().optional(),
   groupIds: z
     .array(z.uuid())
     .max(100)
@@ -292,6 +295,59 @@ const emergencyLightingFittingInput = z.object({
   ratedDurationMinutes: z.number().int().min(1).max(1440).optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ARCHIVED']).optional(),
   notes: optionalTrimmed(5000),
+});
+const emergencyLightingFittingTypeInput = z.object({
+  name: z.string().trim().min(1).max(100),
+});
+const emergencyLightingDeviceInput = z.object({
+  make: z.string().trim().min(1).max(160),
+  model: z.string().trim().min(1).max(160),
+  fittingTypeId: z.uuid().nullable().optional(),
+  description: optionalTrimmed(2000),
+  notes: optionalTrimmed(5000),
+});
+const emergencyLightingDeviceUpdateInput = emergencyLightingDeviceInput
+  .partial()
+  .refine((input) => Object.keys(input).length > 0);
+const emergencyLightingLabelSettingsInput = z.object({
+  preset: z.enum(['L7160', 'L7162', 'L7163', 'CUSTOM']),
+  rows: z.number().int().min(1).max(20),
+  columns: z.number().int().min(1).max(10),
+  labelWidthMm: z.number().min(10).max(297),
+  labelHeightMm: z.number().min(10).max(297),
+  marginTopMm: z.number().min(0).max(100),
+  marginLeftMm: z.number().min(0).max(100),
+  gapXmm: z.number().min(0).max(50),
+  gapYmm: z.number().min(0).max(50),
+  paddingMm: z.number().min(0).max(10),
+  fontScale: z.number().int().min(60).max(160),
+  layout: z.enum(['SMART', 'COMPACT', 'DETAILED']),
+  alignment: z.enum(['LEFT', 'CENTER']),
+  sortBy: z.enum(['REFERENCE', 'LOCATION', 'ASSET']),
+  border: z.boolean(),
+  borderColour: z.string().regex(/^#[0-9a-f]{6}$/i),
+  accentColour: z.string().regex(/^#[0-9a-f]{6}$/i),
+  showOrganisationName: z.boolean(),
+  showOrganisationAddress: z.boolean(),
+  showOrganisationTelephone: z.boolean(),
+  showOrganisationEmail: z.boolean(),
+  showOrganisationWebsite: z.boolean(),
+  showCustomerName: z.boolean(),
+  showSiteName: z.boolean(),
+  showSiteAddress: z.boolean(),
+  showFittingReference: z.boolean(),
+  showFittingDescription: z.boolean(),
+  showFittingType: z.boolean(),
+  showLocation: z.boolean(),
+  showAssetReference: z.boolean(),
+  showManufacturer: z.boolean(),
+  showModel: z.boolean(),
+  showSerialNumber: z.boolean(),
+  showOperationMode: z.boolean(),
+  showQrCode: z.boolean(),
+  showBarcode: z.boolean(),
+  showCustomText: z.boolean(),
+  customText: z.string().max(240),
 });
 const emergencyLightingResultInput = z.object({
   outcome: z.enum(['PASS', 'FAIL', 'NOT_TESTED']),
@@ -663,12 +719,17 @@ const ramsAcknowledgementInput = z.object({
     .max(250_000)
     .regex(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/u),
 });
-const syncInput = z.object({
-  clientMutationId: z.string().uuid(),
-  entityType: z.string().min(1).max(80),
-  operation: z.string().min(1).max(80),
-  payload: z.record(z.string(), z.unknown()),
-});
+const syncInput = z
+  .object({
+    clientMutationId: z.string().uuid(),
+    entityType: z.string().min(1).max(80),
+    operation: z.string().min(1).max(80),
+    payload: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+const guestIdentityInput = z.object({ displayName: z.string().trim().min(2).max(160) }).strict();
+const syncMaximumBytes = 512 * 1024;
+const guestIdentityMaximumBytes = 4 * 1024;
 const defectSubmissionInput = z.object({
   assetId: z.uuid().optional(),
   title: z.string().trim().min(2).max(200),
@@ -700,6 +761,8 @@ export const thermalReportPreviewInput = inspectionSubmissionInput
   .pick({ data: true, signature: true })
   .strict();
 const thermalReportPreviewMaximumBytes = 512 * 1024;
+const inspectionDraftInput = z.record(z.string(), z.unknown());
+const inspectionDraftMaximumBytes = 512 * 1024;
 
 export async function readBoundedJson(request: Request, maximumBytes: number): Promise<unknown> {
   const declaredLength = request.headers.get('content-length');
@@ -773,6 +836,20 @@ const engineerEvAssetInput = z.object({
   maximumPowerKw: z.number().positive().max(1000).optional(),
   dcRcdType: z.enum(['TYPE_B', 'RDC_DD', 'NONE']).default('NONE'),
 });
+export const inspectionAssetMediaKindInput = z.enum(['fault', 'normal-state', 'data-plate']);
+export const addEvChargerPayloadInput = z
+  .object({
+    localIds: z
+      .object({
+        assetId: z.uuid(),
+        chargePointId: z.uuid(),
+        taskId: z.uuid(),
+        inspectionId: z.uuid(),
+      })
+      .strict(),
+    asset: engineerEvAssetInput.strict(),
+  })
+  .strict();
 
 function identityService(environment: ApiBindings, options: AppOptions): IdentityService {
   if (options.identityStore !== undefined) return new IdentityService(options.identityStore);
@@ -913,7 +990,12 @@ async function analyseChargerDataPlate(
   environment: ApiBindings,
   request: Request,
   correlationId: string,
-  metadata: { organisationId: string; inspectionId: string; access: 'member' | 'guest' },
+  metadata: {
+    organisationId: string;
+    inspectionId?: string;
+    visitId?: string;
+    access: 'member' | 'guest';
+  },
 ) {
   const log = (
     level: 'info' | 'warn' | 'error',
@@ -938,14 +1020,52 @@ async function analyseChargerDataPlate(
     log('warn', 'api.ai_dataplate.rejected', { reason: 'unsupported_image_type', mimeType });
     throw new DomainError('IMAGE_TYPE_INVALID', 'Use a JPEG, PNG, or WebP image.', 415);
   }
-  const declaredSize = Number(request.headers.get('content-length') ?? 0);
-  if (declaredSize > 2_000_000) {
+  const declaredHeader = request.headers.get('content-length');
+  const declaredSize = declaredHeader === null ? undefined : Number(declaredHeader);
+  if (declaredSize !== undefined && (!Number.isSafeInteger(declaredSize) || declaredSize < 0)) {
+    log('warn', 'api.ai_dataplate.rejected', { reason: 'image_size_invalid', declaredHeader });
+    throw new DomainError('IMAGE_SIZE_INVALID', 'The image size is invalid.', 422);
+  }
+  if (declaredSize !== undefined && declaredSize > 2_000_000) {
     log('warn', 'api.ai_dataplate.rejected', { reason: 'image_too_large', declaredSize });
     throw new DomainError('IMAGE_TOO_LARGE', 'The image must be 2 MB or smaller.', 413);
   }
   if (request.body === null) {
     log('warn', 'api.ai_dataplate.rejected', { reason: 'image_empty' });
     throw new DomainError('IMAGE_EMPTY', 'Select an image to analyse.', 422);
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let imageBytes = 0;
+  while (true) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    imageBytes += chunk.value.byteLength;
+    if (imageBytes > 2_000_000) {
+      await reader.cancel();
+      log('warn', 'api.ai_dataplate.rejected', { reason: 'image_too_large', imageBytes });
+      throw new DomainError('IMAGE_TOO_LARGE', 'The image must be 2 MB or smaller.', 413);
+    }
+    chunks.push(chunk.value);
+  }
+  if (imageBytes === 0) {
+    log('warn', 'api.ai_dataplate.rejected', { reason: 'image_empty' });
+    throw new DomainError('IMAGE_EMPTY', 'Select an image to analyse.', 422);
+  }
+  if (declaredSize !== undefined && declaredSize !== imageBytes) {
+    log('warn', 'api.ai_dataplate.rejected', {
+      reason: 'image_size_mismatch',
+      declaredSize,
+      imageBytes,
+    });
+    throw new DomainError('IMAGE_SIZE_INVALID', 'The image size does not match the upload.', 422);
+  }
+  const image = new Uint8Array(imageBytes);
+  let imageOffset = 0;
+  for (const chunk of chunks) {
+    image.set(chunk, imageOffset);
+    imageOffset += chunk.byteLength;
   }
 
   let response: Response;
@@ -955,7 +1075,7 @@ async function analyseChargerDataPlate(
       {
         method: 'POST',
         headers: { 'content-type': mimeType, 'x-correlation-id': correlationId },
-        body: request.body,
+        body: image,
       },
     );
   } catch (error: unknown) {
@@ -1029,7 +1149,14 @@ function isEvAssetType(assetType: string | undefined): boolean {
 
 function mediaWriteCapability(
   entityType:
-    'Organisation' | 'Customer' | 'Site' | 'Asset' | 'Inspection' | 'EmergencyLightingFitting',
+    | 'Organisation'
+    | 'Customer'
+    | 'Site'
+    | 'Asset'
+    | 'Inspection'
+    | 'EmergencyLightingFitting'
+    | 'EmergencyLightingLocation'
+    | 'EmergencyLightingDevice',
 ): Capability {
   if (entityType === 'Organisation') return 'organisation.manage';
   if (entityType === 'Customer') return 'customers.manage';
@@ -2453,7 +2580,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           | 'Site'
           | 'Asset'
           | 'Inspection'
-          | 'EmergencyLightingFitting',
+          | 'EmergencyLightingFitting'
+          | 'EmergencyLightingLocation'
+          | 'EmergencyLightingDevice',
       ),
     );
     if (media.entityType === 'Inspection') {
@@ -2489,7 +2618,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         'The uploaded file type does not match its media record.',
         422,
       );
-    const contentLength = Number(context.req.header('content-length') ?? 0);
+    const contentLength = Number(
+      context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
+    );
     if (!Number.isSafeInteger(contentLength) || contentLength < 1 || contentLength > 2_000_000)
       throw new DomainError('MEDIA_TOO_LARGE', 'Images must be 2 MB or smaller.', 413);
     const content = await context.req.arrayBuffer();
@@ -3608,16 +3739,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       'inspections.perform',
     );
     const prisma = prismaFor(environment);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'ev-charging',
+      'perform',
+    );
     await new EntitlementService(prisma).requireModule(organisationId, 'ev-charging');
-    const created = await new VisitService(prisma).addEvAsset(
+    const created = await new VisitService(prisma).addEvAssetWithInspection(
       organisationId,
       context.req.param('visitId'),
       user.id,
       context.get('correlationId'),
       input,
     );
-    const inspection = await new InspectionService(prisma).start(organisationId, created.task.id);
-    return context.json({ ...created, inspection }, 201);
+    return context.json(created, 201);
   });
   app.post('/api/v1/visits/:visitId/guest-link', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -3650,10 +3788,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const mimeType = z
       .enum(['image/jpeg', 'image/png', 'image/webp'])
       .parse(context.req.header('content-type'));
-    const size = Number(context.req.header('content-length') ?? 0);
+    const size = Number(
+      context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
+    );
     if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
       throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
-    const kind = z.enum(['fault', 'normal-state']).parse(context.req.query('kind'));
+    const kind = inspectionAssetMediaKindInput.parse(context.req.query('kind'));
     const description = z.string().trim().min(1).max(500).parse(context.req.query('description'));
     const uploadId = z.uuid().parse(context.req.query('uploadId'));
     const prisma = prismaFor(environment);
@@ -3690,9 +3830,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       (await portfolio.registerMedia(organisationId, user.id, {
         entityType: 'Asset',
         entityId: inspection.assetId,
-        category: kind === 'normal-state' ? 'asset-image' : 'inspection-fault',
+        category:
+          kind === 'data-plate'
+            ? 'asset-nameplate'
+            : kind === 'normal-state'
+              ? 'asset-image'
+              : 'inspection-fault',
         caption: description,
-        tags: [kind === 'normal-state' ? 'normal-state' : 'fault-evidence', uploadTag],
+        tags: [
+          kind === 'data-plate'
+            ? 'nameplate'
+            : kind === 'normal-state'
+              ? 'normal-state'
+              : 'fault-evidence',
+          uploadTag,
+        ],
         mimeType,
         size,
       }));
@@ -3709,8 +3861,42 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       'inspections.perform',
     );
-    const input = syncInput.parse(await context.req.json());
+    const input = syncInput.parse(await readBoundedJson(context.req.raw, syncMaximumBytes));
     const prisma = prismaFor(environment);
+    const visitService = new VisitService(prisma);
+    if (input.operation === 'ADD_EV_CHARGER') {
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'ev-charging',
+        'perform',
+      );
+      await new EntitlementService(prisma).requireModule(organisationId, 'ev-charging');
+    }
+    const replay = await visitService.syncReplay(
+      organisationId,
+      context.req.param('visitId'),
+      input.clientMutationId,
+      input.entityType,
+      input.operation,
+      input.payload,
+    );
+    if (replay !== null) return context.json({ mutation: replay });
+    if (input.operation === 'ADD_EV_CHARGER') {
+      return context.json({
+        mutation: await visitService.addEvChargerSync(
+          organisationId,
+          context.req.param('visitId'),
+          input.clientMutationId,
+          input.entityType,
+          addEvChargerPayloadInput.parse(input.payload),
+          user.id,
+          context.get('correlationId'),
+        ),
+      });
+    }
     if (input.operation === 'SUBMIT_INSPECTION') {
       const submission = z
         .object({ inspectionId: z.uuid(), submission: inspectionSubmissionInput })
@@ -3726,6 +3912,14 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           404,
         );
       await requireModuleForKey(prisma, organisationId, inspection.moduleKey);
+      await requireSpecialistRoleCapability(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        inspection.moduleKey,
+        'perform',
+      );
       await new InspectionService(prisma).submit(
         organisationId,
         submission.inspectionId,
@@ -3736,7 +3930,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       );
     }
     return context.json({
-      mutation: await new VisitService(prisma).applySync(
+      mutation: await visitService.applySync(
         organisationId,
         context.req.param('visitId'),
         input.clientMutationId,
@@ -3760,6 +3954,22 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     visit = await visitService.guestPack(context.req.param('token'));
     return context.json({
       visit,
+    });
+  });
+  app.patch('/api/v1/guest/visits/:token/identity', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const input = guestIdentityInput.parse(
+      await readBoundedJson(context.req.raw, guestIdentityMaximumBytes),
+    );
+    const service = new VisitService(prismaFor(environment));
+    const updated = await service.setGuestIdentity(
+      context.req.param('token'),
+      input.displayName,
+      context.get('correlationId'),
+    );
+    return context.json({
+      identity: updated.identity,
+      visit: await service.guestPack(context.req.param('token')),
     });
   });
   app.get('/api/v1/guest/visits/:token/rams', async (context) => {
@@ -4011,20 +4221,82 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const input = engineerEvAssetInput.parse(await context.req.json());
     const prisma = prismaFor(environment);
-    const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+    const visitService = new VisitService(prisma);
+    const visit = await visitService.guestVisitScope(context.req.param('token'));
     await new EntitlementService(prisma).requireModule(visit.organisationId, 'ev-charging');
-    const created = await new VisitService(prisma).addEvAsset(
+    const created = await visitService.addEvAssetWithInspection(
       visit.organisationId,
       visit.id,
       undefined,
       context.get('correlationId'),
       input,
     );
-    const inspection = await new InspectionService(prisma).start(
+    return context.json(created, 201);
+  });
+  app.post('/api/v1/guest/visits/:token/sync', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visitService = new VisitService(prisma);
+    const visit = await visitService.guestVisitScope(context.req.param('token'));
+    const input = syncInput.parse(await readBoundedJson(context.req.raw, syncMaximumBytes));
+    if (input.operation === 'ADD_EV_CHARGER')
+      await new EntitlementService(prisma).requireModule(visit.organisationId, 'ev-charging');
+    const replay = await visitService.syncReplay(
       visit.organisationId,
-      created.task.id,
+      visit.id,
+      input.clientMutationId,
+      input.entityType,
+      input.operation,
+      input.payload,
     );
-    return context.json({ ...created, inspection }, 201);
+    if (replay !== null) return context.json({ mutation: replay });
+    if (input.operation === 'ADD_EV_CHARGER') {
+      return context.json({
+        mutation: await visitService.addEvChargerSync(
+          visit.organisationId,
+          visit.id,
+          input.clientMutationId,
+          input.entityType,
+          addEvChargerPayloadInput.parse(input.payload),
+          undefined,
+          context.get('correlationId'),
+        ),
+      });
+    }
+    if (input.operation === 'SUBMIT_INSPECTION') {
+      const submission = z
+        .object({ inspectionId: z.uuid(), submission: inspectionSubmissionInput })
+        .parse(input.payload);
+      const inspection = await new InspectionService(prisma).detail(
+        visit.organisationId,
+        submission.inspectionId,
+      );
+      if (inspection.visitId !== visit.id)
+        throw new DomainError(
+          'INSPECTION_NOT_FOUND',
+          'The inspection does not belong to this job.',
+          404,
+        );
+      await requireModuleForKey(prisma, visit.organisationId, inspection.moduleKey);
+      await new InspectionService(prisma).submit(
+        visit.organisationId,
+        submission.inspectionId,
+        undefined,
+        context.get('correlationId'),
+        submission.submission,
+        input.clientMutationId,
+      );
+    }
+    return context.json({
+      mutation: await visitService.applySync(
+        visit.organisationId,
+        visit.id,
+        input.clientMutationId,
+        input.entityType,
+        input.operation,
+        input.payload,
+      ),
+    });
   });
   app.get('/api/v1/guest/visits/:token/media/:mediaId/content', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -4137,7 +4409,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const mimeType = z
       .enum(['image/jpeg', 'image/png', 'image/webp'])
       .parse(context.req.header('content-type'));
-    const size = Number(context.req.header('content-length') ?? 0);
+    const size = Number(
+      context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
+    );
     if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
       throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
     const visitService = new VisitService(prismaFor(environment));
@@ -4157,10 +4431,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           404,
         );
     }
-    const kind = z
-      .enum(['fault', 'normal-state'])
-      .default('fault')
-      .parse(context.req.query('kind'));
+    const kind = inspectionAssetMediaKindInput.default('fault').parse(context.req.query('kind'));
+    if (kind === 'data-plate' && fittingId !== undefined)
+      throw new DomainError(
+        'MEDIA_KIND_INVALID',
+        'A charger data plate image cannot be attached to an emergency lighting fitting.',
+        422,
+      );
     const description = z
       .string()
       .trim()
@@ -4193,13 +4470,19 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         entityId: fittingId === undefined ? owner.assetId : context.req.param('inspectionId'),
         category:
           fittingId === undefined
-            ? kind === 'normal-state'
-              ? 'asset-image'
-              : 'inspection-fault'
+            ? kind === 'data-plate'
+              ? 'asset-nameplate'
+              : kind === 'normal-state'
+                ? 'asset-image'
+                : 'inspection-fault'
             : 'emergency-lighting-evidence',
         caption: description,
         tags: [
-          kind === 'normal-state' ? 'normal-state' : 'fault-evidence',
+          kind === 'data-plate'
+            ? 'nameplate'
+            : kind === 'normal-state'
+              ? 'normal-state'
+              : 'fault-evidence',
           ...(fittingId === undefined ? [] : [`fitting:${fittingId}`]),
           ...(uploadTag === undefined ? [] : [uploadTag]),
         ],
@@ -4220,7 +4503,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       const mimeType = z
         .enum(['image/jpeg', 'image/png', 'image/webp'])
         .parse(context.req.header('content-type'));
-      const size = Number(context.req.header('content-length') ?? 0);
+      const size = Number(
+        context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
+      );
       if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
         throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
       const kind = z.enum(['unclassified', 'thermal', 'standard']).parse(context.req.query('kind'));
@@ -4380,6 +4665,222 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ),
     });
   });
+  app.put('/api/v1/inspections/:inspectionId/draft', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const prisma = prismaFor(environment);
+    const moduleKey = await requireInspectionModule(prisma, organisationId, inspectionId);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      moduleKey,
+      'perform',
+    );
+    const payload = inspectionDraftInput.parse(
+      await readBoundedJson(context.req.raw, inspectionDraftMaximumBytes),
+    );
+    return context.json({
+      draft: await new InspectionService(prisma).upsertDraft(organisationId, inspectionId, payload),
+    });
+  });
+  app.get('/api/v1/inspections/:inspectionId/draft.pdf', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'certificates.generate',
+    );
+    if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
+      throw new DomainError(
+        'PDF_RENDERER_UNAVAILABLE',
+        'PDF rendering is not configured for this environment.',
+        503,
+      );
+    const prisma = prismaFor(environment);
+    const moduleKey = await requireInspectionModule(prisma, organisationId, inspectionId);
+    const [draft, inspection, brand, accreditation] = await Promise.all([
+      new InspectionService(prisma).draft(organisationId, inspectionId),
+      prisma.inspection.findFirst({
+        where: { id: inspectionId, organisationId },
+        include: {
+          customer: true,
+          site: true,
+          asset: { include: { evChargePoint: true } },
+        },
+      }),
+      prisma.organisationBrandProfile.findUnique({ where: { organisationId } }),
+      prisma.organisationAccreditation.findFirst({
+        where: { organisationId },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    if (inspection === null)
+      throw new DomainError('INSPECTION_NOT_FOUND', 'The inspection was not found.', 404);
+    const payload = reportRecord(draft.payload);
+    const submittedData = reportRecord(payload['data']);
+    const localCore = reportRecord(payload['core']);
+    const data =
+      Object.keys(submittedData).length > 0
+        ? submittedData
+        : Object.keys(localCore).length > 0
+          ? localCore
+          : payload;
+    const signature = reportRecord(payload['signature']);
+    const submittedEvData = reportRecord(payload['evData']);
+    const localEvAsset = reportRecord(payload['evAsset']);
+    const evData =
+      Object.keys(submittedEvData).length > 0
+        ? submittedEvData
+        : moduleKey === 'ev-charging'
+          ? {
+              stableDetails: {
+                asset: localEvAsset,
+                chargePoint: localEvAsset,
+              },
+              supplyTests: reportArray(payload['supplies']),
+              connectorTests: reportArray(payload['connectors']),
+              functionalChecks: localCore,
+              engineerObservations: localCore['notes'],
+            }
+          : {};
+    const engineerName = reportText(
+      signature['signerName'] ?? payload['signerName'] ?? localCore['signerName'],
+      'Engineer',
+    );
+    const organisationName =
+      brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation';
+    const reportDate = draft.updatedAt;
+    const summaryLines = Object.entries(data)
+      .slice(0, 25)
+      .map(([key, value]) => `${key}: ${reportText(value, JSON.stringify(value) ?? '')}`);
+    const companyLogoImage = await mediaImageForReport(
+      environment,
+      prisma,
+      organisationId,
+      brand?.logoMediaId,
+    );
+    const renderPayload = {
+      draft: true,
+      title: `${inspection.inspectionType} - Draft`,
+      organisationName,
+      customerName: inspection.customer.name,
+      siteName: inspection.site.name,
+      ...(inspection.asset === null ? {} : { assetName: inspection.asset.displayName }),
+      inspectionType: inspection.inspectionType,
+      effectiveDate: reportDate.toISOString().slice(0, 10),
+      revisionNumber: 0,
+      engineerName,
+      outcome: reportText(data['outcome'], 'Not recorded'),
+      summaryLines,
+      ...(moduleKey !== 'thermal-imaging'
+        ? {}
+        : {
+            thermalCertificate: {
+              ...(await thermalCertificateData({
+                environment,
+                prisma,
+                organisationId,
+                inspectionId,
+                revisionData: data,
+                reportReference:
+                  reportText(data['reportReference']) ||
+                  `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+                organisationName,
+                customerName: inspection.customer.name,
+                siteName: inspection.site.name,
+                siteAddress: [
+                  inspection.site.addressLine1 ?? '',
+                  [inspection.site.addressLine2, inspection.site.city, inspection.site.postcode]
+                    .filter(Boolean)
+                    .join(', '),
+                ].filter(Boolean),
+                reportDate,
+                engineerName,
+                ...(companyLogoImage === undefined ? {} : { logoImage: companyLogoImage }),
+              })),
+              draft: true,
+            },
+          }),
+      ...(moduleKey !== 'ev-charging' || Object.keys(evData).length === 0
+        ? {}
+        : {
+            evCertificate: {
+              ...evCertificateData({
+                documentId: `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+                testingCompany: {
+                  name: organisationName,
+                  addressLines: [
+                    brand?.addressLine1 ?? '',
+                    [brand?.addressLine2, brand?.city, brand?.postcode].filter(Boolean).join(', '),
+                  ].filter(Boolean),
+                  registrationNumber: accreditation?.registrationNumber ?? '',
+                  ...reportLogoFields(companyLogoImage),
+                },
+                testingLocation: {
+                  name: `${inspection.customer.name} — ${inspection.site.name}`,
+                  addressLines: [
+                    inspection.site.addressLine1 ?? '',
+                    [inspection.site.addressLine2, inspection.site.city, inspection.site.postcode]
+                      .filter(Boolean)
+                      .join(', '),
+                  ].filter(Boolean),
+                },
+                charger: {
+                  name: inspection.asset?.displayName ?? inspection.inspectionType,
+                  location: inspection.asset?.evChargePoint?.locationNotes ?? inspection.site.name,
+                  make: inspection.asset?.manufacturer ?? '',
+                  model: inspection.asset?.model ?? '',
+                  serialNumber: inspection.asset?.serialNumber ?? '',
+                },
+                evData: {
+                  stableDetails: evData['stableDetails'] ?? {},
+                  supplyTests: evData['supplyTests'] ?? [],
+                  connectorTests: evData['connectorTests'] ?? [],
+                  functionalChecks: evData['functionalChecks'] ?? {},
+                  engineerObservations: reportText(evData['engineerObservations']) || null,
+                },
+                revisionData: data,
+                testDate: reportDate,
+                engineerName,
+                defects: reportArray(payload['defects']).map((value) => {
+                  const defect = reportRecord(value);
+                  return {
+                    title: reportText(defect['title'], 'Draft defect'),
+                    description: reportText(defect['description']) || null,
+                  };
+                }),
+              }),
+              draft: true,
+            },
+          }),
+    };
+    const rendered = await requestPdfRender(environment, `/render/${moduleKey}-certificate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(renderPayload),
+    });
+    return new Response(rendered.body, {
+      status: rendered.status,
+      statusText: rendered.statusText,
+      headers: {
+        'content-type': rendered.headers.get('content-type') ?? 'application/pdf',
+        'content-disposition': `attachment; filename="inspection-draft-${inspectionId}.pdf"`,
+        'cache-control': 'private, no-store',
+        pragma: 'no-cache',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  });
   app.post('/api/v1/inspections/:inspectionId/report-preview.pdf', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
@@ -4493,6 +4994,49 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       },
     });
   });
+  app.post('/api/v1/visits/:visitId/charger-data-plate-analysis', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const prisma = prismaFor(environment);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'ev-charging',
+      'perform',
+    );
+    await new EntitlementService(prisma).requireModule(organisationId, 'ev-charging');
+    await new VisitService(prisma).requireEvDiscoveryVisit(organisationId, visitId);
+    return context.json(
+      await analyseChargerDataPlate(environment, context.req.raw, context.get('correlationId'), {
+        organisationId,
+        visitId,
+        access: 'member',
+      }),
+    );
+  });
+  app.post('/api/v1/guest/visits/:token/charger-data-plate-analysis', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const service = new VisitService(prisma);
+    const visit = await service.guestVisitScope(context.req.param('token'));
+    await new EntitlementService(prisma).requireModule(visit.organisationId, 'ev-charging');
+    await service.requireEvDiscoveryVisit(visit.organisationId, visit.id);
+    return context.json(
+      await analyseChargerDataPlate(environment, context.req.raw, context.get('correlationId'), {
+        organisationId: visit.organisationId,
+        visitId: visit.id,
+        access: 'guest',
+      }),
+    );
+  });
   app.post('/api/v1/inspections/:inspectionId/data-plate-analysis', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
@@ -4595,6 +5139,32 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       },
       201,
     );
+  });
+  app.put('/api/v1/guest/visits/:token/inspections/:inspectionId/draft', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+    const inspection = await new InspectionService(prisma).detail(
+      visit.organisationId,
+      z.uuid().parse(context.req.param('inspectionId')),
+    );
+    if (inspection.visitId !== visit.id)
+      throw new DomainError(
+        'INSPECTION_NOT_FOUND',
+        'The inspection is not assigned to this job.',
+        404,
+      );
+    await requireModuleForKey(prisma, visit.organisationId, inspection.moduleKey);
+    const payload = inspectionDraftInput.parse(
+      await readBoundedJson(context.req.raw, inspectionDraftMaximumBytes),
+    );
+    return context.json({
+      draft: await new InspectionService(prisma).upsertDraft(
+        visit.organisationId,
+        inspection.id,
+        payload,
+      ),
+    });
   });
   app.post(
     '/api/v1/guest/visits/:token/inspections/:inspectionId/data-plate-analysis',
@@ -5694,6 +6264,211 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         context.req.param('keyswitchId'),
       );
       return context.json({ deleted: true });
+    },
+  );
+  app.get('/api/v1/modules/emergency-lighting/assets/:assetId/fitting-types', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-read',
+    );
+    return context.json({
+      fittingTypes: await service.listFittingTypes(organisationId, context.req.param('assetId')),
+    });
+  });
+  app.post('/api/v1/modules/emergency-lighting/assets/:assetId/fitting-types', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json(
+      {
+        fittingType: await service.createFittingType(
+          organisationId,
+          context.req.param('assetId'),
+          emergencyLightingFittingTypeInput.parse(await context.req.json()).name,
+        ),
+      },
+      201,
+    );
+  });
+  app.patch(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/fitting-types/:fittingTypeId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      return context.json({
+        fittingType: await service.updateFittingType(
+          organisationId,
+          context.req.param('assetId'),
+          context.req.param('fittingTypeId'),
+          emergencyLightingFittingTypeInput.parse(await context.req.json()).name,
+        ),
+      });
+    },
+  );
+  app.delete(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/fitting-types/:fittingTypeId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      await service.deleteFittingType(
+        organisationId,
+        context.req.param('assetId'),
+        context.req.param('fittingTypeId'),
+      );
+      return context.json({ deleted: true });
+    },
+  );
+  app.get('/api/v1/modules/emergency-lighting/assets/:assetId/devices', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-read',
+    );
+    return context.json({
+      devices: await service.listDevices(organisationId, context.req.param('assetId')),
+    });
+  });
+  app.post('/api/v1/modules/emergency-lighting/assets/:assetId/devices', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json(
+      {
+        device: await service.createDevice(
+          organisationId,
+          context.req.param('assetId'),
+          emergencyLightingDeviceInput.parse(await context.req.json()),
+        ),
+      },
+      201,
+    );
+  });
+  app.patch(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/devices/:deviceId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      return context.json({
+        device: await service.updateDevice(
+          organisationId,
+          context.req.param('assetId'),
+          context.req.param('deviceId'),
+          emergencyLightingDeviceUpdateInput.parse(await context.req.json()),
+        ),
+      });
+    },
+  );
+  app.delete(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/devices/:deviceId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-manage',
+      );
+      await service.deleteDevice(
+        organisationId,
+        context.req.param('assetId'),
+        context.req.param('deviceId'),
+      );
+      return context.json({ deleted: true });
+    },
+  );
+  app.get('/api/v1/modules/emergency-lighting/assets/:assetId/label-studio', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-read',
+    );
+    return context.json(await service.labelStudio(organisationId, context.req.param('assetId')));
+  });
+  app.put('/api/v1/modules/emergency-lighting/assets/:assetId/label-settings', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const service = await emergencyLightingServiceFor(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      'asset-manage',
+    );
+    return context.json({
+      settings: await service.saveLabelSettings(
+        organisationId,
+        context.req.param('assetId'),
+        emergencyLightingLabelSettingsInput.parse(await context.req.json()),
+      ),
+    });
+  });
+  app.get(
+    '/api/v1/modules/emergency-lighting/assets/:assetId/fittings/:fittingId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const organisationId = z.uuid().parse(context.req.query('organisationId'));
+      const service = await emergencyLightingServiceFor(
+        environment,
+        options,
+        context.get('actor'),
+        organisationId,
+        'asset-read',
+      );
+      return context.json(
+        await service.getFitting(
+          organisationId,
+          context.req.param('assetId'),
+          context.req.param('fittingId'),
+        ),
+      );
     },
   );
   app.get('/api/v1/modules/emergency-lighting/assets/:assetId/fittings', async (context) => {

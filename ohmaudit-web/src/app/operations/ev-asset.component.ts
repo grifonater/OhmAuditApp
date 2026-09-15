@@ -3,6 +3,11 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, type AssetSummary, type EvChargePoint } from '../core/api.service';
 import { compressPhoto } from '../core/image-compression';
+import {
+  connectorSupplyIds,
+  isSupportedImageMimeType,
+  PROTECTIVE_DEVICE_TYPES,
+} from './ev-visit-helpers';
 
 type EvAssetDetail = AssetSummary & {
   customer: { id: string; name: string };
@@ -35,6 +40,7 @@ export class EvAssetComponent {
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly success = signal('');
+  protected readonly protectiveDeviceTypes = PROTECTIVE_DEVICE_TYPES;
 
   protected readonly detailsForm = new FormGroup({
     manufacturer: new FormControl('', { nonNullable: true }),
@@ -160,6 +166,9 @@ export class EvAssetComponent {
     this.cancelConnectorEdit();
     const nextNumber = (this.asset()?.evChargePoint?.connectors.length ?? 0) + 1;
     this.connectorForm.patchValue({ label: `Connector ${nextNumber}` });
+    this.connectorSupplyIds.set(
+      new Set(connectorSupplyIds([], this.asset()?.evChargePoint?.supplies ?? [])),
+    );
     this.connectorEditorOpen.set(true);
   }
 
@@ -209,18 +218,19 @@ export class EvAssetComponent {
   }
 
   protected async uploadImage(event: Event): Promise<void> {
-    const file = (event.target as HTMLInputElement).files?.[0];
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
     if (!file) return;
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    this.error.set('');
+    if (!isSupportedImageMimeType(file.type)) {
       this.error.set('Use a JPEG, PNG, or WebP image.');
       return;
     }
-    const compressed = await compressPhoto(file);
-    if (compressed.size > 2_000_000) {
-      this.error.set('The image is too large after compression. Try a smaller image.');
-      return;
-    }
     await this.run(async () => {
+      const compressed = await compressPhoto(file);
+      if (compressed.size > 2_000_000)
+        throw new Error('The image is too large after compression. Try a smaller image.');
       const { media } = await this.api.registerMedia(this.organisationId, {
         entityType: 'Asset',
         entityId: this.assetId,
@@ -246,7 +256,8 @@ export class EvAssetComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const asset = (await this.api.getEvAsset(this.organisationId, this.assetId)).asset;
+      let asset = (await this.api.getEvAsset(this.organisationId, this.assetId)).asset;
+      asset = await this.assignOnlySupplyToExistingConnectors(asset);
       this.asset.set(asset);
       const ev = asset.evChargePoint;
       this.detailsForm.patchValue({
@@ -265,6 +276,40 @@ export class EvAssetComponent {
       });
       await this.loadImages(asset);
     });
+  }
+
+  private async assignOnlySupplyToExistingConnectors(asset: EvAssetDetail): Promise<EvAssetDetail> {
+    const chargePoint = asset.evChargePoint;
+    if (chargePoint?.supplies.length !== 1) return asset;
+    const supply = chargePoint.supplies[0]!;
+    const unmapped = chargePoint.connectors.filter(
+      ({ supplyMappings }) => supplyMappings.length === 0,
+    );
+    if (unmapped.length === 0) return asset;
+    await Promise.all(
+      unmapped.map((connector) =>
+        this.api.updateEvConnector(this.organisationId, this.assetId, connector.id, {
+          label: connector.label,
+          connectorType: connector.connectorType,
+          supplyIds: [supply.id],
+        }),
+      ),
+    );
+    const unmappedIds = new Set(unmapped.map(({ id }) => id));
+    return {
+      ...asset,
+      evChargePoint: {
+        ...chargePoint,
+        connectors: chargePoint.connectors.map((connector) =>
+          unmappedIds.has(connector.id)
+            ? {
+                ...connector,
+                supplyMappings: [{ supplyId: supply.id, supply: { label: supply.label } }],
+              }
+            : connector,
+        ),
+      },
+    };
   }
 
   private async loadImages(asset: EvAssetDetail): Promise<void> {

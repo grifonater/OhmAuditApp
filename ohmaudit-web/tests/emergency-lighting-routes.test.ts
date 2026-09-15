@@ -3,6 +3,8 @@ import {
   emergencyLightingAssetRoute,
   emergencyLightingInspectionPath,
   emergencyLightingInspectionRoute,
+  emergencyLightingLabelStudioPath,
+  emergencyLightingLabelStudioRoute,
   guestEmergencyLightingInspectionPath,
   guestEmergencyLightingInspectionRoute,
 } from '../src/app/core/emergency-lighting-routes';
@@ -10,6 +12,7 @@ import {
 describe('emergency lighting routes', () => {
   it('guards the office register and engineer inspection', () => {
     expect(emergencyLightingAssetRoute.capabilities).toEqual(['assets.read']);
+    expect(emergencyLightingLabelStudioRoute.capabilities).toEqual(['assets.read']);
     expect(emergencyLightingInspectionRoute.capabilities).toEqual(['inspections.perform']);
   });
 
@@ -20,12 +23,23 @@ describe('emergency lighting routes', () => {
     expect(emergencyLightingInspectionRoute.path).toContain(
       'visits/:visitId/emergency-lighting/:inspectionId',
     );
+    expect(emergencyLightingLabelStudioRoute.path).toBe(
+      'org/:organisationId/assets/:assetId/emergency-lighting/labels',
+    );
     expect(guestEmergencyLightingInspectionRoute).toBe(
       'guest/job/:token/emergency-lighting/:inspectionId',
     );
   });
 
   it('builds authenticated and guest inspection links', () => {
+    expect(emergencyLightingLabelStudioPath('org-1', 'asset-1')).toEqual([
+      '/app/org',
+      'org-1',
+      'assets',
+      'asset-1',
+      'emergency-lighting',
+      'labels',
+    ]);
     expect(emergencyLightingInspectionPath('org-1', 'visit-1', 'inspection-1')).toEqual([
       '/app/org',
       'org-1',
