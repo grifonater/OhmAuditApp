@@ -801,6 +801,24 @@
                   <p class="muted">
                     {{ normalPhotoCount() }} charger image(s) saved on this device
                   </p>
+                  @if (normalPhotos().length) {
+                    <div class="photo-gallery" aria-label="Charge point condition photos">
+                      @for (photo of normalPhotos(); track photo.id) {
+                        <figure>
+                          <button
+                            type="button"
+                            class="photo-thumb"
+                            (click)="viewedPhoto.set(photo)"
+                          >
+                            <img [src]="photo.url" [alt]="photo.description" />
+                          </button>
+                          <button type="button" class="photo-remove" (click)="deletePhoto(photo)">
+                            Remove
+                          </button>
+                        </figure>
+                      }
+                    </div>
+                  }
                 </div>
               </section>
             }
@@ -1177,8 +1195,8 @@
               <div class="step-heading">
                 <span>{{ isEvTask() ? '4' : '3' }}</span>
                 <div>
-                  <h2>Were any faults found?</h2>
-                  <p>Choose one option. Fault details are only needed when a fault is found.</p>
+                  <h2>Findings and observations</h2>
+                  <p>Record each item separately so its details and photos remain together.</p>
                 </div>
                 @if (isEvTask()) {
                   <button
@@ -1192,95 +1210,128 @@
                   </button>
                 }
               </div>
-              <div class="fault-choice-grid">
-                <button
-                  class="fault-choice no-fault"
-                  [class.selected]="!recordingFault()"
-                  [attr.aria-pressed]="!recordingFault()"
-                  type="button"
-                  (click)="setFaultRecording(false)"
-                >
-                  <span class="fault-choice-icon">✓</span>
-                  <span><strong>No faults found</strong><small>Continue to submission</small></span>
-                </button>
-                <button
-                  class="fault-choice has-fault"
-                  [class.selected]="recordingFault()"
-                  [attr.aria-pressed]="recordingFault()"
-                  type="button"
-                  (click)="setFaultRecording(true)"
-                >
-                  <span class="fault-choice-icon">!</span>
-                  <span
-                    ><strong>Record a fault</strong><small>Add details and evidence</small></span
+              <div class="finding-add" aria-label="Add finding">
+                @for (category of findingCategories; track category) {
+                  <button
+                    class="button secondary compact"
+                    type="button"
+                    (click)="addFinding(category)"
                   >
-                </button>
+                    + {{ category }}
+                  </button>
+                }
               </div>
-              @if (recordingFault()) {
-                <div class="fault-entry" role="region" aria-label="Fault details">
-                  <div class="fault-entry-heading">
-                    <span>!</span>
-                    <div>
-                      <strong>Fault being recorded</strong>
-                      <small>This will be highlighted to the office team.</small>
+              <div class="finding-list">
+                @for (
+                  finding of findings.controls;
+                  track finding.controls.clientFindingId.value;
+                  let index = $index
+                ) {
+                  <article class="fault-entry finding-entry" [formGroup]="finding">
+                    <div class="finding-heading">
+                      <strong>Finding {{ index + 1 }}</strong>
+                      <button
+                        class="button danger compact"
+                        type="button"
+                        (click)="removeFinding(index)"
+                      >
+                        Remove finding
+                      </button>
                     </div>
-                  </div>
-                  <div class="form-grid">
+                    <div class="form-grid">
+                      <label class="field"
+                        >Category<select formControlName="category">
+                          @for (category of findingCategories; track category) {
+                            <option [value]="category">{{ category }}</option>
+                          }
+                        </select></label
+                      >
+                      <label class="field"
+                        >Severity<select formControlName="severity">
+                          <option>ADVISORY</option>
+                          <option>MINOR</option>
+                          <option>MAJOR</option>
+                          <option>DANGEROUS</option>
+                        </select></label
+                      >
+                      <label class="field full"
+                        >Title<input
+                          formControlName="title"
+                          placeholder="e.g. Damaged connector housing"
+                      /></label>
+                    </div>
                     <label class="field"
-                      >Fault title<input
-                        formControlName="defectTitle"
-                        placeholder="e.g. Damaged connector housing"
-                    /></label>
-                    <label class="field"
-                      >Severity<select formControlName="defectSeverity">
-                        <option>ADVISORY</option>
-                        <option>MINOR</option>
-                        <option>MAJOR</option>
-                        <option>DANGEROUS</option>
-                      </select></label
-                    >
-                  </div>
-                  <label class="field"
-                    >Fault description<textarea
-                      rows="4"
-                      formControlName="notes"
-                      placeholder="Describe the location, damage, risk, and any immediate action taken…"
-                    ></textarea>
-                  </label>
-                  <div class="data-plate-actions fault-photo-actions">
-                    <label class="button secondary touch-button fault-photo-button">
-                      @if (photographing()) {
-                        <span class="oa-spinner" aria-hidden="true"></span>
-                      }
-                      {{ photographing() ? 'Saving photo…' : 'Upload fault photo'
-                      }}<input
-                        hidden
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        [disabled]="photographing()"
-                        (change)="capturePhoto($event)"
-                    /></label>
-                    <label class="button touch-button fault-photo-button">
-                      @if (photographing()) {
-                        <span class="oa-spinner" aria-hidden="true"></span>
-                      }
-                      {{ photographing() ? 'Saving photo…' : 'Take fault photo'
-                      }}<input
-                        hidden
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        capture="environment"
-                        [disabled]="photographing()"
-                        (change)="capturePhoto($event)"
-                    /></label>
-                  </div>
-                  @if (error()) {
-                    <p class="error condition-photo-error" role="alert">{{ error() }}</p>
-                  }
-                  <p class="muted">{{ photoCount() }} fault photo(s) saved on this device</p>
-                </div>
-              } @else {
-                <div class="no-fault-confirmation">✓ No fault record will be created.</div>
+                      >Description<textarea
+                        rows="3"
+                        formControlName="description"
+                        placeholder="Describe this finding and any action taken…"
+                      ></textarea>
+                    </label>
+                    <div class="data-plate-actions fault-photo-actions">
+                      <label class="button secondary touch-button fault-photo-button">
+                        {{ photographing() ? 'Saving…' : 'Upload photo'
+                        }}<input
+                          hidden
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          [disabled]="photographing()"
+                          (change)="
+                            capturePhoto($event, 'fault', finding.controls.clientFindingId.value)
+                          "
+                        />
+                      </label>
+                      <label class="button touch-button fault-photo-button">
+                        {{ photographing() ? 'Saving…' : 'Take photo'
+                        }}<input
+                          hidden
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          capture="environment"
+                          [disabled]="photographing()"
+                          (change)="
+                            capturePhoto($event, 'fault', finding.controls.clientFindingId.value)
+                          "
+                        />
+                      </label>
+                    </div>
+                    @if (photosForFinding(finding.controls.clientFindingId.value).length) {
+                      <div
+                        class="photo-gallery"
+                        [attr.aria-label]="'Photos for finding ' + (index + 1)"
+                      >
+                        @for (
+                          photo of photosForFinding(finding.controls.clientFindingId.value);
+                          track photo.id
+                        ) {
+                          <figure>
+                            <button
+                              type="button"
+                              class="photo-thumb"
+                              (click)="viewedPhoto.set(photo)"
+                            >
+                              <img [src]="photo.url" [alt]="photo.description" />
+                            </button>
+                            <button type="button" class="photo-remove" (click)="deletePhoto(photo)">
+                              Remove
+                            </button>
+                          </figure>
+                        }
+                      </div>
+                    }
+                  </article>
+                } @empty {
+                  <div class="no-fault-confirmation">✓ No findings recorded.</div>
+                }
+              </div>
+              <label class="field observation-field"
+                >Engineer observations<textarea
+                  rows="4"
+                  formControlName="notes"
+                  placeholder="General inspection observations, separate from individual findings…"
+                ></textarea>
+              </label>
+              @if (error()) {
+                <p class="error condition-photo-error" role="alert">{{ error() }}</p>
               }
             </section>
           }
@@ -1346,7 +1397,7 @@
                     ><b>{{ supplyTests.length }}</b> supplies</span
                   >
                   <span
-                    ><b>{{ recordingFault() ? 1 : 0 }}</b> faults</span
+                    ><b>{{ findings.length }}</b> findings</span
                   >
                 </div>
               }
@@ -1355,10 +1406,7 @@
                   class="button primary touch-button submit-inspection"
                   type="submit"
                   [disabled]="
-                    busy() ||
-                    form.controls.signerName.invalid ||
-                    !evReady() ||
-                    (recordingFault() && form.controls.defectTitle.invalid)
+                    busy() || form.controls.signerName.invalid || !evReady() || findings.invalid
                   "
                 >
                   @if (busy()) {
@@ -1400,10 +1448,7 @@
                   class="button primary touch-button submit-inspection"
                   type="submit"
                   [disabled]="
-                    busy() ||
-                    form.controls.signerName.invalid ||
-                    !evReady() ||
-                    (recordingFault() && form.controls.defectTitle.invalid)
+                    busy() || form.controls.signerName.invalid || !evReady() || findings.invalid
                   "
                 >
                   @if (busy()) {
@@ -1445,6 +1490,31 @@
     }
   }
 </main>
+
+@if (viewedPhoto(); as photo) {
+  <div
+    class="photo-viewer"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Photo viewer"
+    tabindex="0"
+    (click)="viewedPhoto.set(undefined)"
+    (keydown.escape)="viewedPhoto.set(undefined)"
+  >
+    <div tabindex="0" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
+      <img [src]="photo.url" [alt]="photo.description" />
+      <p>{{ photo.description }}</p>
+      <div class="form-actions">
+        <button class="button danger" type="button" (click)="deletePhoto(photo)">
+          Remove photo
+        </button>
+        <button class="button secondary" type="button" (click)="viewedPhoto.set(undefined)">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+}
 
 @if (helpStep(); as step) {
   <div

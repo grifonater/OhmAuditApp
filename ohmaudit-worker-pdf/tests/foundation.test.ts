@@ -143,6 +143,92 @@ describe('PDF worker', () => {
     expect(text).toContain('RAUNDS ANNUAL VISIT');
     expect(text).toContain('CHARGER 02');
   });
+  it('groups visit findings by category with wrapped details and evidence pages', () => {
+    const certificate = {
+      title: 'Inspection Certificate',
+      organisationName: 'Demo Electrical Ltd',
+      customerName: 'Logistics Customer',
+      siteName: 'Raunds',
+      inspectionType: 'Periodic inspection',
+      effectiveDate: '2026-08-14',
+      revisionNumber: 1,
+      engineerName: 'A Engineer',
+      outcome: 'PASS',
+      summaryLines: [],
+    };
+    const text = new TextDecoder().decode(
+      renderVisitReportPdf({
+        title: 'Combined visit report',
+        organisationName: certificate.organisationName,
+        customerName: certificate.customerName,
+        siteName: certificate.siteName,
+        visitDate: '2026-08-14',
+        certificates: [certificate],
+        findings: [
+          {
+            category: 'FAULT',
+            title: 'Damaged enclosure at loading bay distribution board',
+            description:
+              'The enclosure has visible impact damage and must be assessed before the circuit is returned to normal service.',
+            severity: 'HIGH',
+            status: 'OPEN',
+            assetName: 'DB-LB-01',
+            inspectionType: 'Visual inspection',
+            images: [{ mimeType: 'image/jpeg', base64: jpegBase64, caption: 'Impact damage' }],
+          },
+          {
+            category: 'ADVICE',
+            title: 'Update circuit schedule',
+            severity: 'LOW',
+            status: 'RECOMMENDED',
+            images: [],
+          },
+        ],
+      }),
+    );
+
+    expect(text).toContain('/Count 5');
+    expect(text).toContain('FAULT - FINDING 1 OF 1');
+    expect(text).toContain('ADVICE - FINDING 1 OF 1');
+    expect(text).toContain('THE ENCLOSURE HAS VISIBLE IMPACT DAMAGE');
+    expect(text).toContain('VISIT FINDINGS - EVIDENCE');
+    expect(text).toContain('IMPACT DAMAGE');
+    expect(text).toContain('/DCTDecode');
+  });
+  it('does not silently omit non-JPEG evidence passed directly to the native visit renderer', () => {
+    expect(() =>
+      renderVisitReportPdf({
+        title: 'Combined visit report',
+        organisationName: 'Demo Electrical Ltd',
+        customerName: 'Logistics Customer',
+        siteName: 'Raunds',
+        visitDate: '2026-08-14',
+        certificates: [
+          {
+            title: 'Inspection Certificate',
+            organisationName: 'Demo Electrical Ltd',
+            customerName: 'Logistics Customer',
+            siteName: 'Raunds',
+            inspectionType: 'Periodic inspection',
+            effectiveDate: '2026-08-14',
+            revisionNumber: 1,
+            engineerName: 'A Engineer',
+            outcome: 'PASS',
+            summaryLines: [],
+          },
+        ],
+        findings: [
+          {
+            category: 'NOTE',
+            title: 'Site evidence',
+            severity: 'LOW',
+            status: 'OPEN',
+            images: [{ mimeType: 'image/png', base64: 'AAAA' }],
+          },
+        ],
+      }),
+    ).toThrow('Native visit finding evidence must be a valid JPEG image.');
+  });
   it('renders the EV charger template with supplies, connector tests and sign-off', () => {
     const text = new TextDecoder().decode(
       renderEvCertificatePdf({
@@ -728,6 +814,88 @@ describe('PDF worker', () => {
     expect(response.headers.get('x-ohmaudit-pdf-renderer')).toBe('native');
     expect(conversions).toBe(1);
     expect(pdf).toContain('/DCTDecode');
+  });
+  it('validates and converts PNG finding evidence before rendering a native visit report', async () => {
+    const certificate = {
+      title: 'Inspection Certificate',
+      organisationName: 'Demo Electrical Ltd',
+      customerName: 'Logistics Customer',
+      siteName: 'Raunds',
+      inspectionType: 'Periodic inspection',
+      effectiveDate: '2026-08-14',
+      revisionNumber: 1,
+      engineerName: 'A Engineer',
+      outcome: 'PASS',
+      summaryLines: [],
+    };
+    const finding = {
+      category: 'CONDITION',
+      title: 'Enclosure condition',
+      severity: 'MEDIUM',
+      status: 'OPEN',
+      images: [
+        {
+          mimeType: 'image/png',
+          base64:
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lm8uWQAAAABJRU5ErkJggg==',
+          caption: 'Site evidence',
+        },
+      ],
+    };
+    let screenshotOptions: BrowserRunScreenshotOptions | undefined;
+    const request = (findings: unknown) =>
+      new Request('https://pdf.test/render/visit-report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Combined visit report',
+          organisationName: certificate.organisationName,
+          customerName: certificate.customerName,
+          siteName: certificate.siteName,
+          visitDate: '2026-08-14',
+          certificates: [certificate],
+          findings,
+        }),
+      });
+    const response = await pdfWorker.fetch(request([finding]), {
+      APP_ENV: 'local',
+      APP_VERSION: 'test',
+      RENDER_TIMEOUT_MS: '30000',
+      BROWSER: {
+        quickAction: (_action: 'screenshot', options: BrowserRunScreenshotOptions) => {
+          screenshotOptions = options;
+          return Promise.resolve(
+            new Response(
+              Uint8Array.from(atob(jpegBase64), (value) => value.charCodeAt(0)),
+              {
+                headers: { 'content-type': 'image/jpeg' },
+              },
+            ),
+          );
+        },
+      } as unknown as BrowserRun,
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-ohmaudit-pdf-renderer')).toBe('native');
+    expect(screenshotOptions?.viewport).toMatchObject({ width: 1200, height: 900 });
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toContain('/DCTDecode');
+
+    const malformed = await pdfWorker.fetch(
+      request([{ ...finding, images: [{ mimeType: 'image/gif', base64: 'AAAA' }] }]),
+      { APP_ENV: 'local', APP_VERSION: 'test', RENDER_TIMEOUT_MS: '30000' },
+    );
+    expect(malformed.status).toBe(422);
+
+    const unavailable = await pdfWorker.fetch(request([finding]), {
+      APP_ENV: 'local',
+      APP_VERSION: 'test',
+      RENDER_TIMEOUT_MS: '30000',
+    });
+    expect(unavailable.status).toBe(503);
+    await expect(unavailable.json()).resolves.toMatchObject({
+      code: 'FINDING_IMAGE_CONVERSION_FAILED',
+    });
   });
   it('accepts a thermal certificate with many images across all targets', async () => {
     const image = { kind: 'Infrared', jpegBase64 };

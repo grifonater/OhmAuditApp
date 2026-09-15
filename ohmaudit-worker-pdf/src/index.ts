@@ -40,6 +40,21 @@ export interface ReportImagePayload {
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
 }
 
+export interface ReportMediaImage extends ReportImagePayload {
+  caption?: string;
+}
+
+export interface VisitReportFinding {
+  category: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION' | (string & {});
+  title: string;
+  description?: string;
+  severity: string;
+  status: string;
+  assetName?: string;
+  inspectionType?: string;
+  images: ReportMediaImage[];
+}
+
 export interface CertificatePayload {
   draft?: boolean;
   title: string;
@@ -166,6 +181,7 @@ export interface VisitReportPayload {
   siteName: string;
   visitDate: string;
   certificates: CertificatePayload[];
+  findings?: VisitReportFinding[];
   logoJpegBase64?: string;
   logoImage?: ReportImagePayload;
 }
@@ -319,6 +335,24 @@ function uppercaseVisitReport(payload: VisitReportPayload): VisitReportPayload {
     siteName: upperUserText(payload.siteName),
     visitDate: upperUserText(payload.visitDate),
     certificates: payload.certificates.map(uppercaseCertificate),
+    findings: (payload.findings ?? []).map((finding) => ({
+      category: upperUserText(finding.category),
+      title: upperUserText(finding.title),
+      ...(finding.description === undefined
+        ? {}
+        : { description: upperUserText(finding.description) }),
+      severity: upperUserText(finding.severity),
+      status: upperUserText(finding.status),
+      ...(finding.assetName === undefined ? {} : { assetName: upperUserText(finding.assetName) }),
+      ...(finding.inspectionType === undefined
+        ? {}
+        : { inspectionType: upperUserText(finding.inspectionType) }),
+      images: finding.images.map((image) => ({
+        mimeType: image.mimeType,
+        base64: image.base64,
+        ...(image.caption === undefined ? {} : { caption: upperUserText(image.caption) }),
+      })),
+    })),
     ...(payload.logoJpegBase64 === undefined ? {} : { logoJpegBase64: payload.logoJpegBase64 }),
     ...(payload.logoImage === undefined ? {} : { logoImage: payload.logoImage }),
   };
@@ -1150,6 +1184,10 @@ export function renderCertificatePdf(payload: CertificatePayload): Uint8Array {
 
 export function renderVisitReportPdf(payload: VisitReportPayload): Uint8Array {
   payload = uppercaseVisitReport(payload);
+  for (const finding of payload.findings ?? [])
+    for (const image of finding.images)
+      if (image.mimeType !== 'image/jpeg' || jpegDetails(image.base64) === undefined)
+        throw new Error('Native visit finding evidence must be a valid JPEG image.');
   const cover = [
     payload.title,
     `Issued by: ${payload.organisationName}`,
@@ -1157,6 +1195,7 @@ export function renderVisitReportPdf(payload: VisitReportPayload): Uint8Array {
     `Site: ${payload.siteName}`,
     `Job date: ${payload.visitDate}`,
     `Certificates included: ${payload.certificates.length}`,
+    `Findings recorded: ${payload.findings?.length ?? 0}`,
     '',
     ...payload.certificates.map(
       (certificate, index) =>
@@ -1171,6 +1210,99 @@ export function renderVisitReportPdf(payload: VisitReportPayload): Uint8Array {
     .join('\n');
   const contents = [coverContent];
   const images: PdfImage[] = [{ name: 'Logo', base64: payload.logoJpegBase64 }];
+  const findingsByCategory = new Map<string, VisitReportFinding[]>();
+  for (const finding of payload.findings ?? []) {
+    const categoryFindings = findingsByCategory.get(finding.category) ?? [];
+    categoryFindings.push(finding);
+    findingsByCategory.set(finding.category, categoryFindings);
+  }
+  let findingIndex = 0;
+  for (const [category, categoryFindings] of findingsByCategory) {
+    for (const [categoryIndex, finding] of categoryFindings.entries()) {
+      const descriptionLines = wrappedParagraphs(
+        finding.description ?? 'NO DESCRIPTION PROVIDED',
+        92,
+      );
+      const descriptionGroups = Array.from(
+        { length: Math.max(1, Math.ceil(descriptionLines.length / 43)) },
+        (_, index) => descriptionLines.slice(index * 43, (index + 1) * 43),
+      );
+      for (const [descriptionIndex, lines] of descriptionGroups.entries()) {
+        contents.push(
+          [
+            textAt('VISIT FINDINGS', 42, 805, 11, accent),
+            textAt(
+              `${category} - FINDING ${categoryIndex + 1} OF ${categoryFindings.length}`,
+              42,
+              775,
+              18,
+            ),
+            `${accent} RG 42 760 m 553 760 l S`,
+            ...wrapped(
+              descriptionIndex === 0 ? finding.title : `${finding.title} - CONTINUED`,
+              78,
+            ).map((line, index) => textAt(line, 42, 735 - index * 15, 13)),
+            ...(descriptionIndex === 0
+              ? [
+                  ...wrapped(`SEVERITY: ${finding.severity || 'NOT RECORDED'}`, 52).map(
+                    (line, index) => textAt(line, 42, 690 - index * 11, 8, muted),
+                  ),
+                  ...wrapped(`STATUS: ${finding.status || 'NOT RECORDED'}`, 47).map((line, index) =>
+                    textAt(line, 315, 690 - index * 11, 8, muted),
+                  ),
+                  ...(finding.assetName === undefined
+                    ? []
+                    : wrapped(`ASSET: ${finding.assetName}`, 52).map((line, index) =>
+                        textAt(line, 42, 660 - index * 11, 8, muted),
+                      )),
+                  ...(finding.inspectionType === undefined
+                    ? []
+                    : wrapped(`INSPECTION: ${finding.inspectionType}`, 47).map((line, index) =>
+                        textAt(line, 315, 660 - index * 11, 8, muted),
+                      )),
+                  textAt('DESCRIPTION', 42, 625, 7, muted),
+                ]
+              : [textAt('DESCRIPTION (CONTINUED)', 42, 710, 7, muted)]),
+            ...lines.map((line, index) =>
+              textAt(line, 42, (descriptionIndex === 0 ? 605 : 688) - index * 14, 8),
+            ),
+          ].join('\n'),
+        );
+      }
+      for (const [imageIndex, image] of finding.images.entries()) {
+        const name = `Finding${findingIndex}Image${imageIndex}`;
+        images.push({ name, base64: image.base64 });
+        const captionLines = wrappedParagraphs(image.caption ?? 'NO CAPTION PROVIDED', 92);
+        const firstCaption = captionLines.slice(0, 15);
+        contents.push(
+          [
+            textAt('VISIT FINDINGS - EVIDENCE', 42, 805, 11, accent),
+            textAt(`${category}: ${finding.title}`, 42, 775, 15),
+            `${accent} RG 42 760 m 553 760 l S`,
+            textAt(`IMAGE ${imageIndex + 1} OF ${finding.images.length}`, 42, 738, 8, muted),
+            `q 511 0 0 390 42 330 cm /${name} Do Q`,
+            textAt('CAPTION', 42, 305, 7, muted),
+            ...firstCaption.map((line, index) => textAt(line, 42, 286 - index * 14, 8)),
+          ].join('\n'),
+        );
+        const remainingCaption = captionLines.slice(15);
+        for (let offset = 0; offset < remainingCaption.length; offset += 48) {
+          contents.push(
+            [
+              textAt('VISIT FINDINGS - EVIDENCE', 42, 805, 11, accent),
+              textAt(`${category}: ${finding.title}`, 42, 775, 15),
+              `${accent} RG 42 760 m 553 760 l S`,
+              textAt(`IMAGE ${imageIndex + 1} CAPTION - CONTINUED`, 42, 735, 8, muted),
+              ...remainingCaption
+                .slice(offset, offset + 48)
+                .map((line, index) => textAt(line, 42, 710 - index * 14, 8)),
+            ].join('\n'),
+          );
+        }
+      }
+      findingIndex += 1;
+    }
+  }
   for (const [index, certificate] of payload.certificates.entries()) {
     if (certificate.thermalCertificate !== undefined) {
       const thermal = uppercaseThermalCertificate(certificate.thermalCertificate);
@@ -1272,12 +1404,30 @@ function isEvCertificatePayload(value: unknown): value is EvCertificatePayload {
 function isVisitReportPayload(value: unknown): value is VisitReportPayload {
   if (typeof value !== 'object' || value === null) return false;
   const item = value as Record<string, unknown>;
+  const findings = item['findings'];
   return (
     typeof item['title'] === 'string' &&
     typeof item['organisationName'] === 'string' &&
     Array.isArray(item['certificates']) &&
     item['certificates'].length > 0 &&
-    item['certificates'].every(isPayload)
+    item['certificates'].every(isPayload) &&
+    (findings === undefined ||
+      (Array.isArray(findings) &&
+        findings.every(
+          (finding) =>
+            isRecord(finding) &&
+            isString(finding['category']) &&
+            isString(finding['title']) &&
+            isOptionalString(finding['description']) &&
+            isString(finding['severity']) &&
+            isString(finding['status']) &&
+            isOptionalString(finding['assetName']) &&
+            isOptionalString(finding['inspectionType']) &&
+            Array.isArray(finding['images']) &&
+            finding['images'].every(
+              (image) => isReportMediaImage(image) && isOptionalString(image['caption']),
+            ),
+        )))
   );
 }
 
@@ -1307,6 +1457,17 @@ function isOptionalNullableString(value: unknown): value is string | null | unde
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
+}
+
+function isReportMediaImage(value: unknown): value is Record<string, unknown> & ReportMediaImage {
+  if (!isRecord(value) || !isString(value['base64'])) return false;
+  const encoded = value['base64'].replaceAll(/\s/gu, '');
+  return (
+    encoded.length > 0 &&
+    encoded.length % 4 === 0 &&
+    /^[A-Za-z0-9+/]+={0,2}$/u.test(encoded) &&
+    ['image/jpeg', 'image/png', 'image/webp'].includes(String(value['mimeType']))
+  );
 }
 
 function isOptionalStringArray(value: unknown): value is string[] | undefined {
@@ -2058,12 +2219,13 @@ async function logoJpegForNativeRenderer(
   environment: PdfBindings,
   image: ReportImagePayload | undefined,
   conversions: Map<string, Promise<string | undefined>>,
+  purpose: 'logo' | 'evidence' = 'logo',
 ): Promise<string | undefined> {
   if (image === undefined) return undefined;
   if (image.mimeType === 'image/jpeg') return image.base64;
   if (environment.BROWSER === undefined || reportImageDataUri(image) === undefined)
     return undefined;
-  const cacheKey = `${image.mimeType}:${image.base64}`;
+  const cacheKey = `${purpose}:${image.mimeType}:${image.base64}`;
   const existing = conversions.get(cacheKey);
   if (existing !== undefined) return existing;
 
@@ -2071,11 +2233,14 @@ async function logoJpegForNativeRenderer(
     try {
       const source = reportImageDataUri(image);
       if (source === undefined) return undefined;
+      const evidence = purpose === 'evidence';
+      const width = evidence ? 1200 : 400;
+      const height = evidence ? 900 : 180;
       const rendered = await environment.BROWSER!.quickAction('screenshot', {
-        html: `<!doctype html><html><head><style>*{box-sizing:border-box}html,body{margin:0;background:#fff}#logo{width:400px;height:180px;display:grid;place-items:center;background:#fff}img{display:block;max-width:380px;max-height:160px;object-fit:contain}</style></head><body><div id="logo"><img src="${source}" alt=""></div></body></html>`,
-        selector: '#logo',
-        viewport: { width: 400, height: 180, deviceScaleFactor: 1 },
-        waitForSelector: { selector: '#logo img', visible: true, timeout: 10_000 },
+        html: `<!doctype html><html><head><style>*{box-sizing:border-box}html,body{margin:0;background:#fff}#image{width:${width}px;height:${height}px;display:grid;place-items:center;background:#fff}img{display:block;max-width:100%;max-height:100%;object-fit:contain}</style></head><body><div id="image"><img src="${source}" alt=""></div></body></html>`,
+        selector: '#image',
+        viewport: { width, height, deviceScaleFactor: 1 },
+        waitForSelector: { selector: '#image img', visible: true, timeout: 10_000 },
         setJavaScriptEnabled: false,
         cacheTTL: 0,
         actionTimeout: 30_000,
@@ -2164,6 +2329,17 @@ async function prepareNativeReportLogos(
     await Promise.all(
       payload.certificates.map((certificate) =>
         prepareCertificateLogos(environment, certificate, conversions),
+      ),
+    );
+    await Promise.all(
+      (payload.findings ?? []).flatMap((finding) =>
+        finding.images.map(async (image) => {
+          const jpeg = await logoJpegForNativeRenderer(environment, image, conversions, 'evidence');
+          if (jpeg === undefined || jpegDetails(jpeg) === undefined)
+            throw new Error(`Unable to convert ${image.mimeType} finding evidence to JPEG.`);
+          image.base64 = jpeg;
+          image.mimeType = 'image/jpeg';
+        }),
       ),
     );
     return;
@@ -2262,7 +2438,23 @@ export default {
     );
     if (browserPdf !== undefined) return browserPdf;
 
-    await prepareNativeReportLogos(env, checkedPayload);
+    try {
+      await prepareNativeReportLogos(env, checkedPayload);
+    } catch (error: unknown) {
+      console.error(
+        JSON.stringify({
+          event: 'pdf.finding_image_conversion_failed',
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+        }),
+      );
+      return Response.json(
+        {
+          code: 'FINDING_IMAGE_CONVERSION_FAILED',
+          message: 'Finding evidence could not be prepared for native PDF rendering.',
+        },
+        { status: 503 },
+      );
+    }
 
     const pdf = visitReport
       ? renderVisitReportPdf(checkedPayload as VisitReportPayload)

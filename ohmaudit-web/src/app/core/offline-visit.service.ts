@@ -17,6 +17,8 @@ import {
   authenticatedPackIsReadyForOwner,
   buildOptimisticEvTask,
   canRestoreLegacyPack,
+  attachFindingPhotoIds,
+  type FindingPhotoMappings,
   idReplacements,
   offlineRecordIsVisible,
   remapLocalIds,
@@ -70,11 +72,16 @@ interface OfflinePhoto {
   blob: Blob;
   mimeType: string;
   kind: 'fault' | 'normal-state' | 'data-plate';
+  findingId?: string;
   description: string;
   serverMediaId?: string;
   createdAt: string;
   ownerUserId?: string;
 }
+export type OwnedOfflinePhoto = Pick<
+  OfflinePhoto,
+  'id' | 'inspectionId' | 'kind' | 'findingId' | 'description' | 'serverMediaId' | 'createdAt'
+>;
 interface StoredAssetImage {
   mediaId: string;
   blob: Blob;
@@ -243,6 +250,16 @@ class OhmAuditOfflineDatabase extends Dexie {
       drafts: 'inspectionId, visitId, organisationId, ownerUserId, guestToken, updatedAt',
       outbox: 'id, visitId, organisationId, ownerUserId, operation, createdAt',
       photos: 'id, visitId, inspectionId, organisationId, ownerUserId, assetId, kind, createdAt',
+      assetImages: 'mediaId, ownerUserId, guestToken, cachedAt',
+      thermalContexts: 'inspectionId, ownerUserId, guestToken, cachedAt',
+      thermalImages: 'id, inspectionId, visitId, organisationId, ownerUserId, createdAt',
+    });
+    this.version(12).stores({
+      visitPacks: 'visitId, organisationId, guestToken, ownerUserId, ready, downloadedAt',
+      drafts: 'inspectionId, visitId, organisationId, ownerUserId, guestToken, updatedAt',
+      outbox: 'id, visitId, organisationId, ownerUserId, operation, createdAt',
+      photos:
+        'id, visitId, inspectionId, organisationId, ownerUserId, assetId, kind, findingId, createdAt',
       assetImages: 'mediaId, ownerUserId, guestToken, cachedAt',
       thermalContexts: 'inspectionId, ownerUserId, guestToken, cachedAt',
       thermalImages: 'id, inspectionId, visitId, organisationId, ownerUserId, createdAt',
@@ -571,6 +588,7 @@ export class OfflineVisitService {
     file: Blob,
     kind: 'fault' | 'normal-state' | 'data-plate' = 'fault',
     description = 'Engineer inspection evidence',
+    findingId?: string,
   ): Promise<string> {
     const id = crypto.randomUUID();
     await this.database.photos.put({
@@ -583,11 +601,58 @@ export class OfflineVisitService {
       blob: file,
       mimeType: file.type,
       kind,
+      ...(findingId === undefined ? {} : { findingId }),
       description,
       createdAt: new Date().toISOString(),
       ...this.ownerFields(guestToken),
     });
     return id;
+  }
+  async photos(
+    inspectionId: string,
+    kind?: OfflinePhoto['kind'],
+    findingId?: string,
+  ): Promise<OwnedOfflinePhoto[]> {
+    return (await this.database.photos.where('inspectionId').equals(inspectionId).toArray())
+      .filter(
+        (photo) =>
+          this.canAccessOwned(photo) &&
+          (kind === undefined || photo.kind === kind) &&
+          (findingId === undefined || photo.findingId === findingId),
+      )
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .map((photo) => ({
+        id: photo.id,
+        inspectionId: photo.inspectionId,
+        kind: photo.kind,
+        ...(photo.findingId === undefined ? {} : { findingId: photo.findingId }),
+        description: photo.description,
+        ...(photo.serverMediaId === undefined ? {} : { serverMediaId: photo.serverMediaId }),
+        createdAt: photo.createdAt,
+      }));
+  }
+  async photoBlob(id: string): Promise<Blob | undefined> {
+    const photo = await this.database.photos.get(id);
+    return photo !== undefined && this.canAccessOwned(photo) ? photo.blob : undefined;
+  }
+  async deletePhoto(id: string): Promise<void> {
+    const photo = await this.database.photos.get(id);
+    if (photo === undefined || !this.canAccessOwned(photo)) return;
+    if (photo.serverMediaId !== undefined && this.online()) {
+      if (photo.guestToken === undefined)
+        await this.api.deleteInspectionAssetPhoto(
+          photo.organisationId,
+          photo.inspectionId,
+          photo.serverMediaId,
+        );
+      else
+        await this.api.deleteGuestInspectionAssetPhoto(
+          photo.guestToken,
+          photo.inspectionId,
+          photo.serverMediaId,
+        );
+    }
+    await this.database.photos.delete(id);
   }
   async photoCount(
     inspectionId: string,
@@ -777,9 +842,9 @@ export class OfflineVisitService {
   async uploadInspectionPhotos(
     inspectionId: string,
     owner?: { ownerUserId?: string; guestToken?: string },
-  ): Promise<string[]> {
-    if (!this.online()) return [];
-    const faultMediaIds: string[] = [];
+  ): Promise<FindingPhotoMappings> {
+    const mappings: FindingPhotoMappings = { byFindingId: {}, legacyUnassigned: [] };
+    if (!this.online()) return mappings;
     const photos = await this.database.photos.where('inspectionId').equals(inspectionId).toArray();
     for (const photo of photos.filter((row) =>
       owner === undefined ? this.canAccessOwned(row) : this.sameOwner(row, owner),
@@ -795,6 +860,7 @@ export class OfflineVisitService {
                 photo.kind,
                 photo.description,
                 photo.id,
+                photo.findingId,
               )
             : await this.api.uploadGuestInspectionAssetPhoto(
                 photo.guestToken,
@@ -803,13 +869,17 @@ export class OfflineVisitService {
                 photo.kind,
                 photo.description,
                 photo.id,
+                photo.findingId,
               );
         mediaId = result.media.id;
         await this.database.photos.update(photo.id, { serverMediaId: mediaId });
       }
-      if (photo.kind === 'fault') faultMediaIds.push(mediaId);
+      if (photo.kind === 'fault') {
+        if (photo.findingId === undefined) mappings.legacyUnassigned.push(mediaId);
+        else (mappings.byFindingId[photo.findingId] ??= []).push(mediaId);
+      }
     }
-    return faultMediaIds;
+    return mappings;
   }
   async uploadThermalImages(
     inspectionId: string,
@@ -947,7 +1017,7 @@ export class OfflineVisitService {
             const mediaIds =
               typeof inspectionId === 'string'
                 ? await this.uploadInspectionPhotos(inspectionId, mutation)
-                : [];
+                : { byFindingId: {}, legacyUnassigned: [] };
             const thermalIds =
               typeof inspectionId === 'string'
                 ? await this.uploadThermalImages(inspectionId, mutation)
@@ -1167,11 +1237,11 @@ export class OfflineVisitService {
   }
 
   private async syncDraft(draft: InspectionDraft): Promise<void> {
-    const faultMediaIds = await this.uploadInspectionPhotos(draft.inspectionId, draft);
+    const photoMappings = await this.uploadInspectionPhotos(draft.inspectionId, draft);
     const thermalMediaIds = await this.uploadThermalImages(draft.inspectionId, draft);
     const payload = this.withPhotoIds(
       this.withThermalIds(draft.data, thermalMediaIds),
-      faultMediaIds,
+      photoMappings,
     );
     if (draft.guestToken === undefined)
       await this.api.saveInspectionDraft(draft.organisationId, draft.inspectionId, payload);
@@ -1199,17 +1269,11 @@ export class OfflineVisitService {
       new Notification('OhmAudit sync complete', { body: message });
   }
 
-  withPhotoIds(submission: Record<string, unknown>, mediaIds: string[]): Record<string, unknown> {
-    if (mediaIds.length === 0 || !Array.isArray(submission['defects'])) return submission;
-    const defects = submission['defects'] as unknown[];
-    return {
-      ...submission,
-      defects: defects.map((defect) =>
-        typeof defect === 'object' && defect !== null
-          ? { ...defect, photoMediaIds: mediaIds }
-          : defect,
-      ),
-    };
+  withPhotoIds(
+    submission: Record<string, unknown>,
+    mappings: FindingPhotoMappings,
+  ): Record<string, unknown> {
+    return attachFindingPhotoIds(submission, mappings);
   }
   withThermalIds(
     submission: Record<string, unknown>,

@@ -765,6 +765,59 @@ export class PortfolioService {
     return media;
   }
 
+  async deleteInspectionMedia(
+    organisationId: string,
+    inspectionId: string,
+    assetId: string | null,
+    mediaId: string,
+  ) {
+    const media = await this.prisma.media.findFirst({
+      where: {
+        id: mediaId,
+        organisationId,
+        OR: [
+          { entityType: 'Inspection', entityId: inspectionId },
+          ...(assetId === null
+            ? []
+            : [
+                {
+                  entityType: 'Asset',
+                  entityId: assetId,
+                  tags: { has: `inspection:${inspectionId}` },
+                },
+              ]),
+        ],
+      },
+    });
+    if (media === null)
+      throw new DomainError(
+        'INSPECTION_MEDIA_NOT_FOUND',
+        'The media was not uploaded for this inspection.',
+        404,
+      );
+    await this.prisma.$transaction(async (transaction) => {
+      const linkedDefects = await transaction.defect.findMany({
+        where: { organisationId, inspectionId },
+        select: { id: true, photoMediaIds: true },
+      });
+      for (const defect of linkedDefects) {
+        const photoMediaIds = Array.isArray(defect.photoMediaIds)
+          ? defect.photoMediaIds.filter((id) => id !== media.id)
+          : [];
+        if (
+          Array.isArray(defect.photoMediaIds) &&
+          photoMediaIds.length !== defect.photoMediaIds.length
+        )
+          await transaction.defect.update({
+            where: { id: defect.id },
+            data: { photoMediaIds },
+          });
+      }
+      await transaction.media.deleteMany({ where: { id: media.id, organisationId } });
+    });
+    return media;
+  }
+
   async setSitePhotoPrimary(organisationId: string, siteId: string, mediaId: string | null) {
     await this.requireSite(organisationId, siteId);
     if (mediaId !== null) {

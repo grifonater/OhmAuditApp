@@ -448,6 +448,7 @@ const inspectionOverrideInput = z.object({
         id: z.uuid(),
         title: z.string().trim().min(1).max(200),
         description: z.string().max(5000).optional(),
+        category: z.enum(['ADVICE', 'NOTE', 'FAULT', 'CONDITION']).optional(),
         severity: z.enum(['ADVISORY', 'MINOR', 'MAJOR', 'DANGEROUS']),
         status: z.enum(['OPEN', 'ACKNOWLEDGED', 'RESOLVED', 'DISMISSED']),
       }),
@@ -732,6 +733,8 @@ const syncMaximumBytes = 512 * 1024;
 const guestIdentityMaximumBytes = 4 * 1024;
 const defectSubmissionInput = z.object({
   assetId: z.uuid().optional(),
+  clientFindingId: z.uuid().optional(),
+  category: z.enum(['ADVICE', 'NOTE', 'FAULT', 'CONDITION']).default('FAULT'),
   title: z.string().trim().min(2).max(200),
   description: z.string().max(5000).optional(),
   severity: z.enum(['ADVISORY', 'MINOR', 'MAJOR', 'DANGEROUS']),
@@ -3794,6 +3797,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
       throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
     const kind = inspectionAssetMediaKindInput.parse(context.req.query('kind'));
+    const findingId = z.uuid().optional().parse(context.req.query('findingId'));
     const description = z.string().trim().min(1).max(500).parse(context.req.query('description'));
     const uploadId = z.uuid().parse(context.req.query('uploadId'));
     const prisma = prismaFor(environment);
@@ -3813,11 +3817,14 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     );
     const portfolio = new PortfolioService(prisma);
     const uploadTag = `offline-upload:${uploadId}`;
+    const inspectionTag = `inspection:${inspection.id}`;
+    const entityType = kind === 'fault' ? 'Inspection' : 'Asset';
+    const entityId = kind === 'fault' ? inspection.id : inspection.assetId;
     const existing = await prisma.media.findFirst({
       where: {
         organisationId,
-        entityType: 'Asset',
-        entityId: inspection.assetId,
+        entityType,
+        entityId,
         tags: { has: uploadTag },
       },
     });
@@ -3828,8 +3835,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const media =
       existing ??
       (await portfolio.registerMedia(organisationId, user.id, {
-        entityType: 'Asset',
-        entityId: inspection.assetId,
+        entityType,
+        entityId,
         category:
           kind === 'data-plate'
             ? 'asset-nameplate'
@@ -3843,6 +3850,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             : kind === 'normal-state'
               ? 'normal-state'
               : 'fault-evidence',
+          ...(kind === 'fault' && findingId !== undefined ? [`finding:${findingId}`] : []),
+          ...(kind === 'fault' ? [] : [inspectionTag]),
           uploadTag,
         ],
         mimeType,
@@ -3852,6 +3861,35 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       httpMetadata: { contentType: mimeType },
     });
     return context.json({ media: await portfolio.markMediaAvailable(media.id) }, 201);
+  });
+  app.delete('/api/v1/inspections/:inspectionId/media/:mediaId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const prisma = prismaFor(environment);
+    const inspection = await new InspectionService(prisma).detail(organisationId, inspectionId);
+    await requireSpecialistRoleCapability(
+      environment,
+      options,
+      context.get('actor'),
+      organisationId,
+      inspection.moduleKey,
+      'perform',
+    );
+    const media = await new PortfolioService(prisma).deleteInspectionMedia(
+      organisationId,
+      inspectionId,
+      inspection.assetId,
+      z.uuid().parse(context.req.param('mediaId')),
+    );
+    if (environment.MEDIA_BUCKET !== undefined)
+      await environment.MEDIA_BUCKET.delete(media.storageKey);
+    return context.json({ deleted: true });
   });
   app.post('/api/v1/visits/:visitId/sync', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -4432,6 +4470,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         );
     }
     const kind = inspectionAssetMediaKindInput.default('fault').parse(context.req.query('kind'));
+    const findingId = z.uuid().optional().parse(context.req.query('findingId'));
     if (kind === 'data-plate' && fittingId !== undefined)
       throw new DomainError(
         'MEDIA_KIND_INVALID',
@@ -4448,14 +4487,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const uploadId = z.uuid().optional().parse(context.req.query('uploadId'));
     const portfolio = new PortfolioService(prismaFor(environment));
     const uploadTag = uploadId === undefined ? undefined : `offline-upload:${uploadId}`;
+    const inspectionTag = `inspection:${context.req.param('inspectionId')}`;
+    const entityType = kind === 'fault' ? 'Inspection' : 'Asset';
+    const entityId =
+      entityType === 'Inspection' ? context.req.param('inspectionId') : owner.assetId;
     const existing =
       uploadTag === undefined
         ? null
         : await prismaFor(environment).media.findFirst({
             where: {
               organisationId: owner.organisationId,
-              entityType: 'Asset',
-              entityId: owner.assetId,
+              entityType,
+              entityId,
               tags: { has: uploadTag },
             },
           });
@@ -4466,16 +4509,16 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const media =
       existing ??
       (await portfolio.registerMedia(owner.organisationId, undefined, {
-        entityType: fittingId === undefined ? 'Asset' : 'Inspection',
-        entityId: fittingId === undefined ? owner.assetId : context.req.param('inspectionId'),
+        entityType,
+        entityId,
         category:
-          fittingId === undefined
-            ? kind === 'data-plate'
+          fittingId !== undefined && kind === 'fault'
+            ? 'emergency-lighting-evidence'
+            : kind === 'data-plate'
               ? 'asset-nameplate'
               : kind === 'normal-state'
                 ? 'asset-image'
-                : 'inspection-fault'
-            : 'emergency-lighting-evidence',
+                : 'inspection-fault',
         caption: description,
         tags: [
           kind === 'data-plate'
@@ -4484,6 +4527,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
               ? 'normal-state'
               : 'fault-evidence',
           ...(fittingId === undefined ? [] : [`fitting:${fittingId}`]),
+          ...(kind === 'fault' && findingId !== undefined ? [`finding:${findingId}`] : []),
+          ...(entityType === 'Asset' ? [inspectionTag] : []),
           ...(uploadTag === undefined ? [] : [uploadTag]),
         ],
         mimeType,
@@ -4494,6 +4539,31 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     });
     return context.json({ media: await portfolio.markMediaAvailable(media.id) }, 201);
   });
+  app.delete(
+    '/api/v1/guest/visits/:token/inspections/:inspectionId/media/:mediaId',
+    async (context) => {
+      const environment = parseEnvironment(context.env);
+      const prisma = prismaFor(environment);
+      const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+      const visit = await new VisitService(prisma).guestPack(context.req.param('token'));
+      const task = visit.tasks.find((candidate) => candidate.inspection?.id === inspectionId);
+      if (task === undefined)
+        throw new DomainError(
+          'INSPECTION_NOT_FOUND',
+          'The inspection is not assigned to this job.',
+          404,
+        );
+      const media = await new PortfolioService(prisma).deleteInspectionMedia(
+        visit.organisationId,
+        inspectionId,
+        task.asset?.id ?? null,
+        z.uuid().parse(context.req.param('mediaId')),
+      );
+      if (environment.MEDIA_BUCKET !== undefined)
+        await environment.MEDIA_BUCKET.delete(media.storageKey);
+      return context.json({ deleted: true });
+    },
+  );
   app.post(
     '/api/v1/guest/visits/:token/inspections/:inspectionId/thermal-media',
     async (context) => {
@@ -5675,6 +5745,44 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       mediaImageForReport(environment, prisma, organisationId, brand?.logoMediaId),
       mediaImageForReport(environment, prisma, organisationId, visit.customer.logoMediaId),
     ]);
+    const reportFindings = documents
+      .flatMap((document) => {
+        const inspection = document.inspectionRevision?.inspection;
+        if (inspection === undefined) return [];
+        return inspection.defects.map((finding) => ({ finding, inspection }));
+      })
+      .slice(0, 50);
+    let remainingFindingImages = 30;
+    const findings = await Promise.all(
+      reportFindings.map(async ({ finding, inspection }) => {
+        const mediaIds = (Array.isArray(finding.photoMediaIds) ? finding.photoMediaIds : [])
+          .filter(
+            (value): value is string =>
+              typeof value === 'string' && z.uuid().safeParse(value).success,
+          )
+          .slice(0, Math.min(3, remainingFindingImages));
+        remainingFindingImages -= mediaIds.length;
+        const images = (
+          await Promise.all(
+            mediaIds.map((mediaId) =>
+              mediaImageForReport(environment, prisma, organisationId, mediaId, 1_500_000),
+            ),
+          )
+        ).filter((image): image is ReportMediaImage => image !== undefined);
+        return {
+          id: finding.id,
+          inspectionId: inspection.id,
+          inspectionType: inspection.inspectionType,
+          ...(inspection.asset === null ? {} : { assetName: inspection.asset.displayName }),
+          category: finding.category,
+          severity: finding.severity,
+          status: finding.status,
+          title: finding.title,
+          ...(finding.description === null ? {} : { description: finding.description }),
+          images,
+        };
+      }),
+    );
     const printableValue = (value: unknown) => {
       if (value === null || value === undefined) return '';
       if (typeof value === 'string') return value;
@@ -5819,6 +5927,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         siteName: visit.site.name,
         visitDate: visit.scheduledStart.toISOString().slice(0, 10),
         certificates,
+        findings,
         ...reportLogoFields(locationLogoImage),
       }),
     };

@@ -136,6 +136,13 @@ enum DefectSeverity {
   DANGEROUS
 }
 
+enum DefectCategory {
+  ADVICE
+  NOTE
+  FAULT
+  CONDITION
+}
+
 enum DefectStatus {
   OPEN
   ACKNOWLEDGED
@@ -985,6 +992,7 @@ model Defect {
   assetId        String?        @map("asset_id") @db.Uuid
   title          String
   description    String?
+  category       DefectCategory @default(FAULT)
   severity       DefectSeverity
   status         DefectStatus   @default(OPEN)
   photoMediaIds  Json           @default("[]") @map("photo_media_ids")

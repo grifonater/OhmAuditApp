@@ -956,6 +956,8 @@ export interface InspectionSummary {
   }>;
   defects: Array<{
     id: string;
+    clientFindingId?: string;
+    category?: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
     title: string;
     description?: string;
     severity: string;
@@ -2287,9 +2289,10 @@ export class ApiService {
     kind: 'fault' | 'normal-state' | 'data-plate',
     description: string,
     clientUploadId: string,
+    findingId?: string,
   ) {
     return this.request<{ media: { id: string } }>(
-      `/inspections/${inspectionId}/asset-media?organisationId=${encodeURIComponent(organisationId)}&kind=${kind}&description=${encodeURIComponent(description)}&uploadId=${encodeURIComponent(clientUploadId)}`,
+      `/inspections/${inspectionId}/asset-media?organisationId=${encodeURIComponent(organisationId)}&kind=${kind}&description=${encodeURIComponent(description)}&uploadId=${encodeURIComponent(clientUploadId)}${findingId ? `&findingId=${encodeURIComponent(findingId)}` : ''}`,
       {
         method: 'POST',
         headers: { 'content-type': photo.type, 'x-file-size': String(photo.size) },
@@ -2304,14 +2307,27 @@ export class ApiService {
     kind: 'fault' | 'normal-state' | 'data-plate',
     description: string,
     clientUploadId: string,
+    findingId?: string,
   ) {
     return this.publicRequest<{ media: { id: string } }>(
-      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/media?kind=${kind}&description=${encodeURIComponent(description)}&uploadId=${encodeURIComponent(clientUploadId)}`,
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/media?kind=${kind}&description=${encodeURIComponent(description)}&uploadId=${encodeURIComponent(clientUploadId)}${findingId ? `&findingId=${encodeURIComponent(findingId)}` : ''}`,
       {
         method: 'POST',
         headers: { 'content-type': photo.type, 'x-file-size': String(photo.size) },
         body: photo,
       },
+    );
+  }
+  deleteInspectionAssetPhoto(organisationId: string, inspectionId: string, mediaId: string) {
+    return this.request(
+      `/inspections/${inspectionId}/media/${mediaId}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
+    );
+  }
+  deleteGuestInspectionAssetPhoto(token: string, inspectionId: string, mediaId: string) {
+    return this.publicRequest(
+      `/guest/visits/${encodeURIComponent(token)}/inspections/${inspectionId}/media/${mediaId}`,
+      { method: 'DELETE' },
     );
   }
   uploadGuestThermalImage(

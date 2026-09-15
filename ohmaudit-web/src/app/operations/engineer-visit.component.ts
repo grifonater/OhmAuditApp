@@ -45,6 +45,21 @@ import {
 } from './ev-visit-helpers';
 
 type ResultChoice = 'PASS' | 'FAIL' | 'NOT_TESTED';
+type FindingCategory = 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
+type FindingGroup = FormGroup<{
+  clientFindingId: FormControl<string>;
+  category: FormControl<FindingCategory>;
+  title: FormControl<string>;
+  description: FormControl<string>;
+  severity: FormControl<string>;
+}>;
+interface PhotoPreview {
+  id: string;
+  url: string;
+  kind: 'fault' | 'normal-state' | 'data-plate';
+  findingId?: string;
+  description: string;
+}
 type SupplyTestGroup = FormGroup<{
   id: FormControl<string>;
   label: FormControl<string>;
@@ -115,6 +130,8 @@ export class EngineerVisitComponent {
   protected readonly saved = signal('');
   protected readonly photoCount = signal(0);
   protected readonly normalPhotoCount = signal(0);
+  protected readonly photoPreviews = signal<PhotoPreview[]>([]);
+  protected readonly viewedPhoto = signal<PhotoPreview | undefined>(undefined);
   protected readonly submitted = signal(false);
   protected readonly recentlySubmittedTaskId = signal('');
   protected readonly addingCharger = signal(false);
@@ -126,7 +143,6 @@ export class EngineerVisitComponent {
   protected readonly newChargerAppliedDataPlateFields = signal<ChargerDataPlateField[]>([]);
   protected readonly pendingAddTaskIds = signal<Set<string>>(new Set());
   private readonly newChargerLocalIds = signal<LocalEvChargerIds | undefined>(undefined);
-  protected readonly recordingFault = signal(false);
   protected readonly dataPlateBusy = signal(false);
   protected readonly dataPlateError = signal('');
   protected readonly dataPlatePreviewUrl = signal('');
@@ -142,6 +158,12 @@ export class EngineerVisitComponent {
   protected readonly savingDraft = signal(false);
   protected readonly photographing = signal(false);
   protected readonly protectiveDeviceTypes = PROTECTIVE_DEVICE_TYPES;
+  protected readonly findingCategories: FindingCategory[] = [
+    'ADVICE',
+    'NOTE',
+    'FAULT',
+    'CONDITION',
+  ];
   protected readonly guestIdentityRequired = computed(() => {
     const visit = this.visit();
     return Boolean(this.guestToken && visit && !visit.guestEngineerName && !visit.guestEmail);
@@ -173,6 +195,7 @@ export class EngineerVisitComponent {
   });
   protected readonly supplyTests = new FormArray<SupplyTestGroup>([]);
   protected readonly connectorTests = new FormArray<ConnectorTestGroup>([]);
+  protected readonly findings = new FormArray<FindingGroup>([]);
   protected readonly newChargerForm = new FormGroup({
     assetReference: new FormControl('', {
       nonNullable: true,
@@ -207,6 +230,7 @@ export class EngineerVisitComponent {
       this.evAssetForm.valueChanges,
       this.supplyTests.valueChanges,
       this.connectorTests.valueChanges,
+      this.findings.valueChanges,
     )
       .pipe(debounceTime(400), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => void this.saveDraft());
@@ -222,6 +246,7 @@ export class EngineerVisitComponent {
       this.revokeAssetImage();
       this.revokeDataPlatePreview();
       this.revokeNewChargerDataPlatePreview();
+      this.revokePhotoPreviews();
       if (this.helpStep() !== '') document.body.style.overflow = '';
     });
     void this.load();
@@ -463,7 +488,8 @@ export class EngineerVisitComponent {
       return;
     }
     await this.run(async () => {
-      this.setFaultRecording(false, false);
+      this.findings.clear({ emitEvent: false });
+      this.revokePhotoPreviews();
       this.selectedTask.set(task);
       this.activeStep.set(0);
       history.pushState({ ...history.state, oaEngineerTask: `${this.visitId}:${task.id}` }, '');
@@ -477,8 +503,7 @@ export class EngineerVisitComponent {
       await this.loadAssetImage(task);
       const draft = await this.offline.draft(inspection.id);
       if (draft) this.restoreDraft(draft);
-      this.photoCount.set(await this.offline.photoCount(inspection.id, 'fault'));
-      this.normalPhotoCount.set(await this.offline.photoCount(inspection.id, 'normal-state'));
+      await this.refreshPhotoPreviews();
     });
   }
 
@@ -651,19 +676,28 @@ export class EngineerVisitComponent {
     group.get(control)?.setValue(value);
   }
 
-  protected setFaultRecording(recording: boolean, save = true): void {
-    this.recordingFault.set(recording);
-    const title = this.form.controls.defectTitle;
-    if (recording) {
-      title.setValidators([Validators.required, Validators.minLength(3)]);
-    } else {
-      title.clearValidators();
-      title.setValue('', { emitEvent: false });
-      this.form.controls.defectSeverity.setValue('MINOR', { emitEvent: false });
-      this.form.controls.notes.setValue('', { emitEvent: false });
-    }
-    title.updateValueAndValidity({ emitEvent: false });
+  protected addFinding(category: FindingCategory = 'FAULT', save = true): void {
+    this.findings.push(this.findingGroup({ category }));
     if (save) void this.saveDraft();
+  }
+
+  protected async removeFinding(index: number): Promise<void> {
+    const findingId = this.findings.at(index).controls.clientFindingId.value;
+    await this.removeFindingPhotos(findingId);
+    this.findings.removeAt(index);
+    await this.saveDraft();
+  }
+
+  protected photosForFinding(findingId: string): PhotoPreview[] {
+    return this.photoPreviews().filter(
+      (photo) =>
+        photo.findingId === findingId ||
+        (this.findings.length === 1 && photo.kind === 'fault' && photo.findingId === undefined),
+    );
+  }
+
+  protected normalPhotos(): PhotoPreview[] {
+    return this.photoPreviews().filter((photo) => photo.kind === 'normal-state');
   }
 
   protected addSupply(): void {
@@ -913,6 +947,7 @@ export class EngineerVisitComponent {
   protected async capturePhoto(
     event: Event,
     kind: 'fault' | 'normal-state' = 'fault',
+    findingId?: string,
   ): Promise<void> {
     const file = (event.target as HTMLInputElement).files?.[0];
     (event.target as HTMLInputElement).value = '';
@@ -924,7 +959,9 @@ export class EngineerVisitComponent {
     const description =
       kind === 'normal-state'
         ? this.normalPhotoDescription.value.trim() || 'EV charger condition before testing'
-        : this.form.controls.defectTitle.value.trim() || 'Engineer inspection evidence';
+        : this.findings.controls
+            .find((finding) => finding.controls.clientFindingId.value === findingId)
+            ?.controls.title.value.trim() || 'Engineer inspection evidence';
     if (!isSupportedImageMimeType(file.type)) {
       this.error.set('Use a JPEG, PNG, or WebP photo.');
       return;
@@ -945,9 +982,9 @@ export class EngineerVisitComponent {
         compressed,
         kind,
         description,
+        findingId,
       );
-      this.photoCount.set(await this.offline.photoCount(inspection.id, 'fault'));
-      this.normalPhotoCount.set(await this.offline.photoCount(inspection.id, 'normal-state'));
+      await this.refreshPhotoPreviews();
       if (kind === 'normal-state') this.normalPhotoDescription.reset('');
       await this.saveDraft();
     } catch (error: unknown) {
@@ -956,6 +993,18 @@ export class EngineerVisitComponent {
       );
     } finally {
       this.photographing.set(false);
+    }
+  }
+
+  protected async deletePhoto(photo: PhotoPreview): Promise<void> {
+    this.error.set('');
+    try {
+      await this.offline.deletePhoto(photo.id);
+      await this.refreshPhotoPreviews();
+      if (this.viewedPhoto()?.id === photo.id) this.viewedPhoto.set(undefined);
+      await this.saveDraft();
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'The photo could not be removed.');
     }
   }
 
@@ -968,7 +1017,7 @@ export class EngineerVisitComponent {
       !visit ||
       !task ||
       this.form.controls.signerName.invalid ||
-      (this.recordingFault() && this.form.controls.defectTitle.invalid)
+      this.findings.invalid
     )
       return;
     const automaticRcdFailures = this.isEvTask() ? this.automaticRcdFailures() : [];
@@ -1009,22 +1058,21 @@ export class EngineerVisitComponent {
           ? [
               {
                 assetId: task.asset?.id,
+                category: 'FAULT' as const,
                 title: 'Faulty RCD reading',
                 description: automaticRcdFailures.join('; '),
                 severity: 'MAJOR' as const,
               },
             ]
           : []),
-        ...(this.recordingFault() && value.defectTitle
-          ? [
-              {
-                assetId: task.asset?.id,
-                title: value.defectTitle,
-                description: value.notes,
-                severity: value.defectSeverity,
-              },
-            ]
-          : []),
+        ...this.findings.getRawValue().map((finding) => ({
+          assetId: task.asset?.id,
+          clientFindingId: finding.clientFindingId,
+          category: finding.category,
+          title: finding.title.trim(),
+          ...(finding.description.trim() ? { description: finding.description.trim() } : {}),
+          severity: finding.severity,
+        })),
       ],
       ...(evSubmission === undefined ? {} : evSubmission),
     };
@@ -1092,6 +1140,8 @@ export class EngineerVisitComponent {
     this.dataPlateCandidates.set([]);
     this.missingDataPlateFields.set([]);
     this.dataPlateError.set('');
+    this.revokePhotoPreviews();
+    this.findings.clear({ emitEvent: false });
   }
 
   private prepareEvForms(task: VisitTask): void {
@@ -1285,7 +1335,8 @@ export class EngineerVisitComponent {
     try {
       await this.offline.saveDraft(visit.organisationId, visit.id, inspection.id, {
         core: this.form.getRawValue(),
-        recordingFault: this.recordingFault(),
+        recordingFault: this.findings.length > 0,
+        findings: this.findings.getRawValue(),
         evAsset: this.evAssetForm.getRawValue(),
         supplies: this.supplyTests.getRawValue(),
         connectors: this.connectorTests.getRawValue(),
@@ -1300,10 +1351,29 @@ export class EngineerVisitComponent {
     const core = draft['core'];
     if (typeof core === 'object' && core !== null) this.form.patchValue(core);
     else this.form.patchValue(draft);
-    const coreDefectTitle = this.form.controls.defectTitle.value.trim();
-    this.setFaultRecording(draft['recordingFault'] === true || coreDefectTitle.length > 0);
-    if (coreDefectTitle.length > 0) {
-      this.form.controls.defectTitle.setValue(coreDefectTitle, { emitEvent: false });
+    this.findings.clear({ emitEvent: false });
+    if (Array.isArray(draft['findings'])) {
+      for (const finding of draft['findings']) {
+        if (typeof finding === 'object' && finding !== null)
+          this.findings.push(
+            this.findingGroup(finding as Partial<ReturnType<FindingGroup['getRawValue']>>),
+            { emitEvent: false },
+          );
+      }
+    } else {
+      const coreDefectTitle = this.form.controls.defectTitle.value.trim();
+      if (coreDefectTitle.length > 0) {
+        this.findings.push(
+          this.findingGroup({
+            category: 'FAULT',
+            title: coreDefectTitle,
+            description: this.form.controls.notes.value,
+            severity: this.form.controls.defectSeverity.value,
+          }),
+          { emitEvent: false },
+        );
+        this.form.controls.notes.setValue('', { emitEvent: false });
+      }
     }
     const evAsset = draft['evAsset'];
     if (typeof evAsset === 'object' && evAsset !== null) this.evAssetForm.patchValue(evAsset);
@@ -1328,6 +1398,49 @@ export class EngineerVisitComponent {
     }
     this.assignOnlySupplyToUnmappedConnectors();
     this.applyAutomaticRcdOutcome();
+  }
+
+  private findingGroup(
+    finding: Partial<ReturnType<FindingGroup['getRawValue']>> = {},
+  ): FindingGroup {
+    return new FormGroup({
+      clientFindingId: new FormControl(finding.clientFindingId ?? crypto.randomUUID(), {
+        nonNullable: true,
+      }),
+      category: new FormControl(finding.category ?? 'FAULT', { nonNullable: true }),
+      title: new FormControl(finding.title ?? '', {
+        nonNullable: true,
+        validators: [Validators.required, Validators.minLength(3)],
+      }),
+      description: new FormControl(finding.description ?? '', { nonNullable: true }),
+      severity: new FormControl(finding.severity ?? 'MINOR', { nonNullable: true }),
+    });
+  }
+
+  private async refreshPhotoPreviews(): Promise<void> {
+    const inspection = this.inspection();
+    this.revokePhotoPreviews();
+    if (inspection === undefined) return;
+    const photos = await this.offline.photos(inspection.id);
+    const previews: PhotoPreview[] = [];
+    for (const photo of photos) {
+      const blob = await this.offline.photoBlob(photo.id);
+      if (blob !== undefined) previews.push({ ...photo, url: URL.createObjectURL(blob) });
+    }
+    this.photoPreviews.set(previews);
+    this.photoCount.set(previews.filter((photo) => photo.kind === 'fault').length);
+    this.normalPhotoCount.set(previews.filter((photo) => photo.kind === 'normal-state').length);
+  }
+
+  private async removeFindingPhotos(findingId: string): Promise<void> {
+    for (const photo of this.photosForFinding(findingId)) await this.offline.deletePhoto(photo.id);
+    await this.refreshPhotoPreviews();
+  }
+
+  private revokePhotoPreviews(): void {
+    for (const photo of this.photoPreviews()) URL.revokeObjectURL(photo.url);
+    this.photoPreviews.set([]);
+    this.viewedPhoto.set(undefined);
   }
 
   private assignOnlySupplyToUnmappedConnectors(): void {

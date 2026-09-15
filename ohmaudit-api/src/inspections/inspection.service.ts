@@ -22,6 +22,18 @@ function nonBlankString(value: unknown): string | undefined {
   return trimmed === '' ? undefined : trimmed;
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+type SubmittedDefect = {
+  assetId?: string | undefined;
+  clientFindingId?: string | undefined;
+  category?: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION' | undefined;
+  title: string;
+  description?: string | undefined;
+  severity: 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
+  photoMediaIds?: string[] | undefined;
+};
+
 export function evRcdFailureReasons(evData: {
   stableDetails: Record<string, unknown>;
   connectorTests: unknown[];
@@ -158,6 +170,9 @@ export class InspectionService {
     });
     if (inspection === null)
       throw new DomainError('INSPECTION_NOT_FOUND', 'The inspection was not found.', 404);
+    const referencedMediaIds = inspection.defects
+      .flatMap(({ photoMediaIds }) => (Array.isArray(photoMediaIds) ? photoMediaIds : []))
+      .filter((id): id is string => typeof id === 'string' && uuidPattern.test(id));
     const evidenceMedia =
       typeof this.prisma.media?.findMany !== 'function'
         ? []
@@ -175,6 +190,7 @@ export class InspectionService {
                       'thermal-image',
                       'standard-image',
                       'emergency-lighting-evidence',
+                      'inspection-fault',
                     ],
                   },
                 },
@@ -184,9 +200,10 @@ export class InspectionService {
                       {
                         entityType: 'Asset',
                         entityId: inspection.assetId,
-                        category: 'inspection-fault',
+                        tags: { has: `inspection:${inspection.id}` },
                       },
                     ]),
+                ...(referencedMediaIds.length === 0 ? [] : [{ id: { in: referencedMediaIds } }]),
               ],
             },
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -198,6 +215,7 @@ export class InspectionService {
         defect.assetId,
         defect.title.trim(),
         defect.description?.trim() ?? '',
+        defect.category,
         defect.severity,
         defect.status,
         defect.photoMediaIds,
@@ -273,6 +291,7 @@ export class InspectionService {
             id: string;
             title: string;
             description?: string | undefined;
+            category?: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION' | undefined;
             severity: 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
             status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'DISMISSED';
           }>
@@ -390,6 +409,7 @@ export class InspectionService {
           data: {
             title: defect.title,
             description: defect.description?.trim() || null,
+            ...(defect.category === undefined ? {} : { category: defect.category }),
             severity: defect.severity,
             status: defect.status,
             ...(defect.status === 'RESOLVED' ? { resolvedAt: new Date() } : {}),
@@ -429,13 +449,7 @@ export class InspectionService {
       data: Record<string, unknown>;
       validation: Record<string, unknown>;
       signature: { signerName: string; signerRole: string; signatureData: string };
-      defects: Array<{
-        assetId?: string | undefined;
-        title: string;
-        description?: string | undefined;
-        severity: 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
-        photoMediaIds?: string[] | undefined;
-      }>;
+      defects: SubmittedDefect[];
       evData?:
         | {
             stableDetails: Record<string, unknown>;
@@ -463,6 +477,7 @@ export class InspectionService {
         409,
       );
     const revisionNumber = inspection.currentRevisionNumber + 1;
+    await this.validateDefectMedia(organisationId, inspection, input.defects);
     const emergencyResults =
       inspection.moduleKey === 'emergency-lighting' && inspection.assetId !== null
         ? await this.prisma.emergencyLightingFittingResult.findMany({
@@ -567,6 +582,7 @@ export class InspectionService {
               ...(inspection.assetId === null ? {} : { assetId: inspection.assetId }),
               title: 'Faulty RCD reading',
               description: rcdFailures.join('; '),
+              category: 'FAULT' as const,
               severity: 'MAJOR' as const,
             },
           ];
@@ -580,6 +596,7 @@ export class InspectionService {
         assetId: inspection.assetId!,
         title: `${fitting.reference} failed emergency lighting test`,
         ...(notes === null ? {} : { description: notes }),
+        category: 'FAULT' as const,
         severity: 'MAJOR' as const,
       }));
     const effectiveDefects = [...baseDefects, ...emergencyDefects];
@@ -658,6 +675,7 @@ export class InspectionService {
             ...(defect.assetId === undefined ? {} : { assetId: defect.assetId }),
             title: defect.title,
             ...(defect.description === undefined ? {} : { description: defect.description }),
+            category: defect.category ?? 'FAULT',
             severity: defect.severity,
             photoMediaIds: 'photoMediaIds' in defect ? (defect.photoMediaIds ?? []) : [],
           })),
@@ -734,6 +752,80 @@ export class InspectionService {
       });
       return revision;
     });
+  }
+
+  private async validateDefectMedia(
+    organisationId: string,
+    inspection: Awaited<ReturnType<InspectionService['detail']>>,
+    defects: SubmittedDefect[],
+  ): Promise<void> {
+    const mediaOwner = new Map<string, number>();
+    const clientFindingIds = new Set<string>();
+    for (const [index, defect] of defects.entries()) {
+      if (defect.clientFindingId !== undefined) {
+        if (clientFindingIds.has(defect.clientFindingId))
+          throw new DomainError(
+            'DEFECT_CLIENT_ID_DUPLICATE',
+            'Each finding must have a unique clientFindingId.',
+            422,
+          );
+        clientFindingIds.add(defect.clientFindingId);
+      }
+      for (const mediaId of defect.photoMediaIds ?? []) {
+        const owner = mediaOwner.get(mediaId);
+        if (owner !== undefined && owner !== index)
+          throw new DomainError(
+            'DEFECT_MEDIA_CROSS_LINKED',
+            'An image can only be attached to one finding in an inspection.',
+            422,
+          );
+        mediaOwner.set(mediaId, index);
+      }
+    }
+    if (mediaOwner.size === 0) return;
+
+    const media = await this.prisma.media.findMany({
+      where: {
+        id: { in: [...mediaOwner.keys()] },
+        organisationId,
+        status: 'AVAILABLE',
+        mimeType: { in: ['image/jpeg', 'image/png', 'image/webp'] },
+      },
+    });
+    if (media.length !== mediaOwner.size)
+      throw new DomainError(
+        'DEFECT_MEDIA_INVALID',
+        'Every finding image must be an available image in this organisation.',
+        422,
+      );
+
+    const legacyReferences = new Set(
+      inspection.defects.flatMap(({ photoMediaIds }) =>
+        Array.isArray(photoMediaIds)
+          ? photoMediaIds.filter((id): id is string => typeof id === 'string')
+          : [],
+      ),
+    );
+    for (const item of media) {
+      const defect = defects[mediaOwner.get(item.id)!]!;
+      const findingTags = item.tags.filter((tag) => tag.startsWith('finding:'));
+      const scopedToInspection =
+        (item.entityType === 'Inspection' && item.entityId === inspection.id) ||
+        (inspection.assetId !== null &&
+          item.entityType === 'Asset' &&
+          item.entityId === inspection.assetId &&
+          (item.tags.includes(`inspection:${inspection.id}`) || legacyReferences.has(item.id)));
+      const matchesFinding =
+        findingTags.length === 0 ||
+        (defect.clientFindingId !== undefined &&
+          findingTags.every((tag) => tag === `finding:${defect.clientFindingId}`));
+      if (!scopedToInspection || !matchesFinding)
+        throw new DomainError(
+          'DEFECT_MEDIA_INVALID',
+          'A finding image does not belong to this inspection or finding.',
+          422,
+        );
+    }
   }
 
   async review(

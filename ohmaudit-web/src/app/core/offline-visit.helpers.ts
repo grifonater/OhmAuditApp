@@ -155,3 +155,32 @@ export function applyDataPlateCandidate<T extends Record<string, string | number
   }
   return { ...values, [candidate.field]: candidate.value };
 }
+
+export interface FindingPhotoMappings {
+  byFindingId: Record<string, string[]>;
+  legacyUnassigned: string[];
+}
+
+export function attachFindingPhotoIds(
+  submission: Record<string, unknown>,
+  mappings: FindingPhotoMappings,
+): Record<string, unknown> {
+  if (!Array.isArray(submission['defects'])) return submission;
+  const defects = submission['defects'] as unknown[];
+  const legacyFindingIndex = defects.length === 1 ? 0 : -1;
+  return {
+    ...submission,
+    defects: defects.map((defect, index) => {
+      if (typeof defect !== 'object' || defect === null) return defect;
+      const finding = defect as Record<string, unknown>;
+      const findingId = finding['clientFindingId'];
+      const mappedPhotoMediaIds =
+        typeof findingId === 'string' ? (mappings.byFindingId[findingId] ?? []) : [];
+      const photoMediaIds =
+        index === legacyFindingIndex
+          ? [...mappedPhotoMediaIds, ...mappings.legacyUnassigned]
+          : mappedPhotoMediaIds;
+      return photoMediaIds.length === 0 ? defect : { ...finding, photoMediaIds };
+    }),
+  };
+}
