@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, type InspectionSummary } from '../core/api.service';
+import { compressPhoto } from '../core/image-compression';
 
 type ProposedChange = NonNullable<InspectionSummary['proposedAssetChanges']>[number];
 type ReviewSection = 'overview' | 'tests' | 'evidence' | 'updates' | 'history';
@@ -92,6 +93,8 @@ export class InspectionReviewComponent {
   protected readonly loadingDetail = signal(false);
   protected readonly error = signal('');
   protected readonly success = signal('');
+  protected readonly reviewPhotoCaption = signal('Office review evidence');
+  protected readonly reviewPhotoDefectId = signal('');
   protected readonly connectorChecks = [
     { key: 'pePreTest', label: 'PE pre-test' },
     { key: 'cpError', label: 'CP error' },
@@ -771,6 +774,51 @@ export class InspectionReviewComponent {
 
   protected imageUrl(mediaId: string): string {
     return this.imageUrls()[mediaId] ?? '';
+  }
+
+  protected canAddReviewPhoto(item: InspectionSummary): boolean {
+    return item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW';
+  }
+
+  protected setReviewPhotoCaption(event: Event): void {
+    this.reviewPhotoCaption.set(this.eventValue(event));
+  }
+
+  protected setReviewPhotoDefect(event: Event): void {
+    this.reviewPhotoDefectId.set(this.eventValue(event));
+  }
+
+  protected async addReviewPhoto(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    const item = this.inspection();
+    try {
+      if (file === undefined || item === undefined || !this.canAddReviewPhoto(item)) return;
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        this.error.set('Choose a JPEG, PNG or WebP image.');
+        return;
+      }
+      const caption = this.reviewPhotoCaption().trim();
+      if (caption === '') {
+        this.error.set('Add a short description before choosing the image.');
+        return;
+      }
+      await this.run(async () => {
+        const photo = await compressPhoto(file);
+        await this.api.uploadInspectionReviewPhoto(
+          this.organisationId,
+          item.id,
+          photo,
+          caption,
+          crypto.randomUUID(),
+          this.reviewPhotoDefectId() || undefined,
+        );
+        this.success.set('Inspection image added to the review evidence.');
+        await this.refreshSelected();
+      });
+    } finally {
+      input.value = '';
+    }
   }
 
   protected selectedSupplyValue(value: unknown): string {

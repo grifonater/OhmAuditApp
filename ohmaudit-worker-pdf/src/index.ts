@@ -1,10 +1,12 @@
 import { renderThermalReportHtml } from './thermal-report-html';
 import { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
 import { renderJobSheetReportHtml, type JobSheetRenderPayload } from './job-sheet-report-html';
+import { renderEvCertificateHtml } from './ev-certificate-html';
 
 export { renderThermalReportHtml } from './thermal-report-html';
 export { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
 export { renderJobSheetReportHtml, type JobSheetRenderPayload } from './job-sheet-report-html';
+export { renderEvCertificateHtml } from './ev-certificate-html';
 
 export interface PdfBindings {
   APP_ENV: 'local' | 'development' | 'staging' | 'production';
@@ -172,6 +174,14 @@ export interface EvCertificatePayload {
   notes: string;
   engineerName: string;
   certificateReference: string;
+  observations: Array<{
+    category: string;
+    title: string;
+    description?: string;
+    severity?: string;
+    status?: string;
+  }>;
+  photos: Array<ReportMediaImage & { title?: string }>;
 }
 
 export interface VisitReportPayload {
@@ -255,6 +265,23 @@ function uppercaseEvCertificate(payload: EvCertificatePayload): EvCertificatePay
     notes: upperUserText(payload.notes),
     engineerName: upperUserText(payload.engineerName),
     certificateReference: upperUserText(payload.certificateReference),
+    observations: (payload.observations ?? []).map((observation) => ({
+      category: upperUserText(observation.category),
+      title: upperUserText(observation.title),
+      ...(observation.description === undefined
+        ? {}
+        : { description: upperUserText(observation.description) }),
+      ...(observation.severity === undefined
+        ? {}
+        : { severity: upperUserText(observation.severity) }),
+      ...(observation.status === undefined ? {} : { status: upperUserText(observation.status) }),
+    })),
+    photos: (payload.photos ?? []).map((photo) => ({
+      base64: photo.base64,
+      mimeType: photo.mimeType,
+      ...(photo.title === undefined ? {} : { title: upperUserText(photo.title) }),
+      ...(photo.caption === undefined ? {} : { caption: upperUserText(photo.caption) }),
+    })),
   };
 }
 
@@ -2206,6 +2233,67 @@ async function renderThermalReportWithBrowser(
   }
 }
 
+function evCertificateForBrowser(
+  payload: CertificatePayload | VisitReportPayload,
+): EvCertificatePayload | undefined {
+  if ('certificates' in payload) return undefined;
+  return payload.evCertificate;
+}
+
+async function renderEvCertificateWithBrowser(
+  environment: PdfBindings,
+  payload: CertificatePayload | VisitReportPayload,
+  filename: string,
+): Promise<Response | undefined> {
+  const evCertificate = evCertificateForBrowser(payload);
+  if (environment.BROWSER === undefined || evCertificate === undefined) return undefined;
+  const configuredTimeout = Number.parseInt(environment.RENDER_TIMEOUT_MS, 10);
+  const timeout = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(configuredTimeout, 5_000), 120_000)
+    : 30_000;
+  try {
+    const rendered = await environment.BROWSER.quickAction('pdf', {
+      html: renderEvCertificateHtml(evCertificate),
+      emulateMediaType: 'print',
+      setJavaScriptEnabled: false,
+      actionTimeout: timeout,
+      pdfOptions: {
+        format: 'a4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        displayHeaderFooter: false,
+        tagged: true,
+        outline: true,
+        timeout,
+      },
+    });
+    if (!rendered.ok) {
+      console.error(
+        JSON.stringify({ event: 'pdf.ev_browser_run_failed', status: rendered.status }),
+      );
+      return undefined;
+    }
+    const headers = new Headers({
+      'content-type': 'application/pdf',
+      'content-disposition': `inline; filename="${filename}"`,
+      'cache-control': 'private, no-store',
+      'x-ohmaudit-pdf-renderer': 'browser-run',
+    });
+    const browserTime = rendered.headers.get('x-browser-ms-used');
+    if (browserTime !== null) headers.set('x-ohmaudit-browser-ms-used', browserTime);
+    return new Response(rendered.body, { headers });
+  } catch (error: unknown) {
+    console.error(
+      JSON.stringify({
+        event: 'pdf.ev_browser_run_unavailable',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : 'Unknown Browser Run error',
+      }),
+    );
+    return undefined;
+  }
+}
+
 function reportImageDataUri(image: ReportImagePayload): string | undefined {
   if (
     !['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType) ||
@@ -2431,6 +2519,12 @@ export default {
       });
     }
     const checkedPayload = payload as CertificatePayload | VisitReportPayload;
+    const evBrowserPdf = await renderEvCertificateWithBrowser(
+      env,
+      checkedPayload,
+      `${templateId}.pdf`,
+    );
+    if (evBrowserPdf !== undefined) return evBrowserPdf;
     const browserPdf = await renderThermalReportWithBrowser(
       env,
       checkedPayload,
@@ -2466,7 +2560,10 @@ export default {
         'content-disposition': `inline; filename="${templateId}.pdf"`,
         'cache-control': 'private, no-store',
         'x-ohmaudit-pdf-renderer':
-          thermalCertificateForBrowser(checkedPayload) === undefined ? 'native' : 'native-fallback',
+          thermalCertificateForBrowser(checkedPayload) === undefined &&
+          evCertificateForBrowser(checkedPayload) === undefined
+            ? 'native'
+            : 'native-fallback',
       },
     });
   },

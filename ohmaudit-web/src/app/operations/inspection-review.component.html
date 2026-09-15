@@ -920,10 +920,52 @@
           }
 
           @if (activeSection() === 'evidence') {
+            @if (canAddReviewPhoto(item)) {
+              <section class="review-card review-upload-card">
+                <div class="card-heading">
+                  <div>
+                    <p class="eyebrow">Office review</p>
+                    <h3>Add a missing inspection image</h3>
+                    <p>Add general evidence, or link the image directly to an existing finding.</p>
+                  </div>
+                </div>
+                <div class="review-upload-fields">
+                  <label>
+                    Image description
+                    <input
+                      type="text"
+                      maxlength="500"
+                      [value]="reviewPhotoCaption()"
+                      (input)="setReviewPhotoCaption($event)"
+                    />
+                  </label>
+                  <label>
+                    Link to finding
+                    <select [value]="reviewPhotoDefectId()" (change)="setReviewPhotoDefect($event)">
+                      <option value="">General inspection evidence</option>
+                      @for (defect of item.defects; track defect.id) {
+                        <option [value]="defect.id">
+                          {{ defect.category || 'FAULT' }} · {{ defect.title }}
+                        </option>
+                      }
+                    </select>
+                  </label>
+                  <label class="review-upload-button" [class.disabled]="busy()">
+                    {{ busy() ? 'Uploading…' : 'Choose image' }}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      [disabled]="busy()"
+                      (change)="addReviewPhoto($event)"
+                    />
+                  </label>
+                </div>
+              </section>
+            }
             <section class="review-card">
               <div class="card-heading">
                 <div>
-                  <p class="eyebrow">Engineer uploads</p>
+                  <p class="eyebrow">Inspection uploads</p>
                   <h3>Photographic evidence</h3>
                 </div>
                 <span class="count-pill">{{ item.evidenceMedia?.length || 0 }}</span>

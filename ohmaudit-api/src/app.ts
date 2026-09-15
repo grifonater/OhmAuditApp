@@ -1287,6 +1287,11 @@ interface ReportMediaImage {
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
 }
 
+interface ReportEvPhoto extends ReportMediaImage {
+  title: string;
+  caption?: string;
+}
+
 function reportLogoFields(image: ReportMediaImage | undefined) {
   return image === undefined
     ? {}
@@ -1346,6 +1351,62 @@ async function jpegMediaForReport(
 ): Promise<string | undefined> {
   const image = await mediaImageForReport(environment, prisma, organisationId, mediaId);
   return image?.mimeType === 'image/jpeg' ? image.base64 : undefined;
+}
+
+async function evInspectionPhotosForReport(
+  environment: ApiBindings,
+  prisma: ReturnType<typeof prismaFor>,
+  organisationId: string,
+  inspectionId: string,
+  assetId: string | null,
+): Promise<ReportEvPhoto[]> {
+  if (environment.MEDIA_BUCKET === undefined) return [];
+  const media = await prisma.media.findMany({
+    where: {
+      organisationId,
+      status: 'AVAILABLE',
+      mimeType: { in: ['image/jpeg', 'image/png', 'image/webp'] },
+      OR: [
+        { entityType: 'Inspection', entityId: inspectionId },
+        ...(assetId === null
+          ? []
+          : [
+              {
+                entityType: 'Asset',
+                entityId: assetId,
+                tags: { has: `inspection:${inspectionId}` },
+              },
+            ]),
+      ],
+    },
+    orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    take: 20,
+  });
+  const photos = await Promise.all(
+    media.map(async (item) => {
+      const image = await mediaImageForReport(
+        environment,
+        prisma,
+        organisationId,
+        item.id,
+        1_500_000,
+      );
+      if (image === undefined) return undefined;
+      return {
+        ...image,
+        title:
+          item.category === 'asset-nameplate'
+            ? 'Data plate / serial information'
+            : item.category === 'asset-image'
+              ? 'Unit overview'
+              : item.category === 'inspection-fault'
+                ? 'Fault evidence'
+                : 'Inspection evidence',
+        ...(item.caption?.trim() ? { caption: reportImageDescription(item.caption) } : {}),
+      } satisfies ReportEvPhoto;
+    }),
+  );
+  return photos.filter((photo): photo is ReportEvPhoto => photo !== undefined);
 }
 
 export async function requestPdfRender(
@@ -1476,7 +1537,14 @@ function evCertificateData(source: {
   revisionData: unknown;
   testDate: Date;
   engineerName: string;
-  defects: Array<{ title: string; description: string | null }>;
+  defects: Array<{
+    category?: string;
+    title: string;
+    description: string | null;
+    severity?: string;
+    status?: string;
+  }>;
+  photos?: ReportEvPhoto[];
 }) {
   const stable = reportRecord(source.evData.stableDetails);
   const asset = reportRecord(stable['asset']);
@@ -1554,6 +1622,14 @@ function evCertificateData(source: {
     notes: source.evData.engineerObservations ?? '',
     engineerName: source.engineerName,
     certificateReference: source.documentId,
+    observations: source.defects.map((defect) => ({
+      category: defect.category ?? 'FAULT',
+      title: defect.title,
+      ...(defect.description === null ? {} : { description: defect.description }),
+      ...(defect.severity === undefined ? {} : { severity: defect.severity }),
+      ...(defect.status === undefined ? {} : { status: defect.status }),
+    })),
+    photos: source.photos ?? [],
   };
 }
 
@@ -4060,6 +4136,140 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     });
     return context.json({ media: await portfolio.markMediaAvailable(media.id) }, 201);
   });
+  app.post('/api/v1/inspections/:inspectionId/review-media', async (context) => {
+    const environment = parseEnvironment(context.env);
+    if (environment.MEDIA_BUCKET === undefined)
+      throw new DomainError('MEDIA_STORAGE_UNAVAILABLE', 'Media storage is not configured.', 503);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const inspectionId = z.uuid().parse(context.req.param('inspectionId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.review',
+    );
+    const mimeType = z
+      .enum(['image/jpeg', 'image/png', 'image/webp'])
+      .parse(context.req.header('content-type'));
+    const size = Number(
+      context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
+    );
+    if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
+      throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
+    const description = z.string().trim().min(1).max(500).parse(context.req.query('description'));
+    const uploadId = z.uuid().parse(context.req.query('uploadId'));
+    const defectId = z.uuid().optional().parse(context.req.query('defectId'));
+    const prisma = prismaFor(environment);
+    await requireInspectionModule(prisma, organisationId, inspectionId);
+    const inspection = await prisma.inspection.findFirst({
+      where: { id: inspectionId, organisationId },
+      select: { id: true, status: true },
+    });
+    if (inspection === null)
+      throw new DomainError('INSPECTION_NOT_FOUND', 'The inspection was not found.', 404);
+    if (inspection.status !== 'SUBMITTED' && inspection.status !== 'UNDER_REVIEW')
+      throw new DomainError(
+        'INSPECTION_REVIEW_MEDIA_LOCKED',
+        'Images can only be added while an inspection is awaiting review.',
+        409,
+      );
+    const defect =
+      defectId === undefined
+        ? undefined
+        : await prisma.defect.findFirst({
+            where: { id: defectId, organisationId, inspectionId },
+            select: { id: true, photoMediaIds: true },
+          });
+    if (defectId !== undefined && defect === null)
+      throw new DomainError(
+        'INSPECTION_DEFECT_NOT_FOUND',
+        'The selected inspection finding was not found.',
+        404,
+      );
+    const uploadTag = `review-upload:${uploadId}`;
+    const existing = await prisma.media.findFirst({
+      where: {
+        organisationId,
+        entityType: 'Inspection',
+        entityId: inspectionId,
+        tags: { has: uploadTag },
+      },
+    });
+    if (existing?.status === 'AVAILABLE') return context.json({ media: existing }, 200);
+    if (existing !== null && (existing.mimeType !== mimeType || existing.size !== size))
+      throw new DomainError(
+        'INSPECTION_REVIEW_UPLOAD_CONFLICT',
+        'This upload ID has already been used for a different image.',
+        409,
+      );
+    const content = await context.req.arrayBuffer();
+    if (content.byteLength !== size)
+      throw new DomainError('MEDIA_SIZE_INVALID', 'The image size does not match the upload.', 422);
+    const portfolio = new PortfolioService(prisma);
+    const media =
+      existing ??
+      (await portfolio.registerMedia(organisationId, user.id, {
+        entityType: 'Inspection',
+        entityId: inspectionId,
+        category: defectId === undefined ? 'inspection-review-evidence' : 'inspection-fault',
+        caption: description,
+        tags: [
+          'source:office-review',
+          uploadTag,
+          ...(defectId === undefined ? [] : [`defect:${defectId}`]),
+        ],
+        mimeType,
+        size,
+      }));
+    await environment.MEDIA_BUCKET.put(media.storageKey, content, {
+      httpMetadata: { contentType: mimeType },
+    });
+    try {
+      const available = await prisma.$transaction(async (transaction) => {
+        if (defect !== undefined && defect !== null) {
+          const photoMediaIds = Array.isArray(defect.photoMediaIds)
+            ? defect.photoMediaIds.filter((id): id is string => typeof id === 'string')
+            : [];
+          if (!photoMediaIds.includes(media.id)) {
+            if (photoMediaIds.length >= 50)
+              throw new DomainError(
+                'INSPECTION_DEFECT_PHOTO_LIMIT',
+                'This finding already has the maximum number of images.',
+                422,
+              );
+            await transaction.defect.update({
+              where: { id: defect.id },
+              data: { photoMediaIds: [...photoMediaIds, media.id] },
+            });
+          }
+        }
+        const updated = await transaction.media.update({
+          where: { id: media.id },
+          data: { status: 'AVAILABLE' },
+        });
+        await transaction.auditEvent.create({
+          data: {
+            organisationId,
+            actorUserId: user.id,
+            correlationId: context.get('correlationId'),
+            eventType: 'InspectionReviewMediaAdded',
+            entityType: 'Inspection',
+            entityId: inspectionId,
+            data: { mediaId: media.id, defectId: defectId ?? null, caption: description },
+          },
+        });
+        return updated;
+      });
+      return context.json({ media: available }, 201);
+    } catch (error: unknown) {
+      await Promise.allSettled([
+        environment.MEDIA_BUCKET.delete(media.storageKey),
+        prisma.media.deleteMany({
+          where: { id: media.id, organisationId, status: 'PENDING_UPLOAD' },
+        }),
+      ]);
+      throw error;
+    }
+  });
   app.delete('/api/v1/inspections/:inspectionId/media/:mediaId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
@@ -5102,6 +5312,16 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       brand?.logoMediaId,
     );
+    const evPhotos =
+      moduleKey === 'ev-charging'
+        ? await evInspectionPhotosForReport(
+            environment,
+            prisma,
+            organisationId,
+            inspectionId,
+            inspection.assetId,
+          )
+        : [];
     const renderPayload = {
       draft: true,
       title: `${inspection.inspectionType} - Draft`,
@@ -5188,10 +5408,14 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 defects: reportArray(payload['defects']).map((value) => {
                   const defect = reportRecord(value);
                   return {
+                    category: reportText(defect['category'], 'FAULT'),
                     title: reportText(defect['title'], 'Draft defect'),
                     description: reportText(defect['description']) || null,
+                    severity: reportText(defect['severity']),
+                    status: reportText(defect['status']),
                   };
                 }),
+                photos: evPhotos,
               }),
               draft: true,
             },
@@ -6067,12 +6291,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           (async () => {
             const assetPhoto =
               inspection.asset === null ? undefined : firstPhotoByAsset.get(inspection.asset.id);
-            const chargerPhotoJpegBase64 = await jpegMediaForReport(
-              environment,
-              prisma,
-              organisationId,
-              assetPhoto?.id,
-            );
+            const [chargerPhotoJpegBase64, evPhotos] = await Promise.all([
+              jpegMediaForReport(environment, prisma, organisationId, assetPhoto?.id),
+              inspection.moduleKey === 'ev-charging'
+                ? evInspectionPhotosForReport(
+                    environment,
+                    prisma,
+                    organisationId,
+                    inspection.id,
+                    inspection.assetId,
+                  )
+                : Promise.resolve([]),
+            ]);
             return {
               title: document.title,
               organisationName:
@@ -6178,6 +6408,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                       testDate: inspection.effectiveDate ?? revision.createdAt,
                       engineerName: revision.signatures[0]?.signerName ?? 'Engineer',
                       defects: inspection.defects,
+                      photos: evPhotos,
                     }),
                   }),
             };
@@ -6274,7 +6505,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           },
         });
     }
-    const [brand, accreditation, assetPhoto] = await Promise.all([
+    const [brand, accreditation, assetPhoto, evPhotos] = await Promise.all([
       prisma.organisationBrandProfile.findUnique({ where: { organisationId } }),
       prisma.organisationAccreditation.findFirst({
         where: { organisationId },
@@ -6293,6 +6524,15 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             },
             orderBy: { createdAt: 'asc' },
           }),
+      inspection.moduleKey === 'ev-charging'
+        ? evInspectionPhotosForReport(
+            environment,
+            prisma,
+            organisationId,
+            inspection.id,
+            inspection.assetId,
+          )
+        : Promise.resolve([]),
     ]);
     const [companyLogoImage, locationLogoImage, chargerPhotoJpegBase64] = await Promise.all([
       mediaImageForReport(environment, prisma, organisationId, brand?.logoMediaId),
@@ -6400,6 +6640,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 testDate: inspection.effectiveDate ?? revision.createdAt,
                 engineerName: revision.signatures[0]?.signerName ?? 'Engineer',
                 defects: inspection.defects,
+                photos: evPhotos,
               }),
             }),
       }),

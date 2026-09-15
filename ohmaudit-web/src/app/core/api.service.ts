@@ -2392,6 +2392,23 @@ export class ApiService {
       },
     );
   }
+  uploadInspectionReviewPhoto(
+    organisationId: string,
+    inspectionId: string,
+    photo: Blob,
+    description: string,
+    clientUploadId: string,
+    defectId?: string,
+  ) {
+    return this.request<{ media: AssetMedia }>(
+      `/inspections/${inspectionId}/review-media?organisationId=${encodeURIComponent(organisationId)}&description=${encodeURIComponent(description)}&uploadId=${encodeURIComponent(clientUploadId)}${defectId ? `&defectId=${encodeURIComponent(defectId)}` : ''}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': photo.type, 'x-file-size': String(photo.size) },
+        body: photo,
+      },
+    );
+  }
   uploadGuestInspectionAssetPhoto(
     token: string,
     inspectionId: string,

@@ -195,6 +195,7 @@ export class InspectionService {
                       'standard-image',
                       'emergency-lighting-evidence',
                       'inspection-fault',
+                      'inspection-review-evidence',
                     ],
                   },
                 },

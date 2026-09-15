@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normaliseDocumentPath,
   renderCertificatePdf,
+  renderEvCertificateHtml,
   renderEvCertificatePdf,
   renderThermalReportHtml,
   renderThermalCertificatePdf,
@@ -283,6 +284,8 @@ describe('PDF worker', () => {
         notes: 'Unit is in good condition.',
         engineerName: 'A Engineer',
         certificateReference: 'CERT-001',
+        observations: [],
+        photos: [],
       }),
     );
     expect(text.startsWith('%PDF-1.4')).toBe(true);
@@ -293,6 +296,56 @@ describe('PDF worker', () => {
     expect(text).toContain('UNIT IS IN GOOD CONDITION.');
     expect(text).toContain('A ENGINEER');
     expect(text).not.toContain('North car park');
+  });
+  it('fills and escapes the redesigned EV certificate HTML', () => {
+    const html = renderEvCertificateHtml({
+      testingCompany: {
+        name: 'Test & Co',
+        addressLines: ['1 Test Street'],
+        registrationNumber: 'REG-1',
+      },
+      testingLocation: { name: 'Customer Site', addressLines: ['Site Road'] },
+      charger: {
+        name: 'EVCP <12>',
+        location: 'Car park',
+        make: 'Autel',
+        model: 'Maxi',
+        serialNumber: 'SN-1',
+        powerOutputKw: '22 kW',
+      },
+      supplies: [],
+      connectors: [],
+      testDate: '2026-09-15',
+      outcome: 'PASS',
+      reasonForFailure: '',
+      notes: 'No additional comments.',
+      engineerName: 'Ryan Griffin',
+      certificateReference: 'CERT-2',
+      observations: [
+        {
+          category: 'ADVICE',
+          title: 'Protective post',
+          description: 'Consider adding protection.',
+          severity: 'ADVISORY',
+          status: 'OPEN',
+        },
+      ],
+      photos: [
+        {
+          mimeType: 'image/jpeg',
+          base64: jpegBase64,
+          title: 'Unit overview',
+          caption: 'Front elevation',
+        },
+      ],
+    });
+    expect(html).toContain('EV Charge Point Test Certificate');
+    expect(html).toContain('EVCP &lt;12&gt;');
+    expect(html).toContain('Test &amp; Co');
+    expect(html).toContain('Protective post');
+    expect(html).toContain('Front elevation');
+    expect(html).toContain('Page 3 of 3');
+    expect(html).not.toContain('EVCP <12>');
   });
   it('renders a multi-page thermal report with target conditions and fault guidance', () => {
     const text = new TextDecoder().decode(
@@ -790,6 +843,8 @@ describe('PDF worker', () => {
             notes: '',
             engineerName: 'A Engineer',
             certificateReference: 'EV-1',
+            observations: [],
+            photos: [],
           },
         }),
       }),
@@ -799,6 +854,7 @@ describe('PDF worker', () => {
         RENDER_TIMEOUT_MS: '30000',
         BROWSER: {
           quickAction: (action: string) => {
+            if (action === 'pdf') return Promise.resolve(new Response(null, { status: 503 }));
             expect(action).toBe('screenshot');
             conversions += 1;
             return Promise.resolve(
@@ -811,7 +867,7 @@ describe('PDF worker', () => {
 
     const pdf = new TextDecoder().decode(await response.arrayBuffer());
     expect(response.status).toBe(200);
-    expect(response.headers.get('x-ohmaudit-pdf-renderer')).toBe('native');
+    expect(response.headers.get('x-ohmaudit-pdf-renderer')).toBe('native-fallback');
     expect(conversions).toBe(1);
     expect(pdf).toContain('/DCTDecode');
   });
