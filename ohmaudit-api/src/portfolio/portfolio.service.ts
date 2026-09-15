@@ -989,29 +989,31 @@ export class PortfolioService {
         ? entityId === organisationId
           ? await this.prisma.organisation.findFirst({ where: { id: entityId } })
           : null
-        : entityType === 'Customer'
-          ? await this.prisma.customer.findFirst({ where: { id: entityId, organisationId } })
-          : entityType === 'Site'
-            ? await this.prisma.site.findFirst({ where: { id: entityId, organisationId } })
-            : entityType === 'Asset'
-              ? await this.prisma.asset.findFirst({ where: { id: entityId, organisationId } })
-              : entityType === 'Inspection'
-                ? await this.prisma.inspection.findFirst({
-                    where: { id: entityId, organisationId },
-                  })
-                : entityType === 'EmergencyLightingFitting'
-                  ? await this.prisma.emergencyLightingFitting.findFirst({
+        : entityType === 'Visit'
+          ? await this.prisma.visit.findFirst({ where: { id: entityId, organisationId } })
+          : entityType === 'Customer'
+            ? await this.prisma.customer.findFirst({ where: { id: entityId, organisationId } })
+            : entityType === 'Site'
+              ? await this.prisma.site.findFirst({ where: { id: entityId, organisationId } })
+              : entityType === 'Asset'
+                ? await this.prisma.asset.findFirst({ where: { id: entityId, organisationId } })
+                : entityType === 'Inspection'
+                  ? await this.prisma.inspection.findFirst({
                       where: { id: entityId, organisationId },
                     })
-                  : entityType === 'EmergencyLightingLocation'
-                    ? await this.prisma.emergencyLightingLocation.findFirst({
+                  : entityType === 'EmergencyLightingFitting'
+                    ? await this.prisma.emergencyLightingFitting.findFirst({
                         where: { id: entityId, organisationId },
                       })
-                    : entityType === 'EmergencyLightingDevice'
-                      ? await this.prisma.emergencyLightingDevice.findFirst({
+                    : entityType === 'EmergencyLightingLocation'
+                      ? await this.prisma.emergencyLightingLocation.findFirst({
                           where: { id: entityId, organisationId },
                         })
-                      : null;
+                      : entityType === 'EmergencyLightingDevice'
+                        ? await this.prisma.emergencyLightingDevice.findFirst({
+                            where: { id: entityId, organisationId },
+                          })
+                        : null;
     if (exists === null)
       throw new DomainError('ENTITY_NOT_FOUND', 'The related record was not found.', 404);
   }

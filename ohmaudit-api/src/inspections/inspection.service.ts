@@ -72,21 +72,25 @@ export function evRcdFailureReasons(evData: {
 export class InspectionService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  list(organisationId: string, status?: string) {
+  list(
+    organisationId: string,
+    status?:
+      | 'DRAFT'
+      | 'IN_PROGRESS'
+      | 'SUBMITTED'
+      | 'UNDER_REVIEW'
+      | 'APPROVED'
+      | 'REJECTED'
+      | 'SUPERSEDED'
+      | 'AWAITING_REVIEW',
+  ) {
     return this.prisma.inspection.findMany({
       where: {
         organisationId,
         ...(status === undefined
           ? {}
           : {
-              status: status as
-                | 'DRAFT'
-                | 'IN_PROGRESS'
-                | 'SUBMITTED'
-                | 'UNDER_REVIEW'
-                | 'APPROVED'
-                | 'REJECTED'
-                | 'SUPERSEDED',
+              status: status === 'AWAITING_REVIEW' ? { in: ['SUBMITTED', 'UNDER_REVIEW'] } : status,
             }),
       },
       include: {

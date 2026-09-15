@@ -3,6 +3,7 @@ import {
   Component,
   DestroyRef,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -20,6 +21,10 @@ import {
   type EngineerRamsRecord,
   type InspectionSummary,
   type RamsRevisionDetail,
+  type VisitFinding,
+  type VisitFindingCategory,
+  type VisitFindingInput,
+  type VisitFindingSeverity,
   type VisitSummary,
   type VisitTask,
 } from '../core/api.service';
@@ -29,6 +34,7 @@ import {
   applyDataPlateCandidate as applyCandidate,
   moduleLabel,
   type LocalEvChargerIds,
+  type SubmissionSyncState,
 } from '../core/offline-visit.helpers';
 import {
   emergencyLightingInspectionPath,
@@ -53,6 +59,21 @@ type FindingGroup = FormGroup<{
   description: FormControl<string>;
   severity: FormControl<string>;
 }>;
+type VisitFindingGroup = FormGroup<{
+  clientFindingId: FormControl<string>;
+  category: FormControl<VisitFindingCategory>;
+  title: FormControl<string>;
+  description: FormControl<string>;
+  severity: FormControl<VisitFindingSeverity>;
+  photoMediaIds: FormControl<string[]>;
+}>;
+interface VisitFindingPhotoPreview {
+  id: string;
+  findingId: string;
+  url: string;
+  description: string;
+  serverMediaId?: string;
+}
 interface PhotoPreview {
   id: string;
   url: string;
@@ -107,6 +128,7 @@ export class EngineerVisitComponent {
     { key: 'overview', label: 'Overview' },
     { key: 'rams', label: 'RAMS' },
     { key: 'inspections', label: 'Inspections' },
+    { key: 'findings', label: 'Findings' },
   ];
   protected readonly workspaceStep = signal(
     engineerWorkspaceStep(this.route.snapshot.queryParamMap.get('step')),
@@ -133,6 +155,7 @@ export class EngineerVisitComponent {
   protected readonly photoPreviews = signal<PhotoPreview[]>([]);
   protected readonly viewedPhoto = signal<PhotoPreview | undefined>(undefined);
   protected readonly submitted = signal(false);
+  protected readonly submissionResult = signal<'confirmed' | 'pending' | 'failed'>('confirmed');
   protected readonly recentlySubmittedTaskId = signal('');
   protected readonly addingCharger = signal(false);
   protected readonly newChargerDataPlateBusy = signal(false);
@@ -142,6 +165,16 @@ export class EngineerVisitComponent {
   protected readonly newChargerMissingDataPlateFields = signal<ChargerDataPlateField[]>([]);
   protected readonly newChargerAppliedDataPlateFields = signal<ChargerDataPlateField[]>([]);
   protected readonly pendingAddTaskIds = signal<Set<string>>(new Set());
+  protected readonly submissionSyncStates = signal<Record<string, SubmissionSyncState>>({});
+  protected readonly visitFindings = new FormArray<VisitFindingGroup>([]);
+  protected readonly visitFindingPhotos = signal<VisitFindingPhotoPreview[]>([]);
+  protected readonly viewedVisitFindingPhoto = signal<VisitFindingPhotoPreview | undefined>(
+    undefined,
+  );
+  protected readonly visitFindingsSaving = signal(false);
+  protected readonly visitFindingsSyncState = signal<'confirmed' | 'pending' | 'failed'>(
+    'confirmed',
+  );
   private readonly newChargerLocalIds = signal<LocalEvChargerIds | undefined>(undefined);
   protected readonly dataPlateBusy = signal(false);
   protected readonly dataPlateError = signal('');
@@ -222,6 +255,14 @@ export class EngineerVisitComponent {
     validators: [Validators.maxLength(500)],
   });
   constructor() {
+    effect(() => {
+      this.offline.outboxVersion();
+      const visit = this.visit();
+      if (visit) {
+        void this.refreshSubmissionStateAfterOutboxChange(visit);
+        void this.refreshVisitFindingsSyncState(visit.id);
+      }
+    });
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((parameters) => {
       this.workspaceStep.set(engineerWorkspaceStep(parameters.get('step')));
     });
@@ -237,6 +278,9 @@ export class EngineerVisitComponent {
     merge(this.evAssetForm.controls.dcRcdType.valueChanges, this.connectorTests.valueChanges)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.applyAutomaticRcdOutcome());
+    this.visitFindings.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.visitFindingsSyncState.set('pending'));
     fromEvent<PopStateEvent>(window, 'popstate')
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
@@ -247,6 +291,7 @@ export class EngineerVisitComponent {
       this.revokeDataPlatePreview();
       this.revokeNewChargerDataPlatePreview();
       this.revokePhotoPreviews();
+      this.revokeVisitFindingPhotoPreviews();
       if (this.helpStep() !== '') document.body.style.overflow = '';
     });
     void this.load();
@@ -339,6 +384,10 @@ export class EngineerVisitComponent {
         await this.offline.storePack(this.organisationId, refreshed);
       }
       await this.cacheAssetImages(this.visit() ?? visit);
+      await this.offline.cacheVisitFindingPhotos(
+        this.visit() ?? visit,
+        this.guestToken || undefined,
+      );
       await this.offline.cacheThermalPack(this.visit() ?? visit, this.guestToken || undefined);
       const verified = await this.offline.pack(this.visitId, this.guestToken || undefined);
       if (verified === undefined)
@@ -361,6 +410,121 @@ export class EngineerVisitComponent {
 
   protected friendlyModuleLabel(moduleKey: string): string {
     return moduleLabel(moduleKey);
+  }
+
+  protected submissionSyncState(taskId: string): SubmissionSyncState | undefined {
+    return this.submissionSyncStates()[taskId];
+  }
+
+  protected addVisitFinding(category: VisitFindingCategory = 'NOTE'): void {
+    this.visitFindings.push(this.visitFindingGroup({ category }));
+    this.visitFindingsSyncState.set('pending');
+  }
+
+  protected async removeVisitFinding(index: number): Promise<void> {
+    const findingId = this.visitFindings.at(index).controls.clientFindingId.value;
+    await this.offline.deleteVisitFindingPhotos(findingId);
+    this.visitFindings.removeAt(index);
+    await this.refreshVisitFindingPhotoPreviews();
+    this.visitFindingsSyncState.set('pending');
+  }
+
+  protected visitPhotosForFinding(findingId: string): VisitFindingPhotoPreview[] {
+    return this.visitFindingPhotos().filter((photo) => photo.findingId === findingId);
+  }
+
+  protected async captureVisitFindingPhoto(event: Event, findingId: string): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    const visit = this.visit();
+    const finding = this.visitFindings.controls.find(
+      (group) => group.controls.clientFindingId.value === findingId,
+    );
+    if (!file || !visit || !finding) return;
+    if (!isSupportedImageMimeType(file.type)) {
+      this.error.set('Use a JPEG, PNG, or WebP photo.');
+      return;
+    }
+    this.photographing.set(true);
+    this.error.set('');
+    try {
+      const compressed = await compressPhoto(file);
+      if (compressed.size > 2_000_000)
+        throw new Error('The photo is too large after compression. Try a smaller image.');
+      await this.offline.storeVisitFindingPhoto(
+        visit.organisationId,
+        visit.id,
+        findingId,
+        this.guestToken || undefined,
+        compressed,
+        finding.controls.title.value.trim() || 'Job finding evidence',
+      );
+      await this.refreshVisitFindingPhotoPreviews();
+      this.visitFindingsSyncState.set('pending');
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'The image could not be saved.');
+    } finally {
+      this.photographing.set(false);
+    }
+  }
+
+  protected async removeVisitFindingPhoto(photo: VisitFindingPhotoPreview): Promise<void> {
+    await this.offline.deleteVisitFindingPhoto(photo.id);
+    if (photo.serverMediaId) {
+      const finding = this.visitFindings.controls.find(
+        (group) => group.controls.clientFindingId.value === photo.findingId,
+      );
+      finding?.controls.photoMediaIds.setValue(
+        finding.controls.photoMediaIds.value.filter((id) => id !== photo.serverMediaId),
+      );
+    }
+    if (this.viewedVisitFindingPhoto()?.id === photo.id)
+      this.viewedVisitFindingPhoto.set(undefined);
+    await this.refreshVisitFindingPhotoPreviews();
+    this.visitFindingsSyncState.set('pending');
+  }
+
+  protected async saveVisitFindings(): Promise<void> {
+    const visit = this.visit();
+    if (!visit || this.visitFindings.invalid || this.visitFindingsSaving()) return;
+    const findings: VisitFindingInput[] = this.visitFindings.getRawValue().map((finding) => ({
+      clientFindingId: finding.clientFindingId,
+      category: finding.category,
+      title: finding.title.trim(),
+      ...(finding.description.trim() ? { description: finding.description.trim() } : {}),
+      severity: finding.severity,
+      status: 'OPEN',
+      photoMediaIds: finding.photoMediaIds,
+    }));
+    const optimisticVisit: VisitSummary = { ...visit, findings };
+    this.visitFindingsSaving.set(true);
+    this.error.set('');
+    try {
+      this.visit.set(optimisticVisit);
+      await this.offline.queueVisitFindings(
+        optimisticVisit,
+        findings,
+        this.guestToken || undefined,
+      );
+      await this.refreshVisitFindingsSyncState(visit.id);
+      if (this.visitFindingsSyncState() === 'confirmed') {
+        await this.refreshVisitFindingsFromServer(optimisticVisit);
+        this.saved.set('Job findings saved');
+      } else {
+        this.saved.set(
+          this.visitFindingsSyncState() === 'failed'
+            ? 'Job findings sync failed. They remain saved on this device.'
+            : 'Job findings saved on this device and pending sync',
+        );
+      }
+    } catch (error: unknown) {
+      this.error.set(
+        error instanceof Error ? error.message : 'The job findings could not be saved.',
+      );
+    } finally {
+      this.visitFindingsSaving.set(false);
+    }
   }
 
   protected async saveGuestIdentity(): Promise<void> {
@@ -1100,11 +1264,43 @@ export class EngineerVisitComponent {
         );
       this.submitted.set(true);
       this.recentlySubmittedTaskId.set(task.id);
-      const updatedVisit = this.markTaskSubmitted(visit, new Set([task.id]));
-      this.visit.set(updatedVisit);
-      await this.offline.updateCachedVisit(updatedVisit, this.guestToken || undefined);
-      const queued = (await this.offline.pendingTaskIds(updatedVisit)).has(task.id);
-      this.saved.set(queued ? 'Queued safely — will sync when online' : 'Inspection submitted');
+      await this.refreshSubmissionSyncStates(visit);
+      const syncState = this.submissionSyncState(task.id);
+      if (syncState !== undefined) {
+        this.submissionResult.set(syncState.state);
+        this.saved.set(
+          syncState.state === 'failed'
+            ? 'Submission failed. Your inspection is saved and can be retried.'
+            : 'Pending sync. Your inspection is saved on this device.',
+        );
+        return;
+      }
+      this.submissionResult.set('confirmed');
+      this.saved.set('Submitted for office review');
+      await this.refreshAuthoritativeVisit();
+    });
+  }
+
+  protected async retrySubmission(taskId: string): Promise<void> {
+    if (!this.offline.online() || this.busy()) return;
+    await this.run(async () => {
+      await this.offline.syncOutbox();
+      const visit = this.visit();
+      if (!visit) return;
+      await this.refreshSubmissionSyncStates(visit);
+      const state = this.submissionSyncState(taskId);
+      if (state !== undefined) {
+        this.submissionResult.set(state.state);
+        this.saved.set(
+          state.state === 'failed'
+            ? 'Submission failed again. Your inspection remains saved.'
+            : 'Pending sync. Retry will continue when dependencies are ready.',
+        );
+        return;
+      }
+      this.submissionResult.set('confirmed');
+      this.saved.set('Submitted for office review');
+      await this.refreshAuthoritativeVisit();
     });
   }
 
@@ -1127,7 +1323,8 @@ export class EngineerVisitComponent {
         const refreshed = this.guestToken
           ? (await this.api.guestVisit(this.guestToken)).visit
           : (await this.api.getVisit(this.organisationId, this.visitId)).visit;
-        this.visit.set(await this.applyPendingTaskStatuses(refreshed));
+        this.visit.set(refreshed);
+        await this.refreshSubmissionSyncStates(refreshed);
       } catch {
         // Preserve the locally updated task state when a refresh is temporarily unavailable.
       }
@@ -1498,7 +1695,10 @@ export class EngineerVisitComponent {
       const cached = await this.offline.pack(this.visitId, this.guestToken || undefined);
       if (!this.offline.online()) {
         if (cached !== undefined) {
-          this.visit.set(await this.applyPendingTaskStatuses(cached));
+          this.visit.set(cached);
+          this.restoreVisitFindings(cached.findings ?? []);
+          await this.refreshVisitFindingPhotoPreviews();
+          await this.refreshSubmissionSyncStates(cached);
           this.linkedRams.set(cached.rams ?? []);
           const signer = cached.guestEngineerName || cached.guestEmail;
           if (signer) {
@@ -1531,12 +1731,27 @@ export class EngineerVisitComponent {
           this.form.controls.signerName.setValue(
             result.visit.guestEngineerName || result.visit.guestEmail || '',
           );
-        this.visit.set(await this.applyPendingTaskStatuses(result.visit));
+        await this.refreshVisitFindingsSyncState(result.visit.id);
+        const loadedVisit =
+          cached !== undefined && this.visitFindingsSyncState() !== 'confirmed'
+            ? { ...result.visit, findings: cached.findings }
+            : result.visit;
+        this.visit.set(loadedVisit);
+        if (this.visitFindingsSyncState() === 'confirmed')
+          await this.refreshVisitFindingsFromServer(loadedVisit);
+        else {
+          this.restoreVisitFindings(loadedVisit.findings ?? []);
+          await this.refreshVisitFindingPhotoPreviews();
+        }
+        await this.refreshSubmissionSyncStates(result.visit);
         this.pendingAddTaskIds.set(await this.offline.pendingAddTaskIdsForVisit(result.visit.id));
         await this.loadLinkedRams(result.visit);
       } catch (error) {
         if (cached !== undefined) {
-          this.visit.set(await this.applyPendingTaskStatuses(cached));
+          this.visit.set(cached);
+          this.restoreVisitFindings(cached.findings ?? []);
+          await this.refreshVisitFindingPhotoPreviews();
+          await this.refreshSubmissionSyncStates(cached);
           this.linkedRams.set(cached.rams ?? []);
         } else throw error;
       }
@@ -1594,26 +1809,121 @@ export class EngineerVisitComponent {
     this.linkedRams.set(records);
   }
 
-  private async applyPendingTaskStatuses(visit: VisitSummary): Promise<VisitSummary> {
-    return this.markTaskSubmitted(visit, await this.offline.pendingTaskIds(visit));
+  private async refreshSubmissionSyncStates(visit: VisitSummary): Promise<void> {
+    this.submissionSyncStates.set(
+      Object.fromEntries(
+        (await this.offline.submissionSyncStates(visit)).map((state) => [state.taskId, state]),
+      ),
+    );
   }
 
-  private markTaskSubmitted(visit: VisitSummary, taskIds: Set<string>): VisitSummary {
-    if (taskIds.size === 0) return visit;
-    return {
-      ...visit,
-      tasks: visit.tasks.map((task) =>
-        taskIds.has(task.id)
-          ? {
-              ...task,
-              status: 'SUBMITTED',
-              ...(task.inspection === undefined
-                ? {}
-                : { inspection: { ...task.inspection, status: 'SUBMITTED' } }),
-            }
-          : task,
-      ),
-    };
+  private visitFindingGroup(finding: Partial<VisitFinding> = {}): VisitFindingGroup {
+    return new FormGroup({
+      clientFindingId: new FormControl(finding.clientFindingId ?? crypto.randomUUID(), {
+        nonNullable: true,
+      }),
+      category: new FormControl(finding.category ?? 'NOTE', { nonNullable: true }),
+      title: new FormControl(finding.title ?? '', {
+        nonNullable: true,
+        validators: [Validators.required, Validators.minLength(1), Validators.maxLength(200)],
+      }),
+      description: new FormControl(finding.description ?? '', {
+        nonNullable: true,
+        validators: [Validators.maxLength(5000)],
+      }),
+      severity: new FormControl(finding.severity ?? 'ADVISORY', { nonNullable: true }),
+      photoMediaIds: new FormControl(finding.photoMediaIds ?? [], { nonNullable: true }),
+    });
+  }
+
+  private restoreVisitFindings(findings: VisitFinding[]): void {
+    this.visitFindings.clear({ emitEvent: false });
+    for (const finding of findings)
+      this.visitFindings.push(this.visitFindingGroup(finding), { emitEvent: false });
+  }
+
+  private async refreshVisitFindingsFromServer(visit: VisitSummary): Promise<void> {
+    let findings = visit.findings ?? [];
+    if (this.offline.online()) {
+      try {
+        findings = this.guestToken
+          ? (await this.api.listGuestVisitFindings(this.guestToken)).findings
+          : (await this.api.listVisitFindings(this.organisationId, visit.id)).findings;
+      } catch {
+        // The summary remains usable if the dedicated endpoint is temporarily unavailable.
+      }
+    }
+    const updatedVisit = { ...visit, findings };
+    this.visit.set(updatedVisit);
+    this.restoreVisitFindings(findings);
+    await this.offline.updateCachedVisit(updatedVisit, this.guestToken || undefined);
+    await this.offline.cacheVisitFindingPhotos(updatedVisit, this.guestToken || undefined);
+    await this.refreshVisitFindingPhotoPreviews();
+  }
+
+  private async refreshVisitFindingPhotoPreviews(): Promise<void> {
+    this.revokeVisitFindingPhotoPreviews();
+    const visit = this.visit();
+    if (!visit) return;
+    const previews: VisitFindingPhotoPreview[] = [];
+    for (const photo of await this.offline.visitFindingPhotos(visit.id)) {
+      const blob = await this.offline.visitFindingPhotoBlob(photo.id);
+      if (blob) previews.push({ ...photo, url: URL.createObjectURL(blob) });
+    }
+    this.visitFindingPhotos.set(previews);
+  }
+
+  private revokeVisitFindingPhotoPreviews(): void {
+    for (const photo of this.visitFindingPhotos()) URL.revokeObjectURL(photo.url);
+    this.visitFindingPhotos.set([]);
+    this.viewedVisitFindingPhoto.set(undefined);
+  }
+
+  private async refreshVisitFindingsSyncState(visitId: string): Promise<void> {
+    this.visitFindingsSyncState.set(
+      (await this.offline.visitFindingsSyncState(visitId)) ?? 'confirmed',
+    );
+  }
+
+  private async refreshSubmissionStateAfterOutboxChange(visit: VisitSummary): Promise<void> {
+    const previousTaskIds = new Set(Object.keys(this.submissionSyncStates()));
+    await this.refreshSubmissionSyncStates(visit);
+    const selectedTaskId = this.selectedTask()?.id;
+    if (this.submitted() && selectedTaskId) {
+      const state = this.submissionSyncState(selectedTaskId);
+      if (state !== undefined) {
+        this.submissionResult.set(state.state);
+        return;
+      }
+      if (previousTaskIds.has(selectedTaskId)) {
+        this.submissionResult.set('confirmed');
+        this.saved.set('Submitted for office review');
+      }
+    }
+    if (
+      [...previousTaskIds].some((taskId) => this.submissionSyncState(taskId) === undefined) &&
+      this.offline.online()
+    )
+      await this.refreshAuthoritativeVisit();
+  }
+
+  private async refreshAuthoritativeVisit(): Promise<void> {
+    if (!this.offline.online()) return;
+    try {
+      const refreshed = this.guestToken
+        ? (await this.api.guestVisit(this.guestToken)).visit
+        : (await this.api.getVisit(this.organisationId, this.visitId)).visit;
+      const findingsPending =
+        (await this.offline.visitFindingsSyncState(refreshed.id)) !== undefined;
+      const mergedVisit = findingsPending
+        ? { ...refreshed, findings: this.visit()?.findings ?? refreshed.findings }
+        : refreshed;
+      this.visit.set(mergedVisit);
+      await this.refreshSubmissionSyncStates(mergedVisit);
+      await this.offline.updateCachedVisit(mergedVisit, this.guestToken || undefined);
+    } catch {
+      // The outbox mutation was server-confirmed; a later job refresh can update the local summary.
+    }
   }
 
   private saveBlob(blob: Blob, filename: string): void {

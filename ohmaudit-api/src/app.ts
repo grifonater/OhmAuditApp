@@ -731,15 +731,59 @@ const syncInput = z
 const guestIdentityInput = z.object({ displayName: z.string().trim().min(2).max(160) }).strict();
 const syncMaximumBytes = 512 * 1024;
 const guestIdentityMaximumBytes = 4 * 1024;
-const defectSubmissionInput = z.object({
+export const defectSubmissionInput = z.object({
   assetId: z.uuid().optional(),
-  clientFindingId: z.uuid().optional(),
+  clientFindingId: z
+    .union([
+      z.uuid(),
+      z
+        .string()
+        .regex(
+          /^automatic-rcd-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
+        ),
+    ])
+    .optional(),
   category: z.enum(['ADVICE', 'NOTE', 'FAULT', 'CONDITION']).default('FAULT'),
   title: z.string().trim().min(2).max(200),
   description: z.string().max(5000).optional(),
   severity: z.enum(['ADVISORY', 'MINOR', 'MAJOR', 'DANGEROUS']),
   photoMediaIds: z.array(z.uuid()).max(50).optional(),
 });
+const visitFindingSchema = z
+  .object({
+    clientFindingId: z.uuid(),
+    title: z.string().trim().min(1).max(200),
+    description: z.string().max(5000).optional(),
+    category: z.enum(['ADVICE', 'NOTE', 'FAULT', 'CONDITION']),
+    severity: z.enum(['ADVISORY', 'MINOR', 'MAJOR', 'DANGEROUS']),
+    status: z.enum(['OPEN', 'ACKNOWLEDGED', 'RESOLVED', 'DISMISSED']),
+    photoMediaIds: z.array(z.uuid()).max(50).default([]),
+  })
+  .strict();
+export const visitFindingsInput = z
+  .object({
+    findings: z
+      .array(visitFindingSchema)
+      .max(100)
+      .refine(
+        (findings) =>
+          new Set(findings.map(({ clientFindingId }) => clientFindingId)).size === findings.length,
+        { message: 'Each finding must have a unique clientFindingId.' },
+      ),
+  })
+  .strict();
+export const inspectionStatusFilterInput = z
+  .enum([
+    'DRAFT',
+    'IN_PROGRESS',
+    'SUBMITTED',
+    'UNDER_REVIEW',
+    'APPROVED',
+    'REJECTED',
+    'SUPERSEDED',
+    'AWAITING_REVIEW',
+  ])
+  .optional();
 const inspectionSubmissionInput = z.object({
   data: z.record(z.string(), z.unknown()),
   validation: z.record(z.string(), z.unknown()).default({}),
@@ -1166,6 +1210,76 @@ function mediaWriteCapability(
   if (entityType === 'Site') return 'sites.manage';
   if (entityType === 'Inspection') return 'inspections.perform';
   return 'assets.manage';
+}
+
+async function uploadVisitFindingImage(
+  context: Context<AppEnvironment>,
+  environment: ReturnType<typeof parseEnvironment>,
+  prisma: ReturnType<typeof prismaFor>,
+  organisationId: string,
+  visitId: string,
+  actorUserId?: string,
+) {
+  if (environment.MEDIA_BUCKET === undefined)
+    throw new DomainError('MEDIA_STORAGE_UNAVAILABLE', 'Media storage is not configured.', 503);
+  const mimeType = z
+    .enum(['image/jpeg', 'image/png', 'image/webp'])
+    .parse(context.req.header('content-type'));
+  const size = Number(
+    context.req.header('x-file-size') ?? context.req.header('content-length') ?? 0,
+  );
+  if (!Number.isSafeInteger(size) || size < 1 || size > 2_000_000)
+    throw new DomainError('MEDIA_SIZE_INVALID', 'Images must be 2 MB or smaller.', 422);
+  const findingId = z.uuid().parse(context.req.param('findingId'));
+  const uploadId = z.uuid().parse(context.req.query('uploadId'));
+  const description = z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .default('Job finding evidence')
+    .parse(context.req.query('description'));
+  const uploadTag = `offline-upload:${uploadId}`;
+  const findingTag = `finding:${findingId}`;
+  const existing = await prisma.media.findFirst({
+    where: { organisationId, entityType: 'Visit', entityId: visitId, tags: { has: uploadTag } },
+  });
+  const existingFindingTags = existing?.tags.filter((tag) => tag.startsWith('finding:')) ?? [];
+  if (
+    existing !== null &&
+    (existingFindingTags.length !== 1 || existingFindingTags[0] !== findingTag)
+  )
+    throw new DomainError(
+      'VISIT_FINDING_UPLOAD_CONFLICT',
+      'This upload ID has already been used for another finding.',
+      409,
+    );
+  if (existing?.status === 'AVAILABLE') return context.json({ media: existing }, 200);
+  const content = await context.req.arrayBuffer();
+  if (content.byteLength !== size)
+    throw new DomainError('MEDIA_SIZE_INVALID', 'The image size does not match the upload.', 422);
+  const portfolio = new PortfolioService(prisma);
+  const media =
+    existing ??
+    (await portfolio.registerMedia(organisationId, actorUserId, {
+      entityType: 'Visit',
+      entityId: visitId,
+      category: 'visit-finding',
+      caption: description,
+      tags: ['finding-evidence', findingTag, uploadTag],
+      mimeType,
+      size,
+    }));
+  if (media.mimeType !== mimeType || media.size !== size)
+    throw new DomainError(
+      'VISIT_FINDING_UPLOAD_CONFLICT',
+      'This upload ID has already been used for a different image.',
+      409,
+    );
+  await environment.MEDIA_BUCKET.put(media.storageKey, content, {
+    httpMetadata: { contentType: mimeType },
+  });
+  return context.json({ media: await portfolio.markMediaAvailable(media.id) }, 201);
 }
 
 interface ReportMediaImage {
@@ -2573,6 +2687,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const portfolio = new PortfolioService(prismaFor(environment));
     const mediaId = z.uuid().parse(context.req.param('mediaId'));
     const media = await portfolio.getMedia(organisationId, mediaId);
+    if (media.entityType === 'Visit')
+      throw new DomainError(
+        'INVALID_MEDIA_ENTITY',
+        'Job finding images must use the dedicated finding image endpoint.',
+        422,
+      );
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       organisationId,
@@ -2707,6 +2827,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         context.get('actor'),
         organisationId,
       );
+    else if (media.entityType === 'Visit')
+      await identityService(environment, options).requireAnyCapability(
+        context.get('actor'),
+        organisationId,
+        ['inspections.perform', 'inspections.review', 'inspections.approve'],
+      );
     else if (media.entityType === 'Customer')
       await identityService(environment, options).requireMembership(
         context.get('actor'),
@@ -2753,6 +2879,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const portfolio = new PortfolioService(prismaFor(environment));
     const mediaId = z.uuid().parse(context.req.param('mediaId'));
     const existingMedia = await portfolio.getMedia(organisationId, mediaId);
+    if (existingMedia.entityType === 'Visit')
+      throw new DomainError(
+        'INVALID_MEDIA_ENTITY',
+        'Job finding images must use the dedicated finding image endpoint.',
+        422,
+      );
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       organisationId,
@@ -3118,6 +3250,72 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         context.get('correlationId'),
       ),
     });
+  });
+  app.get('/api/v1/visits/:visitId/findings', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    return context.json({
+      findings: await new VisitService(prismaFor(environment)).listFindings(
+        organisationId,
+        visitId,
+      ),
+    });
+  });
+  app.put('/api/v1/visits/:visitId/findings', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const input = visitFindingsInput.parse(await context.req.json());
+    return context.json({
+      findings: await new VisitService(prismaFor(environment)).upsertFindings(
+        organisationId,
+        visitId,
+        input.findings,
+      ),
+    });
+  });
+  app.post('/api/v1/visits/:visitId/findings/:findingId/images', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const prisma = prismaFor(environment);
+    await new VisitService(prisma).listFindings(organisationId, visitId);
+    return uploadVisitFindingImage(context, environment, prisma, organisationId, visitId, user.id);
+  });
+  app.delete('/api/v1/visits/:visitId/findings/:findingId/images/:mediaId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'inspections.perform',
+    );
+    const media = await new VisitService(prismaFor(environment)).deleteFindingMedia(
+      organisationId,
+      visitId,
+      z.uuid().parse(context.req.param('findingId')),
+      z.uuid().parse(context.req.param('mediaId')),
+    );
+    if (environment.MEDIA_BUCKET !== undefined)
+      await environment.MEDIA_BUCKET.delete(media.storageKey);
+    return context.json({ deleted: true });
   });
   app.get('/api/v1/visits/:visitId/rams', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -3913,6 +4111,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       );
       await new EntitlementService(prisma).requireModule(organisationId, 'ev-charging');
     }
+    if (input.operation === 'UPSERT_VISIT_FINDINGS') {
+      const payload = visitFindingsInput.parse(input.payload);
+      return context.json({
+        mutation: await visitService.upsertFindingsSync(
+          organisationId,
+          context.req.param('visitId'),
+          input.clientMutationId,
+          input.entityType,
+          payload,
+        ),
+      });
+    }
     const replay = await visitService.syncReplay(
       organisationId,
       context.req.param('visitId'),
@@ -4009,6 +4219,47 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       identity: updated.identity,
       visit: await service.guestPack(context.req.param('token')),
     });
+  });
+  app.get('/api/v1/guest/visits/:token/findings', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestVisitScope(context.req.param('token'));
+    return context.json({
+      findings: await new VisitService(prisma).listFindings(visit.organisationId, visit.id),
+    });
+  });
+  app.put('/api/v1/guest/visits/:token/findings', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestVisitScope(context.req.param('token'));
+    const input = visitFindingsInput.parse(await context.req.json());
+    return context.json({
+      findings: await new VisitService(prisma).upsertFindings(
+        visit.organisationId,
+        visit.id,
+        input.findings,
+      ),
+    });
+  });
+  app.post('/api/v1/guest/visits/:token/findings/:findingId/images', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestVisitScope(context.req.param('token'));
+    return uploadVisitFindingImage(context, environment, prisma, visit.organisationId, visit.id);
+  });
+  app.delete('/api/v1/guest/visits/:token/findings/:findingId/images/:mediaId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const prisma = prismaFor(environment);
+    const visit = await new VisitService(prisma).guestVisitScope(context.req.param('token'));
+    const media = await new VisitService(prisma).deleteFindingMedia(
+      visit.organisationId,
+      visit.id,
+      z.uuid().parse(context.req.param('findingId')),
+      z.uuid().parse(context.req.param('mediaId')),
+    );
+    if (environment.MEDIA_BUCKET !== undefined)
+      await environment.MEDIA_BUCKET.delete(media.storageKey);
+    return context.json({ deleted: true });
   });
   app.get('/api/v1/guest/visits/:token/rams', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -4298,6 +4549,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           addEvChargerPayloadInput.parse(input.payload),
           undefined,
           context.get('correlationId'),
+        ),
+      });
+    }
+    if (input.operation === 'UPSERT_VISIT_FINDINGS') {
+      const payload = visitFindingsInput.parse(input.payload);
+      return context.json({
+        mutation: await visitService.upsertFindingsSync(
+          visit.organisationId,
+          visit.id,
+          input.clientMutationId,
+          input.entityType,
+          payload,
         ),
       });
     }
@@ -4681,7 +4944,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     return context.json({
       inspections: await new InspectionService(prismaFor(environment)).list(
         organisationId,
-        context.req.query('status'),
+        inspectionStatusFilterInput.parse(context.req.query('status')),
       ),
     });
   });
@@ -5669,7 +5932,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const [visit, visitDocuments, brand, accreditation] = await Promise.all([
       prisma.visit.findFirst({
         where: { id: visitId, organisationId },
-        include: { customer: true, site: true },
+        include: { customer: true, site: true, findings: true },
       }),
       prisma.document.findMany({
         where: {
@@ -5745,13 +6008,14 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       mediaImageForReport(environment, prisma, organisationId, brand?.logoMediaId),
       mediaImageForReport(environment, prisma, organisationId, visit.customer.logoMediaId),
     ]);
-    const reportFindings = documents
-      .flatMap((document) => {
+    const reportFindings = [
+      ...visit.findings.map((finding) => ({ finding, inspection: null })),
+      ...documents.flatMap((document) => {
         const inspection = document.inspectionRevision?.inspection;
         if (inspection === undefined) return [];
         return inspection.defects.map((finding) => ({ finding, inspection }));
-      })
-      .slice(0, 50);
+      }),
+    ].slice(0, 50);
     let remainingFindingImages = 30;
     const findings = await Promise.all(
       reportFindings.map(async ({ finding, inspection }) => {
@@ -5771,9 +6035,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         ).filter((image): image is ReportMediaImage => image !== undefined);
         return {
           id: finding.id,
-          inspectionId: inspection.id,
-          inspectionType: inspection.inspectionType,
-          ...(inspection.asset === null ? {} : { assetName: inspection.asset.displayName }),
+          ...(inspection === null
+            ? { inspectionType: 'Job finding' }
+            : {
+                inspectionId: inspection.id,
+                inspectionType: inspection.inspectionType,
+                ...(inspection.asset === null ? {} : { assetName: inspection.asset.displayName }),
+              }),
           category: finding.category,
           severity: finding.severity,
           status: finding.status,

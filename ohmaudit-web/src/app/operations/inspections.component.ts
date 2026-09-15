@@ -40,7 +40,7 @@ export class InspectionsComponent {
   protected readonly inspections = signal<InspectionSummary[]>([]);
   protected readonly selected = signal<InspectionSummary | undefined>(undefined);
   protected readonly expandedSessionId = signal('');
-  protected readonly filter = signal('SUBMITTED');
+  protected readonly filter = signal('AWAITING_REVIEW');
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly success = signal('');

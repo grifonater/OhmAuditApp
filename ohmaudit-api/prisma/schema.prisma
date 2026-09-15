@@ -216,6 +216,7 @@ model Organisation {
   inspectionDrafts              InspectionDraft[]
   inspectionRevisions           InspectionRevision[]
   defects                       Defect[]
+  visitFindings                 VisitFinding[]
   customFieldDefinitions        CustomFieldDefinition[]
   reportTemplates               ReportTemplate[]
   syncMutations                 SyncMutation[]
@@ -690,6 +691,7 @@ model Visit {
   tasks                VisitTask[]
   guestTokens          GuestAccessToken[]
   inspections          Inspection[]
+  findings             VisitFinding[]
   syncMutations        SyncMutation[]
   rams                 RamsVisit[]
   ramsAcknowledgements RamsAcknowledgement[]
@@ -1005,6 +1007,28 @@ model Defect {
 
   @@index([organisationId, status, severity])
   @@map("defects")
+}
+
+model VisitFinding {
+  id              String         @id @default(uuid()) @db.Uuid
+  organisationId  String         @map("organisation_id") @db.Uuid
+  visitId         String         @map("visit_id") @db.Uuid
+  clientFindingId String         @map("client_finding_id") @db.Uuid
+  title           String
+  description     String?
+  category        DefectCategory
+  severity        DefectSeverity
+  status          DefectStatus
+  photoMediaIds   Json           @default("[]") @map("photo_media_ids")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  organisation    Organisation   @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  visit           Visit          @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@unique([visitId, clientFindingId])
+  @@index([organisationId, status, severity])
+  @@index([organisationId, visitId])
+  @@map("visit_findings")
 }
 
 model CustomFieldDefinition {

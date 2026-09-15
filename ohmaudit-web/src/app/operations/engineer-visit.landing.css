@@ -53,7 +53,7 @@
   z-index: 20;
   order: 2;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.25rem;
   padding: 0.3rem;
   border: 1px solid var(--oa-line);
@@ -61,6 +61,79 @@
   background: rgb(255 255 255 / 96%);
   box-shadow: var(--oa-shadow-md);
   backdrop-filter: blur(0.8rem);
+}
+
+.visit-findings-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.visit-findings-intro {
+  padding: 0.9rem 1rem;
+  border-color: color-mix(in srgb, var(--oa-teal-500) 40%, var(--oa-line));
+  background: var(--oa-teal-50);
+}
+
+.visit-findings-intro p,
+.visit-finding-photo-row small,
+.visit-findings-savebar small {
+  margin: 0.2rem 0 0;
+  color: var(--oa-ink-secondary);
+}
+
+.visit-finding-entry {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.visit-finding-entry .finding-heading > div,
+.visit-finding-photo-row > div:first-child,
+.visit-findings-savebar > span {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.visit-finding-photo-row,
+.visit-findings-savebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.visit-findings-savebar {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 15;
+  padding: 0.85rem;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.75rem;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: var(--oa-shadow-md);
+  backdrop-filter: blur(0.8rem);
+}
+
+.visit-findings-empty {
+  padding: 1.5rem;
+}
+
+@media (max-width: 30rem) {
+  .engineer-workspace-nav button {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+    font-size: 0.64rem;
+  }
+
+  .engineer-workspace-nav button span {
+    margin: 0 auto;
+  }
+
+  .visit-findings-savebar .button,
+  .visit-finding-photo-row .data-plate-actions {
+    width: 100%;
+  }
 }
 
 .engineer-workspace-nav button {

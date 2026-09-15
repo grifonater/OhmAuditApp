@@ -482,7 +482,11 @@
               <article
                 class="card task-card"
                 [class.recent-task]="recentlySubmittedTaskId() === task.id"
-                [class.pending-sync]="pendingAddTaskIds().has(task.id)"
+                [class.pending-sync]="
+                  pendingAddTaskIds().has(task.id) ||
+                  submissionSyncState(task.id)?.state === 'pending'
+                "
+                [class.submission-failed]="submissionSyncState(task.id)?.state === 'failed'"
               >
                 <div class="section-heading">
                   <div>
@@ -501,27 +505,59 @@
                   <span>
                     @if (pendingAddTaskIds().has(task.id)) {
                       <span class="badge warning">Pending sync</span>
+                    } @else if (submissionSyncState(task.id); as syncState) {
+                      <span class="badge warning" [class.danger]="syncState.state === 'failed'">
+                        {{ syncState.state === 'failed' ? 'Submission failed' : 'Pending sync' }}
+                      </span>
                     } @else {
                       <span
                         class="badge"
                         [class.success]="task.status === 'COMPLETED' || task.status === 'SUBMITTED'"
-                        >{{ task.status }}</span
+                        >{{
+                          task.status === 'SUBMITTED' ? 'Submitted for office review' : task.status
+                        }}</span
                       >
                     }
                   </span>
                 </div>
+                @if (submissionSyncState(task.id); as syncState) {
+                  <div class="submission-sync-detail" role="status">
+                    <strong>{{
+                      syncState.state === 'failed' ? 'Submission failed' : 'Pending sync'
+                    }}</strong>
+                    <span>
+                      {{
+                        syncState.lastError ||
+                          'Saved on this device and waiting for an internet connection.'
+                      }}
+                    </span>
+                    @if (syncState.attempts > 0) {
+                      <small>Attempts: {{ syncState.attempts }}</small>
+                    }
+                    <button
+                      class="button secondary touch-button"
+                      type="button"
+                      [disabled]="busy() || !offline.online()"
+                      (click)="retrySubmission(task.id)"
+                    >
+                      {{ offline.online() ? 'Retry submission' : 'Reconnect to retry' }}
+                    </button>
+                  </div>
+                }
                 <button
                   class="button primary touch-button"
                   type="button"
-                  [disabled]="guestIdentityRequired()"
+                  [disabled]="guestIdentityRequired() || submissionSyncState(task.id) !== undefined"
                   (click)="openTask(task)"
                 >
                   {{
-                    task.status === 'SUBMITTED' || task.status === 'COMPLETED'
-                      ? 'View submitted inspection'
-                      : task.inspection
-                        ? 'Continue inspection'
-                        : 'Start inspection'
+                    submissionSyncState(task.id)
+                      ? 'Submission awaiting sync'
+                      : task.status === 'SUBMITTED' || task.status === 'COMPLETED'
+                        ? 'View submitted inspection'
+                        : task.inspection
+                          ? 'Continue inspection'
+                          : 'Start inspection'
                   }}
                   →
                 </button>
@@ -529,13 +565,220 @@
             }
           </div>
         }
+        @if (workspaceStep() === 'findings') {
+          <section class="visit-findings-workspace" aria-labelledby="visit-findings-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Whole-job record</p>
+                <h2 id="visit-findings-title">Job findings</h2>
+                <p>
+                  Record advice, notes, faults and conditions that apply to the whole visit rather
+                  than one inspection. These appear in the combined inspection report.
+                </p>
+              </div>
+              <span
+                class="badge"
+                [class.warning]="visitFindingsSyncState() === 'pending'"
+                [class.danger]="visitFindingsSyncState() === 'failed'"
+              >
+                {{
+                  visitFindingsSyncState() === 'confirmed'
+                    ? 'Saved'
+                    : visitFindingsSyncState() === 'failed'
+                      ? 'Sync failed'
+                      : 'Unsaved / pending sync'
+                }}
+              </span>
+            </div>
+            <article class="card visit-findings-intro">
+              <strong>Keep inspection findings with their inspection</strong>
+              <p>
+                Use this section only for job-wide observations, access issues, general site
+                conditions or advice that should sit across the full visit report.
+              </p>
+            </article>
+            <div class="finding-add" aria-label="Add job finding">
+              @for (category of findingCategories; track category) {
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  (click)="addVisitFinding(category)"
+                >
+                  + {{ category }}
+                </button>
+              }
+            </div>
+            <div class="finding-list">
+              @for (
+                finding of visitFindings.controls;
+                track finding.controls.clientFindingId.value;
+                let index = $index
+              ) {
+                <article class="card finding-entry visit-finding-entry" [formGroup]="finding">
+                  <div class="finding-heading">
+                    <div>
+                      <span class="badge">Job finding</span>
+                      <strong>Finding {{ index + 1 }}</strong>
+                    </div>
+                    <button
+                      class="button danger compact"
+                      type="button"
+                      (click)="removeVisitFinding(index)"
+                    >
+                      Remove finding
+                    </button>
+                  </div>
+                  <div class="form-grid">
+                    <label class="field"
+                      >Category<select formControlName="category">
+                        @for (category of findingCategories; track category) {
+                          <option [value]="category">{{ category }}</option>
+                        }
+                      </select></label
+                    >
+                    <label class="field"
+                      >Severity<select formControlName="severity">
+                        <option>ADVISORY</option>
+                        <option>MINOR</option>
+                        <option>MAJOR</option>
+                        <option>DANGEROUS</option>
+                      </select></label
+                    >
+                    <label class="field full"
+                      >Title<input
+                        formControlName="title"
+                        maxlength="200"
+                        placeholder="e.g. Restricted access to roof plant"
+                    /></label>
+                  </div>
+                  <label class="field"
+                    >Description <span class="optional">Optional</span
+                    ><textarea
+                      rows="4"
+                      maxlength="5000"
+                      formControlName="description"
+                      placeholder="Add context, action taken, or recommendations…"
+                    ></textarea>
+                  </label>
+                  <div class="visit-finding-photo-row">
+                    <div>
+                      <strong>Photos</strong>
+                      <small>Optional evidence for this job finding only.</small>
+                    </div>
+                    <div class="data-plate-actions">
+                      <label class="button secondary touch-button fault-photo-button">
+                        {{ photographing() ? 'Saving…' : 'Upload photo'
+                        }}<input
+                          hidden
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          [disabled]="photographing()"
+                          (change)="
+                            captureVisitFindingPhoto($event, finding.controls.clientFindingId.value)
+                          "
+                        />
+                      </label>
+                      <label class="button touch-button fault-photo-button">
+                        {{ photographing() ? 'Saving…' : 'Take photo'
+                        }}<input
+                          hidden
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          capture="environment"
+                          [disabled]="photographing()"
+                          (change)="
+                            captureVisitFindingPhoto($event, finding.controls.clientFindingId.value)
+                          "
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  @if (visitPhotosForFinding(finding.controls.clientFindingId.value).length) {
+                    <div
+                      class="photo-gallery"
+                      [attr.aria-label]="'Photos for job finding ' + (index + 1)"
+                    >
+                      @for (
+                        photo of visitPhotosForFinding(finding.controls.clientFindingId.value);
+                        track photo.id
+                      ) {
+                        <figure>
+                          <button
+                            type="button"
+                            class="photo-thumb"
+                            (click)="viewedVisitFindingPhoto.set(photo)"
+                          >
+                            <img [src]="photo.url" [alt]="photo.description" />
+                          </button>
+                          <button
+                            type="button"
+                            class="photo-remove"
+                            (click)="removeVisitFindingPhoto(photo)"
+                          >
+                            Remove
+                          </button>
+                        </figure>
+                      }
+                    </div>
+                  }
+                </article>
+              } @empty {
+                <article class="card empty-state visit-findings-empty">
+                  <h3>No job findings recorded</h3>
+                  <p>Add an item only when it applies to the visit as a whole.</p>
+                </article>
+              }
+            </div>
+            <div class="visit-findings-savebar">
+              <span>
+                <strong>{{ visitFindings.length }} job finding(s)</strong>
+                <small>Changes are sent only when you press Save job findings.</small>
+              </span>
+              <button
+                class="button primary touch-button"
+                type="button"
+                [disabled]="visitFindings.invalid || visitFindingsSaving()"
+                (click)="saveVisitFindings()"
+              >
+                @if (visitFindingsSaving()) {
+                  <span class="oa-spinner" aria-hidden="true"></span>
+                }
+                {{
+                  visitFindingsSaving()
+                    ? 'Saving…'
+                    : offline.online()
+                      ? 'Save job findings'
+                      : 'Save job findings for sync'
+                }}
+              </button>
+            </div>
+          </section>
+        }
       </section>
     } @else if (selectedTask(); as task) {
       @if (submitted()) {
         <section class="card inspection-step empty-state">
           <span class="empty-icon">✓</span>
-          <h2>Inspection saved</h2>
+          <h2>
+            {{
+              submissionResult() === 'confirmed'
+                ? 'Submitted for office review'
+                : submissionResult() === 'failed'
+                  ? 'Submission failed'
+                  : 'Pending sync'
+            }}
+          </h2>
           <p>{{ saved() }}</p>
+          @if (submissionResult() !== 'confirmed') {
+            <button
+              class="button secondary touch-button"
+              type="button"
+              [disabled]="busy() || !offline.online()"
+              (click)="retrySubmission(task.id)"
+            >
+              {{ offline.online() ? 'Retry submission' : 'Reconnect to retry' }}
+            </button>
+          }
           <button class="button primary touch-button" type="button" (click)="backToTasks()">
             Back to job tasks
           </button>
@@ -1509,6 +1752,35 @@
           Remove photo
         </button>
         <button class="button secondary" type="button" (click)="viewedPhoto.set(undefined)">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (viewedVisitFindingPhoto(); as photo) {
+  <div
+    class="photo-viewer"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Job finding photo viewer"
+    tabindex="0"
+    (click)="viewedVisitFindingPhoto.set(undefined)"
+    (keydown.escape)="viewedVisitFindingPhoto.set(undefined)"
+  >
+    <div tabindex="0" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
+      <img [src]="photo.url" [alt]="photo.description" />
+      <p>{{ photo.description }}</p>
+      <div class="form-actions">
+        <button class="button danger" type="button" (click)="removeVisitFindingPhoto(photo)">
+          Remove photo
+        </button>
+        <button
+          class="button secondary"
+          type="button"
+          (click)="viewedVisitFindingPhoto.set(undefined)"
+        >
           Close
         </button>
       </div>

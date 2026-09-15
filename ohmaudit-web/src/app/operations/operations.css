@@ -254,6 +254,24 @@
   font-weight: 800;
   text-transform: uppercase;
 }
+.task-card.pending-sync {
+  border-color: var(--oa-amber-500);
+}
+.task-card.submission-failed {
+  border-color: var(--oa-danger-500, #c53b3b);
+}
+.submission-sync-detail {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border-radius: 0.6rem;
+  background: var(--oa-amber-50, #fff8e6);
+  color: var(--oa-ink-secondary);
+}
+.submission-sync-detail strong {
+  color: var(--oa-ink);
+}
 .task-card button {
   width: 100%;
 }

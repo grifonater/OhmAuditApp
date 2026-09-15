@@ -8,6 +8,7 @@ import {
 import {
   applyDataPlateCandidate,
   attachFindingPhotoIds,
+  attachVisitFindingPhotoIds,
 } from '../src/app/core/offline-visit.helpers';
 
 describe('EV visit helpers', () => {
@@ -25,8 +26,28 @@ describe('EV visit helpers', () => {
   it('restores valid engineer workspace steps and defaults invalid URLs to overview', () => {
     expect(engineerWorkspaceStep('rams')).toBe('rams');
     expect(engineerWorkspaceStep('inspections')).toBe('inspections');
+    expect(engineerWorkspaceStep('findings')).toBe('findings');
     expect(engineerWorkspaceStep('unknown')).toBe('overview');
     expect(engineerWorkspaceStep(null)).toBe('overview');
+  });
+
+  it('maps uploaded visit photos to only their job-level finding', () => {
+    expect(
+      attachVisitFindingPhotoIds(
+        {
+          findings: [
+            { clientFindingId: 'finding-a', photoMediaIds: ['existing-a'] },
+            { clientFindingId: 'finding-b', photoMediaIds: [] },
+          ],
+        },
+        { 'finding-a': ['uploaded-a'], 'finding-b': ['uploaded-b'] },
+      ),
+    ).toEqual({
+      findings: [
+        { clientFindingId: 'finding-a', photoMediaIds: ['existing-a', 'uploaded-a'] },
+        { clientFindingId: 'finding-b', photoMediaIds: ['uploaded-b'] },
+      ],
+    });
   });
 
   it('assigns a sole supply only when a connector has no explicit mapping', () => {

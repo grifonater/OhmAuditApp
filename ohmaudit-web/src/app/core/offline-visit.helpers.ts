@@ -161,6 +161,73 @@ export interface FindingPhotoMappings {
   legacyUnassigned: string[];
 }
 
+export function attachVisitFindingPhotoIds(
+  payload: Record<string, unknown>,
+  photoMediaIdsByFinding: Record<string, string[]>,
+): Record<string, unknown> {
+  if (!Array.isArray(payload['findings'])) return payload;
+  const findings = payload['findings'] as unknown[];
+  return {
+    ...payload,
+    findings: findings.map((value) => {
+      if (typeof value !== 'object' || value === null) return value;
+      const finding = value as Record<string, unknown>;
+      const findingId = finding['clientFindingId'];
+      if (typeof findingId !== 'string') return finding;
+      const existing = Array.isArray(finding['photoMediaIds'])
+        ? finding['photoMediaIds'].filter((id): id is string => typeof id === 'string')
+        : [];
+      return {
+        ...finding,
+        photoMediaIds: [...new Set([...existing, ...(photoMediaIdsByFinding[findingId] ?? [])])],
+      };
+    }),
+  };
+}
+
+export interface SubmissionSyncState {
+  taskId: string;
+  inspectionId?: string;
+  attempts: number;
+  lastAttemptAt?: string;
+  lastError?: string;
+  state: 'pending' | 'failed';
+}
+
+export function buildSubmissionSyncStates(
+  tasks: Array<{ id: string; inspection?: { id: string } }>,
+  mutations: Array<{
+    taskId?: string;
+    operation: string;
+    payload: Record<string, unknown>;
+    attempts: number;
+    lastAttemptAt?: string;
+    lastError?: string;
+  }>,
+): SubmissionSyncState[] {
+  return mutations
+    .filter(({ operation }) => operation === 'SUBMIT_INSPECTION')
+    .map((mutation) => {
+      const inspectionId = mutation.payload['inspectionId'];
+      const taskId =
+        mutation.taskId ??
+        (typeof inspectionId === 'string'
+          ? tasks.find((task) => task.inspection?.id === inspectionId)?.id
+          : undefined);
+      if (taskId === undefined) return undefined;
+      return {
+        taskId,
+        ...(typeof inspectionId === 'string' ? { inspectionId } : {}),
+        attempts: mutation.attempts,
+        ...(mutation.lastAttemptAt === undefined ? {} : { lastAttemptAt: mutation.lastAttemptAt }),
+        ...(mutation.lastError === undefined ? {} : { lastError: mutation.lastError }),
+        state:
+          mutation.attempts > 0 || mutation.lastError ? ('failed' as const) : ('pending' as const),
+      };
+    })
+    .filter((state): state is SubmissionSyncState => state !== undefined);
+}
+
 export function attachFindingPhotoIds(
   submission: Record<string, unknown>,
   mappings: FindingPhotoMappings,

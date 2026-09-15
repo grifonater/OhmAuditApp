@@ -623,8 +623,27 @@ export interface VisitSummary {
     inductionInformation?: string;
   };
   tasks: VisitTask[];
+  findings: VisitFinding[];
   rams?: EngineerRamsRecord[];
 }
+export type VisitFindingCategory = 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
+export type VisitFindingSeverity = 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
+export interface VisitFinding {
+  id?: string;
+  clientFindingId: string;
+  category: VisitFindingCategory;
+  title: string;
+  description?: string;
+  severity: VisitFindingSeverity;
+  status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'DISMISSED';
+  photoMediaIds: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+export type VisitFindingInput = Pick<
+  VisitFinding,
+  'clientFindingId' | 'category' | 'title' | 'severity' | 'photoMediaIds'
+> & { description?: string; status: 'OPEN' };
 export interface VisitTaskInput {
   assetId?: string;
   moduleKey: string;
@@ -668,6 +687,7 @@ export interface VisitMutationResult {
       asset?: AssetSummary & { evChargePoint?: EvChargePoint };
       task?: VisitTask;
       inspection?: InspectionSummary;
+      findings?: VisitFinding[];
       idMap?: Record<string, { local: string; server: string }>;
     };
   };
@@ -2103,6 +2123,45 @@ export class ApiService {
       `/visits/${visitId}?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
+  listVisitFindings(organisationId: string, visitId: string) {
+    return this.request<{ findings: VisitFinding[] }>(
+      `/visits/${encodeURIComponent(visitId)}/findings?organisationId=${encodeURIComponent(organisationId)}`,
+    );
+  }
+  upsertVisitFindings(organisationId: string, visitId: string, findings: VisitFindingInput[]) {
+    return this.request<{ findings: VisitFinding[] }>(
+      `/visits/${encodeURIComponent(visitId)}/findings?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PUT', body: JSON.stringify({ findings }) },
+    );
+  }
+  uploadVisitFindingImage(
+    organisationId: string,
+    visitId: string,
+    findingId: string,
+    image: Blob,
+    uploadId: string,
+    description: string,
+  ) {
+    return this.request<{ media: AssetMedia }>(
+      `/visits/${encodeURIComponent(visitId)}/findings/${encodeURIComponent(findingId)}/images?organisationId=${encodeURIComponent(organisationId)}&uploadId=${encodeURIComponent(uploadId)}&description=${encodeURIComponent(description)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': image.type, 'x-file-size': String(image.size) },
+        body: image,
+      },
+    );
+  }
+  deleteVisitFindingImage(
+    organisationId: string,
+    visitId: string,
+    findingId: string,
+    mediaId: string,
+  ) {
+    return this.request(
+      `/visits/${encodeURIComponent(visitId)}/findings/${encodeURIComponent(findingId)}/images/${encodeURIComponent(mediaId)}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
+    );
+  }
   addVisitTasks(organisationId: string, visitId: string, tasks: VisitTaskInput[]) {
     return this.request<{ tasks: VisitTask[] }>(
       `/visits/${visitId}/tasks?organisationId=${encodeURIComponent(organisationId)}`,
@@ -2214,6 +2273,39 @@ export class ApiService {
   guestVisit(token: string) {
     return this.publicRequest<{ visit: VisitSummary }>(
       `/guest/visits/${encodeURIComponent(token)}`,
+    );
+  }
+  listGuestVisitFindings(token: string) {
+    return this.publicRequest<{ findings: VisitFinding[] }>(
+      `/guest/visits/${encodeURIComponent(token)}/findings`,
+    );
+  }
+  upsertGuestVisitFindings(token: string, findings: VisitFindingInput[]) {
+    return this.publicRequest<{ findings: VisitFinding[] }>(
+      `/guest/visits/${encodeURIComponent(token)}/findings`,
+      { method: 'PUT', body: JSON.stringify({ findings }) },
+    );
+  }
+  uploadGuestVisitFindingImage(
+    token: string,
+    findingId: string,
+    image: Blob,
+    uploadId: string,
+    description: string,
+  ) {
+    return this.publicRequest<{ media: AssetMedia }>(
+      `/guest/visits/${encodeURIComponent(token)}/findings/${encodeURIComponent(findingId)}/images?uploadId=${encodeURIComponent(uploadId)}&description=${encodeURIComponent(description)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': image.type, 'x-file-size': String(image.size) },
+        body: image,
+      },
+    );
+  }
+  deleteGuestVisitFindingImage(token: string, findingId: string, mediaId: string) {
+    return this.publicRequest(
+      `/guest/visits/${encodeURIComponent(token)}/findings/${encodeURIComponent(findingId)}/images/${encodeURIComponent(mediaId)}`,
+      { method: 'DELETE' },
     );
   }
   setGuestVisitIdentity(token: string, displayName: string) {

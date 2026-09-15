@@ -6,6 +6,8 @@ import {
   type InspectionSummary,
   type OrganisationEquipment,
   type VisitSummary,
+  type VisitFinding,
+  type VisitFindingInput,
   type VisitTask,
 } from './api.service';
 import { AuthService } from './auth.service';
@@ -15,6 +17,8 @@ import {
 } from '../operations/thermal-inspection.helpers';
 import {
   authenticatedPackIsReadyForOwner,
+  attachVisitFindingPhotoIds,
+  buildSubmissionSyncStates,
   buildOptimisticEvTask,
   canRestoreLegacyPack,
   attachFindingPhotoIds,
@@ -23,6 +27,7 @@ import {
   offlineRecordIsVisible,
   remapLocalIds,
   unsupportedOfflineModule,
+  type SubmissionSyncState,
   type EvChargerInput,
   type LocalEvChargerIds,
   type VisitIdMap,
@@ -78,6 +83,24 @@ interface OfflinePhoto {
   createdAt: string;
   ownerUserId?: string;
 }
+interface OfflineVisitFindingPhoto {
+  id: string;
+  organisationId: string;
+  visitId: string;
+  findingId: string;
+  guestToken?: string;
+  blob: Blob;
+  mimeType: string;
+  description: string;
+  serverMediaId?: string;
+  pendingDelete?: boolean;
+  createdAt: string;
+  ownerUserId?: string;
+}
+export type OwnedVisitFindingPhoto = Pick<
+  OfflineVisitFindingPhoto,
+  'id' | 'findingId' | 'description' | 'serverMediaId' | 'createdAt'
+>;
 export type OwnedOfflinePhoto = Pick<
   OfflinePhoto,
   'id' | 'inspectionId' | 'kind' | 'findingId' | 'description' | 'serverMediaId' | 'createdAt'
@@ -119,6 +142,7 @@ class OhmAuditOfflineDatabase extends Dexie {
   assetImages!: Table<StoredAssetImage, string>;
   thermalContexts!: Table<StoredThermalContext, string>;
   thermalImages!: Table<OfflineThermalImage, string>;
+  visitFindingPhotos!: Table<OfflineVisitFindingPhoto, string>;
   constructor() {
     super('ohmaudit-offline');
     this.version(1).stores({
@@ -264,6 +288,18 @@ class OhmAuditOfflineDatabase extends Dexie {
       thermalContexts: 'inspectionId, ownerUserId, guestToken, cachedAt',
       thermalImages: 'id, inspectionId, visitId, organisationId, ownerUserId, createdAt',
     });
+    this.version(13).stores({
+      visitPacks: 'visitId, organisationId, guestToken, ownerUserId, ready, downloadedAt',
+      drafts: 'inspectionId, visitId, organisationId, ownerUserId, guestToken, updatedAt',
+      outbox: 'id, visitId, organisationId, ownerUserId, operation, createdAt',
+      photos:
+        'id, visitId, inspectionId, organisationId, ownerUserId, assetId, kind, findingId, createdAt',
+      assetImages: 'mediaId, ownerUserId, guestToken, cachedAt',
+      thermalContexts: 'inspectionId, ownerUserId, guestToken, cachedAt',
+      thermalImages: 'id, inspectionId, visitId, organisationId, ownerUserId, createdAt',
+      visitFindingPhotos:
+        'id, visitId, findingId, organisationId, ownerUserId, guestToken, createdAt',
+    });
   }
 }
 
@@ -275,6 +311,7 @@ export class OfflineVisitService {
   readonly online = signal(navigator.onLine);
   readonly syncing = signal(false);
   readonly syncComplete = signal('');
+  readonly outboxVersion = signal(0);
   readonly notificationPermission = signal<NotificationPermission>(
     typeof Notification === 'undefined' ? 'denied' : Notification.permission,
   );
@@ -359,6 +396,58 @@ export class OfflineVisitService {
     const owner = guestToken === undefined ? this.ownerFields() : { guestToken };
     if (stored !== undefined && stored.ready && this.sameOwner(stored, owner))
       await this.database.visitPacks.update(key, { visit });
+  }
+
+  async queueVisitFindings(
+    visit: VisitSummary,
+    findings: VisitFindingInput[],
+    guestToken?: string,
+  ): Promise<void> {
+    const owner = guestToken === undefined ? this.ownerFields() : { guestToken };
+    const packKey = guestToken === undefined ? visit.id : this.guestPackKey(guestToken);
+    const optimisticFindings: VisitFinding[] = findings.map((finding) => ({ ...finding }));
+    const updatedVisit = { ...visit, findings: optimisticFindings };
+    const mutation: OutboxMutation = {
+      id: crypto.randomUUID(),
+      organisationId: visit.organisationId,
+      visitId: visit.id,
+      ...(guestToken === undefined ? {} : { guestToken }),
+      entityType: 'VisitFinding',
+      operation: 'UPSERT_VISIT_FINDINGS',
+      payload: { findings },
+      createdAt: new Date().toISOString(),
+      attempts: 0,
+      ...owner,
+    };
+    await this.database.transaction(
+      'rw',
+      this.database.visitPacks,
+      this.database.outbox,
+      async () => {
+        const pack = await this.database.visitPacks.get(packKey);
+        if (!this.online() && (pack === undefined || !pack.ready || !this.sameOwner(pack, owner)))
+          throw new Error('Download this job before saving job findings offline.');
+        if (pack !== undefined && this.sameOwner(pack, owner))
+          await this.database.visitPacks.update(packKey, { visit: updatedVisit });
+        const superseded = (
+          await this.database.outbox.where('visitId').equals(visit.id).toArray()
+        ).filter(
+          (queued) => queued.operation === 'UPSERT_VISIT_FINDINGS' && this.sameOwner(queued, owner),
+        );
+        await this.database.outbox.bulkDelete(superseded.map(({ id }) => id));
+        await this.database.outbox.put(mutation);
+      },
+    );
+    this.outboxVersion.update((version) => version + 1);
+    if (this.online()) await this.syncOutbox();
+  }
+
+  async visitFindingsSyncState(visitId: string): Promise<'pending' | 'failed' | undefined> {
+    const mutations = (
+      await this.database.outbox.where('visitId').equals(visitId).toArray()
+    ).filter((row) => row.operation === 'UPSERT_VISIT_FINDINGS' && this.canAccessOwned(row));
+    if (mutations.some((row) => row.attempts > 0 || row.lastError)) return 'failed';
+    return mutations.length > 0 ? 'pending' : undefined;
   }
 
   private canAccessPack(pack: StoredVisitPack): boolean {
@@ -465,6 +554,7 @@ export class OfflineVisitService {
       attempts: 0,
       ...this.ownerFields(),
     });
+    this.outboxVersion.update((version) => version + 1);
     if (this.online()) await this.syncOutbox();
   }
   async queueGuest(
@@ -487,6 +577,7 @@ export class OfflineVisitService {
       createdAt: new Date().toISOString(),
       attempts: 0,
     });
+    this.outboxVersion.update((version) => version + 1);
     if (this.online()) await this.syncOutbox();
   }
 
@@ -559,16 +650,13 @@ export class OfflineVisitService {
     return (await this.database.outbox.toArray()).filter((row) => this.canAccessOwned(row)).length;
   }
   async pendingTaskIds(visit: VisitSummary): Promise<Set<string>> {
-    const taskIds = (await this.database.outbox.where('visitId').equals(visit.id).toArray())
-      .filter((row) => row.operation === 'SUBMIT_INSPECTION' && this.canAccessOwned(row))
-      .map((mutation) => {
-        if (mutation.taskId !== undefined) return mutation.taskId;
-        const inspectionId = mutation.payload['inspectionId'];
-        if (typeof inspectionId !== 'string') return undefined;
-        return visit.tasks.find((task) => task.inspection?.id === inspectionId)?.id;
-      })
-      .filter((taskId): taskId is string => taskId !== undefined);
-    return new Set(taskIds);
+    return new Set((await this.submissionSyncStates(visit)).map(({ taskId }) => taskId));
+  }
+  async submissionSyncStates(visit: VisitSummary): Promise<SubmissionSyncState[]> {
+    const mutations = (
+      await this.database.outbox.where('visitId').equals(visit.id).toArray()
+    ).filter((row) => this.canAccessOwned(row));
+    return buildSubmissionSyncStates(visit.tasks, mutations);
   }
   async pendingAddTaskIdsForVisit(visitId: string): Promise<Set<string>> {
     return new Set(
@@ -653,6 +741,95 @@ export class OfflineVisitService {
         );
     }
     await this.database.photos.delete(id);
+  }
+  async storeVisitFindingPhoto(
+    organisationId: string,
+    visitId: string,
+    findingId: string,
+    guestToken: string | undefined,
+    blob: Blob,
+    description: string,
+  ): Promise<string> {
+    const id = crypto.randomUUID();
+    await this.database.visitFindingPhotos.put({
+      id,
+      organisationId,
+      visitId,
+      findingId,
+      ...(guestToken === undefined ? {} : { guestToken }),
+      blob,
+      mimeType: blob.type,
+      description,
+      createdAt: new Date().toISOString(),
+      ...this.ownerFields(guestToken),
+    });
+    return id;
+  }
+  async visitFindingPhotos(visitId: string): Promise<OwnedVisitFindingPhoto[]> {
+    return (await this.database.visitFindingPhotos.where('visitId').equals(visitId).toArray())
+      .filter((photo) => this.canAccessOwned(photo) && !photo.pendingDelete)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .map((photo) => ({
+        id: photo.id,
+        findingId: photo.findingId,
+        description: photo.description,
+        ...(photo.serverMediaId === undefined ? {} : { serverMediaId: photo.serverMediaId }),
+        createdAt: photo.createdAt,
+      }));
+  }
+  async visitFindingPhotoBlob(id: string): Promise<Blob | undefined> {
+    const photo = await this.database.visitFindingPhotos.get(id);
+    return photo !== undefined && this.canAccessOwned(photo) ? photo.blob : undefined;
+  }
+  async deleteVisitFindingPhoto(id: string): Promise<void> {
+    const photo = await this.database.visitFindingPhotos.get(id);
+    if (photo === undefined || !this.canAccessOwned(photo)) return;
+    if (photo.serverMediaId === undefined) await this.database.visitFindingPhotos.delete(id);
+    else await this.database.visitFindingPhotos.update(id, { pendingDelete: true });
+  }
+  async deleteVisitFindingPhotos(findingId: string): Promise<void> {
+    const photos = await this.database.visitFindingPhotos
+      .where('findingId')
+      .equals(findingId)
+      .toArray();
+    for (const photo of photos.filter((row) => this.canAccessOwned(row)))
+      await this.deleteVisitFindingPhoto(photo.id);
+  }
+  async cacheVisitFindingPhotos(visit: VisitSummary, guestToken?: string): Promise<void> {
+    if (!this.online()) return;
+    const owner = guestToken ? { guestToken } : this.ownerFields();
+    for (const finding of visit.findings ?? []) {
+      for (const mediaId of finding.photoMediaIds ?? []) {
+        const existing = await this.database.visitFindingPhotos
+          .filter(
+            (photo) =>
+              (photo.id === mediaId || photo.serverMediaId === mediaId) &&
+              this.sameOwner(photo, owner),
+          )
+          .first();
+        if (existing !== undefined) continue;
+        try {
+          const blob = guestToken
+            ? await this.api.downloadGuestMedia(guestToken, mediaId)
+            : await this.api.downloadMedia(visit.organisationId, mediaId);
+          await this.database.visitFindingPhotos.put({
+            id: mediaId,
+            organisationId: visit.organisationId,
+            visitId: visit.id,
+            findingId: finding.clientFindingId,
+            ...(guestToken === undefined ? {} : { guestToken }),
+            blob,
+            mimeType: blob.type,
+            description: finding.title,
+            serverMediaId: mediaId,
+            createdAt: finding.createdAt ?? new Date().toISOString(),
+            ...this.ownerFields(guestToken),
+          });
+        } catch {
+          // A failed optional image download must not make the job itself unavailable.
+        }
+      }
+    }
   }
   async photoCount(
     inspectionId: string,
@@ -980,25 +1157,30 @@ export class OfflineVisitService {
     if (!this.online() || this.syncing()) return;
     this.syncing.set(true);
     let completed = 0;
-    let failed = false;
     try {
       this.syncRequested = false;
-      completed += await this.syncStructuralMutations();
-      const structuralPending = (await this.database.outbox.toArray()).some(
-        (row) => row.operation === 'ADD_EV_CHARGER' && this.canDrainOwned(row),
-      );
-      if (structuralPending) {
-        failed = true;
-        return;
-      }
+      const snapshotIds = (await this.database.outbox.orderBy('createdAt').toArray())
+        .filter((row) => this.canDrainOwned(row))
+        .map(({ id }) => id);
+      completed += await this.syncStructuralMutations(snapshotIds);
       completed += await this.syncDrafts();
       await this.syncEvidencePhotos();
-      do {
-        this.syncRequested = false;
-        const mutation = (await this.database.outbox.orderBy('createdAt').toArray()).find(
-          (row) => row.operation !== 'ADD_EV_CHARGER' && this.canDrainOwned(row),
-        );
-        if (mutation === undefined) break;
+      const failedDependencies = new Set<string>();
+      for (const mutationId of snapshotIds) {
+        if (!this.online()) break;
+        const mutation = await this.database.outbox.get(mutationId);
+        if (
+          mutation === undefined ||
+          mutation.operation === 'ADD_EV_CHARGER' ||
+          !this.canDrainOwned(mutation)
+        )
+          continue;
+        const dependency = this.mutationDependency(mutation);
+        if (
+          failedDependencies.has(dependency) ||
+          (await this.hasPendingStructuralDependency(mutation))
+        )
+          continue;
         try {
           if (mutation.guestToken !== undefined && mutation.operation === 'SUBMIT_INSPECTION') {
             const inspectionId = mutation.payload['inspectionId'];
@@ -1022,7 +1204,7 @@ export class OfflineVisitService {
               typeof inspectionId === 'string'
                 ? await this.uploadThermalImages(inspectionId, mutation)
                 : {};
-            const payload =
+            let payload =
               typeof inspectionId === 'string' &&
               typeof mutation.payload['submission'] === 'object' &&
               mutation.payload['submission'] !== null
@@ -1037,12 +1219,29 @@ export class OfflineVisitService {
                     ),
                   }
                 : mutation.payload;
-            await this.api.syncVisitMutation(mutation.organisationId, mutation.visitId, {
+            if (mutation.operation === 'UPSERT_VISIT_FINDINGS') {
+              const findingMediaIds = await this.uploadVisitFindingPhotos(
+                mutation.visitId,
+                mutation,
+              );
+              payload = attachVisitFindingPhotoIds(payload, findingMediaIds);
+            }
+            const input = {
               clientMutationId: mutation.id,
               entityType: mutation.entityType,
               operation: mutation.operation,
               payload,
-            });
+            };
+            const response = mutation.guestToken
+              ? await this.api.syncGuestVisitMutation(mutation.guestToken, input)
+              : await this.api.syncVisitMutation(mutation.organisationId, mutation.visitId, input);
+            if (mutation.operation === 'UPSERT_VISIT_FINDINGS') {
+              const findings = response.mutation.result?.findings;
+              await this.updateCachedFindings(
+                mutation,
+                findings ?? (payload['findings'] as VisitFinding[]),
+              );
+            }
           }
           await this.database.outbox.delete(mutation.id);
           completed += 1;
@@ -1074,24 +1273,28 @@ export class OfflineVisitService {
             lastAttemptAt: new Date().toISOString(),
             lastError: error instanceof Error ? error.message : 'Synchronization failed.',
           });
-          failed = true;
-          break;
+          failedDependencies.add(dependency);
         }
-      } while (this.online());
-      if (completed > 0 && !failed) this.announceSyncComplete(completed);
+      }
+      if (completed > 0) this.announceSyncComplete(completed);
     } finally {
       this.syncing.set(false);
+      this.outboxVersion.update((version) => version + 1);
       if (this.syncRequested && this.online()) void this.syncOutbox();
     }
   }
 
-  private async syncStructuralMutations(): Promise<number> {
+  private async syncStructuralMutations(snapshotIds: string[]): Promise<number> {
     let completed = 0;
-    while (this.online()) {
-      const mutation = (await this.database.outbox.orderBy('createdAt').toArray()).find(
-        (row) => row.operation === 'ADD_EV_CHARGER' && this.canDrainOwned(row),
-      );
-      if (mutation === undefined) break;
+    for (const mutationId of snapshotIds) {
+      if (!this.online()) break;
+      const mutation = await this.database.outbox.get(mutationId);
+      if (
+        mutation === undefined ||
+        mutation.operation !== 'ADD_EV_CHARGER' ||
+        !this.canDrainOwned(mutation)
+      )
+        continue;
       try {
         const input = {
           clientMutationId: mutation.id,
@@ -1118,10 +1321,23 @@ export class OfflineVisitService {
           lastAttemptAt: new Date().toISOString(),
           lastError: error instanceof Error ? error.message : 'Synchronization failed.',
         });
-        break;
       }
     }
     return completed;
+  }
+
+  private mutationDependency(mutation: OutboxMutation): string {
+    const inspectionId = mutation.payload['inspectionId'];
+    return `${mutation.visitId}:${mutation.taskId ?? (typeof inspectionId === 'string' ? inspectionId : mutation.id)}`;
+  }
+
+  private async hasPendingStructuralDependency(mutation: OutboxMutation): Promise<boolean> {
+    const structural = (
+      await this.database.outbox.where('visitId').equals(mutation.visitId).toArray()
+    ).filter((row) => row.operation === 'ADD_EV_CHARGER' && this.canDrainOwned(row));
+    return structural.some((row) =>
+      mutation.taskId === undefined ? true : row.taskId === mutation.taskId,
+    );
   }
 
   private async applyStructuralResult(
@@ -1232,8 +1448,80 @@ export class OfflineVisitService {
     const photos = (await this.database.photos.toArray()).filter(
       (row) => this.canDrainOwned(row) && row.serverMediaId === undefined,
     );
-    for (const inspectionId of new Set(photos.map((photo) => photo.inspectionId)))
-      await this.uploadInspectionPhotos(inspectionId);
+    for (const inspectionId of new Set(photos.map((photo) => photo.inspectionId))) {
+      try {
+        await this.uploadInspectionPhotos(inspectionId);
+      } catch {
+        // Submission mutations retry and record an actionable error for their own inspection.
+      }
+    }
+  }
+
+  private async uploadVisitFindingPhotos(
+    visitId: string,
+    owner: { ownerUserId?: string; guestToken?: string },
+  ): Promise<Record<string, string[]>> {
+    const mappings: Record<string, string[]> = {};
+    const photos = await this.database.visitFindingPhotos
+      .where('visitId')
+      .equals(visitId)
+      .toArray();
+    for (const photo of photos.filter((row) => this.sameOwner(row, owner))) {
+      if (photo.pendingDelete) {
+        if (photo.serverMediaId !== undefined) {
+          if (photo.guestToken)
+            await this.api.deleteGuestVisitFindingImage(
+              photo.guestToken,
+              photo.findingId,
+              photo.serverMediaId,
+            );
+          else
+            await this.api.deleteVisitFindingImage(
+              photo.organisationId,
+              photo.visitId,
+              photo.findingId,
+              photo.serverMediaId,
+            );
+        }
+        await this.database.visitFindingPhotos.delete(photo.id);
+        continue;
+      }
+      let mediaId = photo.serverMediaId;
+      if (mediaId === undefined) {
+        const result = photo.guestToken
+          ? await this.api.uploadGuestVisitFindingImage(
+              photo.guestToken,
+              photo.findingId,
+              photo.blob,
+              photo.id,
+              photo.description,
+            )
+          : await this.api.uploadVisitFindingImage(
+              photo.organisationId,
+              photo.visitId,
+              photo.findingId,
+              photo.blob,
+              photo.id,
+              photo.description,
+            );
+        mediaId = result.media.id;
+        await this.database.visitFindingPhotos.update(photo.id, { serverMediaId: mediaId });
+      }
+      (mappings[photo.findingId] ??= []).push(mediaId);
+    }
+    return mappings;
+  }
+
+  private async updateCachedFindings(
+    mutation: OutboxMutation,
+    findings: VisitFinding[],
+  ): Promise<void> {
+    const key = mutation.guestToken ? this.guestPackKey(mutation.guestToken) : mutation.visitId;
+    const pack = await this.database.visitPacks.get(key);
+    if (pack !== undefined && this.sameOwner(pack, mutation))
+      await this.database.visitPacks.update(key, {
+        visit: { ...pack.visit, findings },
+      });
   }
 
   private async syncDraft(draft: InspectionDraft): Promise<void> {

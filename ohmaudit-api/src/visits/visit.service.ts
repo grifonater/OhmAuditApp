@@ -21,6 +21,16 @@ export interface AddEvChargerPayload {
   asset: EngineerEvAssetInput;
 }
 
+export interface VisitFindingInput {
+  clientFindingId: string;
+  title: string;
+  description?: string | undefined;
+  category: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
+  severity: 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
+  status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'DISMISSED';
+  photoMediaIds: string[];
+}
+
 function isUniqueConstraintError(error: unknown): error is { code: 'P2002' } {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
@@ -112,6 +122,7 @@ export class VisitService {
           site: { select: { id: true, name: true, postcode: true } },
           jobCategory: true,
           assignedUser: { select: { id: true, displayName: true, email: true } },
+          findings: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
           tasks: {
             include: {
               asset: { select: { id: true, displayName: true, assetReference: true } },
@@ -257,6 +268,7 @@ export class VisitService {
         jobCategory: true,
         assignedUser: { select: { id: true, displayName: true, email: true } },
         createdByUser: { select: { id: true, displayName: true, email: true } },
+        findings: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         tasks: {
           include: {
             asset: {
@@ -693,6 +705,7 @@ export class VisitService {
           include: {
             customer: true,
             site: true,
+            findings: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
             tasks: {
               include: {
                 inspection: true,
@@ -838,7 +851,8 @@ export class VisitService {
     const accessible =
       media !== null &&
       ((media.entityType === 'Asset' && assetIds.has(media.entityId)) ||
-        (media.entityType === 'Inspection' && inspectionIds.has(media.entityId)));
+        (media.entityType === 'Inspection' && inspectionIds.has(media.entityId)) ||
+        (media.entityType === 'Visit' && media.entityId === visit.id));
     if (!accessible || media === null)
       throw new DomainError('MEDIA_NOT_FOUND', 'The inspection image was not found.', 404);
     return media;
@@ -901,6 +915,117 @@ export class VisitService {
       if (replay !== null) return replay;
       throw error;
     }
+  }
+
+  async listFindings(organisationId: string, visitId: string) {
+    await this.requireVisit(organisationId, visitId);
+    return this.prisma.visitFinding.findMany({
+      where: { organisationId, visitId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  async upsertFindings(organisationId: string, visitId: string, findings: VisitFindingInput[]) {
+    return this.prisma.$transaction((transaction) =>
+      this.replaceFindings(transaction, organisationId, visitId, findings),
+    );
+  }
+
+  async upsertFindingsSync(
+    organisationId: string,
+    visitId: string,
+    clientMutationId: string,
+    entityType: string,
+    payload: { findings: VisitFindingInput[] },
+  ) {
+    const operation = 'UPSERT_VISIT_FINDINGS';
+    const replay = await this.syncReplay(
+      organisationId,
+      visitId,
+      clientMutationId,
+      entityType,
+      operation,
+      payload,
+    );
+    if (replay !== null) return replay;
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const findings = await this.replaceFindings(
+          transaction,
+          organisationId,
+          visitId,
+          payload.findings,
+        );
+        return transaction.syncMutation.create({
+          data: {
+            organisationId,
+            visitId,
+            clientMutationId,
+            entityType,
+            operation,
+            payload: jsonValue(payload),
+            status: 'APPLIED',
+            result: jsonValue({ findings }),
+            appliedAt: new Date(),
+          },
+        });
+      });
+    } catch (error: unknown) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const replayAfterConflict = await this.syncReplay(
+        organisationId,
+        visitId,
+        clientMutationId,
+        entityType,
+        operation,
+        payload,
+      );
+      if (replayAfterConflict !== null) return replayAfterConflict;
+      throw error;
+    }
+  }
+
+  async deleteFindingMedia(
+    organisationId: string,
+    visitId: string,
+    clientFindingId: string,
+    mediaId: string,
+  ) {
+    await this.requireVisit(organisationId, visitId);
+    const findingTag = `finding:${clientFindingId}`;
+    const media = await this.prisma.media.findFirst({
+      where: {
+        id: mediaId,
+        organisationId,
+        entityType: 'Visit',
+        entityId: visitId,
+        tags: { has: findingTag },
+      },
+    });
+    const findingTags = media?.tags.filter((tag) => tag.startsWith('finding:')) ?? [];
+    if (media === null || findingTags.length !== 1 || findingTags[0] !== findingTag)
+      throw new DomainError(
+        'VISIT_FINDING_MEDIA_NOT_FOUND',
+        'The image was not uploaded for this job finding.',
+        404,
+      );
+    await this.prisma.$transaction(async (transaction) => {
+      const linked = await transaction.visitFinding.findMany({
+        where: { organisationId, visitId, photoMediaIds: { array_contains: [mediaId] } },
+        select: { id: true, photoMediaIds: true },
+      });
+      for (const finding of linked)
+        await transaction.visitFinding.update({
+          where: { id: finding.id },
+          data: {
+            photoMediaIds: Array.isArray(finding.photoMediaIds)
+              ? finding.photoMediaIds.filter((id) => id !== mediaId)
+              : [],
+          },
+        });
+      await transaction.media.deleteMany({ where: { id: mediaId, organisationId } });
+    });
+    return media;
   }
 
   async syncReplay(
@@ -1134,6 +1259,91 @@ export class VisitService {
       },
     });
     return { asset, task, inspection };
+  }
+
+  private async replaceFindings(
+    transaction: Prisma.TransactionClient,
+    organisationId: string,
+    visitId: string,
+    findings: VisitFindingInput[],
+  ) {
+    const visit = await transaction.visit.findFirst({ where: { id: visitId, organisationId } });
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    this.rejectArchived(visit.archivedAt);
+
+    const mediaOwners = new Map<string, string>();
+    for (const finding of findings) {
+      for (const mediaId of finding.photoMediaIds) {
+        const owner = mediaOwners.get(mediaId);
+        if (owner !== undefined && owner !== finding.clientFindingId)
+          throw new DomainError(
+            'VISIT_FINDING_MEDIA_CROSS_LINKED',
+            'An image can only be attached to one finding in a job.',
+            422,
+          );
+        mediaOwners.set(mediaId, finding.clientFindingId);
+      }
+    }
+    if (mediaOwners.size > 0) {
+      const media = await transaction.media.findMany({
+        where: {
+          id: { in: [...mediaOwners.keys()] },
+          organisationId,
+          entityType: 'Visit',
+          entityId: visitId,
+          status: 'AVAILABLE',
+          mimeType: { in: ['image/jpeg', 'image/png', 'image/webp'] },
+        },
+      });
+      if (media.length !== mediaOwners.size)
+        throw new DomainError(
+          'VISIT_FINDING_MEDIA_INVALID',
+          'Every finding image must be an available image uploaded for this job.',
+          422,
+        );
+      for (const item of media) {
+        const expectedTag = `finding:${mediaOwners.get(item.id)!}`;
+        const findingTags = item.tags.filter((tag) => tag.startsWith('finding:'));
+        if (findingTags.length !== 1 || findingTags[0] !== expectedTag)
+          throw new DomainError(
+            'VISIT_FINDING_MEDIA_INVALID',
+            'A finding image does not belong to the submitted finding.',
+            422,
+          );
+      }
+    }
+
+    const submittedIds = findings.map(({ clientFindingId }) => clientFindingId);
+    await transaction.visitFinding.deleteMany({
+      where: {
+        organisationId,
+        visitId,
+        ...(submittedIds.length === 0 ? {} : { clientFindingId: { notIn: submittedIds } }),
+      },
+    });
+    for (const finding of findings)
+      await transaction.visitFinding.upsert({
+        where: { visitId_clientFindingId: { visitId, clientFindingId: finding.clientFindingId } },
+        create: {
+          organisationId,
+          visitId,
+          ...finding,
+          description: finding.description ?? null,
+          photoMediaIds: finding.photoMediaIds,
+        },
+        update: {
+          title: finding.title,
+          description: finding.description ?? null,
+          category: finding.category,
+          severity: finding.severity,
+          status: finding.status,
+          photoMediaIds: finding.photoMediaIds,
+        },
+      });
+    return transaction.visitFinding.findMany({
+      where: { organisationId, visitId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
   }
 
   private requireActiveDiscoveryVisit(visit: {

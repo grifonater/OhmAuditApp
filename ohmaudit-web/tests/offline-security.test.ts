@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   authenticatedPackIsReadyForOwner,
+  attachVisitFindingPhotoIds,
+  buildSubmissionSyncStates,
   buildOptimisticEvTask,
   canRestoreLegacyPack,
   idReplacements,
@@ -98,6 +100,82 @@ describe('offline structural mutations', () => {
     expect(moduleLabel('ev-charging')).toBe('EV charging');
     expect(moduleLabel('emergency-lighting')).toBe('Emergency lighting');
     expect(moduleLabel('custom-module')).toBe('Custom module');
+  });
+});
+
+describe('offline submission state', () => {
+  const tasks = [{ id: 'task-a', inspection: { id: 'inspection-a' } }];
+
+  it('keeps an unattempted queued inspection pending without changing authoritative status', () => {
+    expect(
+      buildSubmissionSyncStates(tasks, [
+        {
+          taskId: 'task-a',
+          operation: 'SUBMIT_INSPECTION',
+          payload: { inspectionId: 'inspection-a' },
+          attempts: 0,
+        },
+      ]),
+    ).toEqual([
+      {
+        taskId: 'task-a',
+        inspectionId: 'inspection-a',
+        attempts: 0,
+        state: 'pending',
+      },
+    ]);
+  });
+
+  it('exposes failed attempts and errors and resolves older entries by inspection ID', () => {
+    expect(
+      buildSubmissionSyncStates(tasks, [
+        {
+          operation: 'SUBMIT_INSPECTION',
+          payload: { inspectionId: 'inspection-a' },
+          attempts: 2,
+          lastAttemptAt: '2026-09-15T10:00:00.000Z',
+          lastError: 'Upload failed',
+        },
+      ]),
+    ).toEqual([
+      {
+        taskId: 'task-a',
+        inspectionId: 'inspection-a',
+        attempts: 2,
+        lastAttemptAt: '2026-09-15T10:00:00.000Z',
+        lastError: 'Upload failed',
+        state: 'failed',
+      },
+    ]);
+  });
+
+  it('ignores unrelated mutations', () => {
+    expect(
+      buildSubmissionSyncStates(tasks, [
+        { operation: 'ADD_EV_CHARGER', payload: {}, attempts: 1, lastError: 'Failed' },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('offline visit finding photo mapping', () => {
+  it('preserves existing media, deduplicates retries, and never crosses finding IDs', () => {
+    expect(
+      attachVisitFindingPhotoIds(
+        {
+          findings: [
+            { clientFindingId: 'finding-a', photoMediaIds: ['media-a'] },
+            { clientFindingId: 'finding-b', photoMediaIds: [] },
+          ],
+        },
+        { 'finding-a': ['media-a'], 'finding-b': ['media-b'] },
+      ),
+    ).toEqual({
+      findings: [
+        { clientFindingId: 'finding-a', photoMediaIds: ['media-a'] },
+        { clientFindingId: 'finding-b', photoMediaIds: ['media-b'] },
+      ],
+    });
   });
 });
 
