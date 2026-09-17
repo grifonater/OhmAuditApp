@@ -4,6 +4,7 @@ import {
   attachVisitFindingPhotoIds,
   buildSubmissionSyncStates,
   buildOptimisticEvTask,
+  canRemoveVisitEvTask,
   canRestoreLegacyPack,
   idReplacements,
   moduleLabel,
@@ -75,6 +76,32 @@ describe('offline structural mutations', () => {
         evChargePoint: { id: localIds.chargePointId, maximumPowerKw: 22 },
       },
     });
+  });
+
+  it('only marks local or same-visit proposed EV tasks as removable', () => {
+    const task = {
+      moduleKey: 'ev-charging',
+      status: 'IN_PROGRESS',
+      asset: { status: 'PROPOSED', createdDuringVisitId: 'visit-a' },
+      inspection: { status: 'IN_PROGRESS', currentRevisionNumber: 0 },
+    };
+    expect(canRemoveVisitEvTask(task, 'visit-a')).toBe(true);
+    expect(canRemoveVisitEvTask(task, 'visit-b')).toBe(false);
+    expect(
+      canRemoveVisitEvTask(
+        { ...task, asset: { status: 'ACTIVE', createdDuringVisitId: 'visit-a' } },
+        'visit-a',
+      ),
+    ).toBe(false);
+    expect(
+      canRemoveVisitEvTask(
+        { ...task, inspection: { status: 'SUBMITTED', currentRevisionNumber: 1 } },
+        'visit-a',
+      ),
+    ).toBe(false);
+    expect(canRemoveVisitEvTask({ ...task, asset: { status: 'PROVISIONAL' } }, 'visit-a')).toBe(
+      true,
+    );
   });
 
   it('remaps nested drafts and dependent payload IDs without changing other values', () => {

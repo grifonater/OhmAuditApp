@@ -646,6 +646,98 @@ export class OfflineVisitService {
       inspection: (syncedTask.inspection as InspectionSummary | undefined) ?? inspection,
     };
   }
+  async queueRemoveEvCharger(
+    visit: VisitSummary,
+    task: VisitTask,
+    guestToken?: string,
+  ): Promise<VisitSummary> {
+    if (task.asset === undefined) throw new Error('The charger is missing from this inspection.');
+    const owner = guestToken === undefined ? this.ownerFields() : { guestToken };
+    const packKey = guestToken === undefined ? visit.id : this.guestPackKey(guestToken);
+    const ownedOutbox = (
+      await this.database.outbox.where('visitId').equals(visit.id).toArray()
+    ).filter((row) => this.sameOwner(row, owner));
+    const pendingAdd = ownedOutbox.find(
+      (row) => row.operation === 'ADD_EV_CHARGER' && row.taskId === task.id,
+    );
+    const updatedVisit = { ...visit, tasks: visit.tasks.filter(({ id }) => id !== task.id) };
+    const inspectionId = task.inspection?.id;
+    const mutation: OutboxMutation | undefined =
+      pendingAdd === undefined
+        ? {
+            id: crypto.randomUUID(),
+            organisationId: visit.organisationId,
+            visitId: visit.id,
+            taskId: task.id,
+            ...(guestToken === undefined ? {} : { guestToken }),
+            entityType: 'Asset',
+            operation: 'REMOVE_EV_CHARGER',
+            payload: { assetId: task.asset.id },
+            createdAt: new Date().toISOString(),
+            attempts: 0,
+            ...owner,
+          }
+        : undefined;
+    await this.database.transaction(
+      'rw',
+      [
+        this.database.visitPacks,
+        this.database.outbox,
+        this.database.drafts,
+        this.database.photos,
+        this.database.thermalContexts,
+        this.database.thermalImages,
+        this.database.assetImages,
+      ],
+      async () => {
+        const pack = await this.database.visitPacks.get(packKey);
+        if (!this.online() && (pack === undefined || !pack.ready || !this.sameOwner(pack, owner)))
+          throw new Error('Download this job before removing a charger offline.');
+        if (pack !== undefined && this.sameOwner(pack, owner))
+          await this.database.visitPacks.update(packKey, { visit: updatedVisit });
+        for (const queued of ownedOutbox) {
+          const queuedInspectionId = queued.payload['inspectionId'];
+          if (
+            queued.id === pendingAdd?.id ||
+            queued.taskId === task.id ||
+            (inspectionId !== undefined && queuedInspectionId === inspectionId)
+          )
+            await this.database.outbox.delete(queued.id);
+        }
+        if (inspectionId !== undefined) {
+          const draft = await this.database.drafts.get(inspectionId);
+          if (draft !== undefined && this.sameOwner(draft, owner))
+            await this.database.drafts.delete(inspectionId);
+          const photos = await this.database.photos
+            .where('inspectionId')
+            .equals(inspectionId)
+            .toArray();
+          await this.database.photos.bulkDelete(
+            photos.filter((row) => this.sameOwner(row, owner)).map(({ id }) => id),
+          );
+          const images = await this.database.thermalImages
+            .where('inspectionId')
+            .equals(inspectionId)
+            .toArray();
+          await this.database.thermalImages.bulkDelete(
+            images.filter((row) => this.sameOwner(row, owner)).map(({ id }) => id),
+          );
+          const thermal = await this.database.thermalContexts.get(inspectionId);
+          if (thermal !== undefined && this.sameOwner(thermal, owner))
+            await this.database.thermalContexts.delete(inspectionId);
+        }
+        for (const media of task.asset?.media ?? []) {
+          const cached = await this.database.assetImages.get(media.id);
+          if (cached !== undefined && this.sameOwner(cached, owner))
+            await this.database.assetImages.delete(media.id);
+        }
+        if (mutation !== undefined) await this.database.outbox.put(mutation);
+      },
+    );
+    this.outboxVersion.update((version) => version + 1);
+    if (mutation !== undefined && this.online()) await this.syncOutbox();
+    return updatedVisit;
+  }
   async pendingCount(): Promise<number> {
     return (await this.database.outbox.toArray()).filter((row) => this.canAccessOwned(row)).length;
   }
@@ -1171,7 +1263,7 @@ export class OfflineVisitService {
         const mutation = await this.database.outbox.get(mutationId);
         if (
           mutation === undefined ||
-          mutation.operation === 'ADD_EV_CHARGER' ||
+          ['ADD_EV_CHARGER', 'REMOVE_EV_CHARGER'].includes(mutation.operation) ||
           !this.canDrainOwned(mutation)
         )
           continue;
@@ -1291,7 +1383,7 @@ export class OfflineVisitService {
       const mutation = await this.database.outbox.get(mutationId);
       if (
         mutation === undefined ||
-        mutation.operation !== 'ADD_EV_CHARGER' ||
+        !['ADD_EV_CHARGER', 'REMOVE_EV_CHARGER'].includes(mutation.operation) ||
         !this.canDrainOwned(mutation)
       )
         continue;
@@ -1306,6 +1398,11 @@ export class OfflineVisitService {
           ? await this.api.syncGuestVisitMutation(mutation.guestToken, input)
           : await this.api.syncVisitMutation(mutation.organisationId, mutation.visitId, input);
         const result = response.mutation.result;
+        if (mutation.operation === 'REMOVE_EV_CHARGER') {
+          await this.database.outbox.delete(mutation.id);
+          completed += 1;
+          continue;
+        }
         const idMap = result?.idMap ?? {};
         await this.applyStructuralResult(mutation, idMap, result);
         const localIds = mutation.payload['localIds'] as Partial<LocalEvChargerIds> | undefined;

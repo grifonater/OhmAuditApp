@@ -21,6 +21,10 @@ export interface AddEvChargerPayload {
   asset: EngineerEvAssetInput;
 }
 
+export interface RemoveEvChargerPayload {
+  assetId: string;
+}
+
 export interface VisitFindingInput {
   clientFindingId: string;
   title: string;
@@ -602,6 +606,7 @@ export class VisitService {
             assetReference: input.assetReference,
             displayName: input.displayName,
             status: 'PROPOSED',
+            createdDuringVisitId: visit.id,
             ...(input.manufacturer === undefined ? {} : { manufacturer: input.manufacturer }),
             ...(input.model === undefined ? {} : { model: input.model }),
             ...(input.serialNumber === undefined ? {} : { serialNumber: input.serialNumber }),
@@ -1155,6 +1160,104 @@ export class VisitService {
     }
   }
 
+  async removeEvAsset(
+    organisationId: string,
+    visitId: string,
+    assetId: string,
+    actorUserId: string | undefined,
+    correlationId: string,
+  ) {
+    return this.prisma.$transaction(
+      (transaction) =>
+        this.removeEvAssetRecords(
+          transaction,
+          organisationId,
+          visitId,
+          assetId,
+          actorUserId,
+          correlationId,
+        ),
+      { isolationLevel: 'Serializable' },
+    );
+  }
+
+  async removeEvChargerSync(
+    organisationId: string,
+    visitId: string,
+    clientMutationId: string,
+    entityType: string,
+    payload: RemoveEvChargerPayload,
+    actorUserId: string | undefined,
+    correlationId: string,
+  ) {
+    const replay = await this.syncReplay(
+      organisationId,
+      visitId,
+      clientMutationId,
+      entityType,
+      'REMOVE_EV_CHARGER',
+      payload as unknown as Record<string, unknown>,
+    );
+    if (replay !== null) return replay;
+    try {
+      return await this.prisma.$transaction(
+        async (transaction) => {
+          const concurrent = await transaction.syncMutation.findUnique({
+            where: { organisationId_clientMutationId: { organisationId, clientMutationId } },
+          });
+          if (concurrent !== null) {
+            if (
+              concurrent.visitId !== visitId ||
+              concurrent.entityType !== entityType ||
+              concurrent.operation !== 'REMOVE_EV_CHARGER' ||
+              canonicalJson(concurrent.payload) !== canonicalJson(payload)
+            )
+              throw new DomainError(
+                'SYNC_MUTATION_CONFLICT',
+                'This client mutation ID has already been used for a different mutation.',
+                409,
+              );
+            return concurrent;
+          }
+          const removed = await this.removeEvAssetRecords(
+            transaction,
+            organisationId,
+            visitId,
+            payload.assetId,
+            actorUserId,
+            correlationId,
+          );
+          return transaction.syncMutation.create({
+            data: {
+              organisationId,
+              visitId,
+              clientMutationId,
+              entityType,
+              operation: 'REMOVE_EV_CHARGER',
+              payload: jsonValue(payload),
+              status: 'APPLIED',
+              result: jsonValue(removed),
+              appliedAt: new Date(),
+            },
+          });
+        },
+        { isolationLevel: 'Serializable' },
+      );
+    } catch (error: unknown) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const replayAfterConflict = await this.syncReplay(
+        organisationId,
+        visitId,
+        clientMutationId,
+        entityType,
+        'REMOVE_EV_CHARGER',
+        payload as unknown as Record<string, unknown>,
+      );
+      if (replayAfterConflict !== null) return replayAfterConflict;
+      throw error;
+    }
+  }
+
   private async createEvAssetRecords(
     transaction: Prisma.TransactionClient,
     visit: {
@@ -1197,6 +1300,7 @@ export class VisitService {
         assetReference: input.assetReference,
         displayName: input.displayName,
         status: 'PROPOSED',
+        createdDuringVisitId: visit.id,
         ...(input.manufacturer === undefined ? {} : { manufacturer: input.manufacturer }),
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.serialNumber === undefined ? {} : { serialNumber: input.serialNumber }),
@@ -1259,6 +1363,182 @@ export class VisitService {
       },
     });
     return { asset, task, inspection };
+  }
+
+  private async removeEvAssetRecords(
+    transaction: Prisma.TransactionClient,
+    organisationId: string,
+    visitId: string,
+    assetId: string,
+    actorUserId: string | undefined,
+    correlationId: string,
+  ) {
+    const visit = await transaction.visit.findFirst({
+      where: { id: visitId, organisationId },
+      select: {
+        id: true,
+        siteId: true,
+        status: true,
+        submittedAt: true,
+        completedAt: true,
+        archivedAt: true,
+      },
+    });
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    this.rejectArchived(visit.archivedAt);
+    if (
+      visit.submittedAt !== null ||
+      visit.completedAt !== null ||
+      ['SUBMITTED', 'COMPLETED'].includes(visit.status)
+    )
+      throw new DomainError(
+        'EV_ASSET_REMOVAL_LOCKED',
+        'Chargers cannot be removed after the job has been submitted or completed.',
+        409,
+      );
+
+    const asset = await transaction.asset.findFirst({
+      where: { id: assetId, organisationId, siteId: visit.siteId },
+      include: {
+        visitTasks: {
+          include: { inspection: { include: { revisions: { select: { id: true } } } } },
+        },
+        inspections: { include: { revisions: { select: { id: true } } } },
+        proposedChanges: { select: { id: true } },
+        evChargePoint: { select: { id: true } },
+      },
+    });
+    if (asset === null)
+      throw new DomainError('ASSET_NOT_FOUND', 'The charger was not found at this site.', 404);
+    if (
+      asset.status !== 'PROPOSED' ||
+      asset.createdDuringVisitId !== visitId ||
+      !this.isEvAssetType(asset.assetType)
+    )
+      throw new DomainError(
+        'EV_ASSET_NOT_REMOVABLE',
+        'Only a provisional charger created during this job can be removed.',
+        409,
+      );
+
+    const tasks = asset.visitTasks;
+    const inspections = asset.inspections;
+    const taskIds = tasks.map(({ id }) => id);
+    const inspectionIds = inspections.map(({ id }) => id);
+    const graphBelongsToVisit =
+      tasks.length > 0 &&
+      tasks.every(
+        (task) =>
+          task.visitId === visitId &&
+          task.moduleKey === 'ev-charging' &&
+          !['SUBMITTED', 'COMPLETED'].includes(task.status),
+      ) &&
+      inspections.every(
+        (inspection) =>
+          inspection.visitId === visitId &&
+          inspection.moduleKey === 'ev-charging' &&
+          inspection.visitTaskId !== null &&
+          taskIds.includes(inspection.visitTaskId) &&
+          inspection.submittedAt === null &&
+          !['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'SUPERSEDED'].includes(inspection.status),
+      );
+    const hasRevisions = inspections.some((inspection) => inspection.revisions.length > 0);
+    const documents = await transaction.document.count({
+      where: {
+        organisationId,
+        OR: [
+          { entityType: 'Asset', entityId: assetId },
+          ...(taskIds.length === 0 ? [] : [{ entityType: 'VisitTask', entityId: { in: taskIds } }]),
+          ...(inspectionIds.length === 0
+            ? []
+            : [{ entityType: 'Inspection', entityId: { in: inspectionIds } }]),
+        ],
+      },
+    });
+    if (!graphBelongsToVisit || hasRevisions || asset.proposedChanges.length > 0 || documents > 0)
+      throw new DomainError(
+        'EV_ASSET_REMOVAL_LOCKED',
+        'This charger has inspection history or linked records and can no longer be removed.',
+        409,
+      );
+
+    const media = await transaction.media.findMany({
+      where: {
+        organisationId,
+        OR: [
+          { entityType: 'Asset', entityId: assetId },
+          ...(inspectionIds.length === 0
+            ? []
+            : [{ entityType: 'Inspection', entityId: { in: inspectionIds } }]),
+        ],
+      },
+      select: { id: true, storageKey: true },
+    });
+    await transaction.media.deleteMany({ where: { id: { in: media.map(({ id }) => id) } } });
+    await transaction.entityTag.deleteMany({
+      where: { organisationId, entityType: 'Asset', entityId: assetId },
+    });
+    await transaction.defect.deleteMany({
+      where: { organisationId, OR: [{ assetId }, { inspectionId: { in: inspectionIds } }] },
+    });
+    const deletedInspections = await transaction.inspection.deleteMany({
+      where: {
+        id: { in: inspectionIds },
+        organisationId,
+        visitId,
+        submittedAt: null,
+        status: { notIn: ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'SUPERSEDED'] },
+      },
+    });
+    const deletedTasks = await transaction.visitTask.deleteMany({
+      where: {
+        id: { in: taskIds },
+        organisationId,
+        visitId,
+        status: { notIn: ['SUBMITTED', 'COMPLETED'] },
+      },
+    });
+    if (deletedInspections.count !== inspectionIds.length || deletedTasks.count !== taskIds.length)
+      throw new DomainError(
+        'EV_ASSET_REMOVAL_LOCKED',
+        'The charger inspection changed while it was being removed.',
+        409,
+      );
+    if (asset.evChargePoint !== null)
+      await transaction.evChargePoint.delete({ where: { id: asset.evChargePoint.id } });
+    const deletedAsset = await transaction.asset.deleteMany({
+      where: {
+        id: assetId,
+        organisationId,
+        siteId: visit.siteId,
+        status: 'PROPOSED',
+        createdDuringVisitId: visitId,
+      },
+    });
+    if (deletedAsset.count !== 1)
+      throw new DomainError(
+        'EV_ASSET_REMOVAL_LOCKED',
+        'The charger changed while it was being removed.',
+        409,
+      );
+    await transaction.auditEvent.create({
+      data: {
+        organisationId,
+        ...(actorUserId === undefined ? {} : { actorUserId }),
+        correlationId,
+        eventType: 'EngineerEvAssetRemoved',
+        entityType: 'Asset',
+        entityId: assetId,
+        data: { visitId, siteId: visit.siteId, taskIds, inspectionIds },
+      },
+    });
+    return {
+      deleted: true,
+      assetId,
+      taskIds,
+      inspectionIds,
+      storageKeys: media.map(({ storageKey }) => storageKey),
+    };
   }
 
   private async replaceFindings(

@@ -4,6 +4,11 @@
       <a class="back-link" [routerLink]="['/app/org', organisationId, 'inspections']"
         >← Inspections</a
       >
+      <a
+        class="back-link"
+        [routerLink]="['/app/org', organisationId, 'visits', reviewId, 'overview']"
+        >Back to job →</a
+      >
       <p class="eyebrow">Job review workspace</p>
       <h1>{{ visitTitle() }}</h1>
       <p>{{ customerSite() }}</p>
@@ -236,10 +241,24 @@
           >
             History
           </button>
+          @if (visitId()) {
+            <button
+              type="button"
+              [class.active]="activeSection() === 'findings'"
+              (click)="setSection('findings')"
+            >
+              Job findings
+            </button>
+          }
         </nav>
 
         <div class="review-content">
-          @if (activeSection() === 'overview') {
+          @if (activeSection() === 'findings' && visitId(); as findingsVisitId) {
+            <oa-visit-findings-editor
+              [organisationId]="organisationId"
+              [visitId]="findingsVisitId"
+            />
+          } @else if (activeSection() === 'overview') {
             <section class="summary-grid">
               <article class="review-card result-summary">
                 <div class="card-heading">
@@ -270,7 +289,7 @@
                   </div>
                   <div>
                     <dt>Engineer</dt>
-                    <dd>{{ latest()?.signatures?.[0]?.signerName || 'Not recorded' }}</dd>
+                    <dd>{{ engineerName() }}</dd>
                   </div>
                   <div>
                     <dt>Inspection type</dt>
@@ -506,14 +525,14 @@
                   ></textarea>
                 </label>
               </section>
-            } @else if (item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW') {
+            } @else if (canCorrect(item)) {
               @if (canApprove()) {
                 <section class="correction-callout">
                   <div>
                     <strong>Spotted a small recording mistake?</strong
                     ><span
-                      >Correct results, readings, observations or defect classifications before
-                      approval.</span
+                      >Correct results, readings, observations or defect classifications. Approved
+                      inspections remain approved with a new audited revision.</span
                     >
                   </div>
                   <button class="button secondary" type="button" (click)="startOverride()">
@@ -542,11 +561,19 @@
                     </select></label
                   >
                   <label class="full"
-                    >Engineer notes<textarea
-                      [value]="draft.evData?.engineerObservations || ''"
-                      (input)="setObservation($event)"
+                    >General notes<textarea
+                      [value]="draft.data['notes'] || ''"
+                      (input)="setData('notes', $event)"
                     ></textarea>
                   </label>
+                  @if (draft.evData) {
+                    <label class="full"
+                      >Engineer observations<textarea
+                        [value]="draft.evData.engineerObservations || ''"
+                        (input)="setObservation($event)"
+                      ></textarea>
+                    </label>
+                  }
                 </div>
               } @else {
                 <dl class="detail-grid">
@@ -858,15 +885,32 @@
                     <p class="eyebrow">Recorded issues</p>
                     <h3>Defect corrections</h3>
                   </div>
+                  <button class="button secondary compact" type="button" (click)="addDefect()">
+                    Add finding
+                  </button>
                 </div>
                 @for (defect of draft.defects; track defect.id; let index = $index) {
                   <article class="review-card editable defect-editor">
+                    <button class="text-button" type="button" (click)="removeDefect(index)">
+                      Remove finding
+                    </button>
                     <div class="editable-grid">
                       <label
                         >Title<input
                           [value]="defect.title"
                           (input)="setDefect(index, 'title', $event)"
                       /></label>
+                      <label
+                        >Category<select
+                          [value]="defect.category"
+                          (change)="setDefect(index, 'category', $event)"
+                        >
+                          <option>ADVICE</option>
+                          <option>NOTE</option>
+                          <option>FAULT</option>
+                          <option>CONDITION</option>
+                        </select></label
+                      >
                       <label
                         >Severity<select
                           [value]="defect.severity"
@@ -943,7 +987,7 @@
                     Link to finding
                     <select [value]="reviewPhotoDefectId()" (change)="setReviewPhotoDefect($event)">
                       <option value="">General inspection evidence</option>
-                      @for (defect of item.defects; track defect.id) {
+                      @for (defect of overrideDraft()?.defects || item.defects; track defect.id) {
                         <option [value]="defect.id">
                           {{ defect.category || 'FAULT' }} · {{ defect.title }}
                         </option>
@@ -968,22 +1012,62 @@
                   <p class="eyebrow">Inspection uploads</p>
                   <h3>Photographic evidence</h3>
                 </div>
-                <span class="count-pill">{{ item.evidenceMedia?.length || 0 }}</span>
+                <span class="count-pill">{{
+                  overrideDraft()?.media?.length || item.evidenceMedia?.length || 0
+                }}</span>
               </div>
-              @if ((item.evidenceMedia?.length || 0) > 0) {
+              @if ((overrideDraft()?.media?.length || item.evidenceMedia?.length || 0) > 0) {
                 <div class="evidence-grid">
-                  @for (media of item.evidenceMedia || []; track media.id) {
-                    <a [href]="imageUrl(media.id)" target="_blank" rel="noopener noreferrer">
-                      <img
-                        [src]="imageUrl(media.id)"
-                        [alt]="media.caption || 'Inspection evidence'"
-                        loading="lazy"
-                      />
-                      <span
-                        ><strong>{{ media.caption || 'Inspection evidence' }}</strong
-                        ><small>{{ display(media.category) }}</small></span
-                      >
-                    </a>
+                  @for (
+                    media of overrideDraft()?.media || item.evidenceMedia || [];
+                    track media.id
+                  ) {
+                    @if (overrideDraft(); as draft) {
+                      <article>
+                        <img
+                          [src]="imageUrl(media.id)"
+                          [alt]="media.caption || 'Inspection evidence'"
+                          loading="lazy"
+                        />
+                        <label
+                          >Caption<input
+                            [value]="media.caption || ''"
+                            (input)="setDraftMediaCaption(media.id, $event)"
+                        /></label>
+                        <label
+                          >Use as<select
+                            [value]="draftMediaOwner(draft, media.id)"
+                            (change)="setDraftMediaOwner(media.id, $event)"
+                          >
+                            <option value="">General inspection image</option>
+                            @for (defect of draft.defects; track defect.id) {
+                              <option [value]="defect.id">
+                                {{ defect.category }} · {{ defect.title }}
+                              </option>
+                            }
+                          </select></label
+                        >
+                        <button
+                          class="text-button"
+                          type="button"
+                          (click)="removeDraftMedia(media.id)"
+                        >
+                          Remove image
+                        </button>
+                      </article>
+                    } @else {
+                      <a [href]="imageUrl(media.id)" target="_blank" rel="noopener noreferrer">
+                        <img
+                          [src]="imageUrl(media.id)"
+                          [alt]="media.caption || 'Inspection evidence'"
+                          loading="lazy"
+                        />
+                        <span
+                          ><strong>{{ media.caption || 'Inspection evidence' }}</strong
+                          ><small>{{ display(media.category) }}</small></span
+                        >
+                      </a>
+                    }
                   }
                 </div>
               } @else {

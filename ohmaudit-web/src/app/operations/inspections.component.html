@@ -36,7 +36,7 @@
     <div class="session-list">
       @for (session of sessions(); track session.id) {
         <article class="card session-card" [class.open]="expandedSessionId() === session.id">
-          <button class="session-summary" type="button" (click)="openSession(session)">
+          <button class="session-summary" type="button" (click)="toggleSession(session.id)">
             <span class="session-icon">V</span>
             <span class="session-copy">
               <small>{{ session.customerName }} / {{ session.siteName }}</small>
@@ -61,10 +61,21 @@
                 <span class="badge info">{{ session.assetChanges }} asset updates</span>
               }
             </span>
-            <span class="session-chevron">→</span>
+            <span class="session-chevron">{{
+              expandedSessionId() === session.id ? '−' : '+'
+            }}</span>
           </button>
           @if (expandedSessionId() === session.id) {
             <div class="session-inspections">
+              <div class="session-actions">
+                <button
+                  class="button secondary compact"
+                  type="button"
+                  (click)="openSession(session)"
+                >
+                  Open inspection review
+                </button>
+              </div>
               @for (item of session.inspections; track item.id) {
                 <button
                   type="button"
@@ -86,6 +97,9 @@
                     item.status
                   }}</span>
                 </button>
+              }
+              @if (session.visitId; as visitId) {
+                <oa-visit-findings-editor [organisationId]="organisationId" [visitId]="visitId" />
               }
             </div>
           }

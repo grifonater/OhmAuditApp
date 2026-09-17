@@ -29,9 +29,11 @@ import {
   type VisitTask,
 } from '../core/api.service';
 import { compressImage, compressPhoto } from '../core/image-compression';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import { OfflineVisitService } from '../core/offline-visit.service';
 import {
   applyDataPlateCandidate as applyCandidate,
+  canRemoveVisitEvTask,
   moduleLabel,
   type LocalEvChargerIds,
   type SubmissionSyncState,
@@ -117,6 +119,7 @@ type ConnectorTestGroup = FormGroup<{
 })
 export class EngineerVisitComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   protected readonly offline = inject(OfflineVisitService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -317,11 +320,20 @@ export class EngineerVisitComponent {
     this.downloadingPdf.set('job-pack');
     this.error.set('');
     try {
-      const blob = this.guestToken
-        ? await this.api.downloadGuestJobSheetPdf(this.guestToken, true)
-        : await this.api.downloadEngineerJobPackPdf(this.organisationId, visit.id);
-      this.saveBlob(blob, `${this.slug(visit.reference || visit.title)}-job-pack-with-rams.pdf`);
-      this.saved.set('Job pack PDF downloaded');
+      await this.generationProgress.run(
+        'Generating job pack PDF',
+        async () => {
+          const blob = this.guestToken
+            ? await this.api.downloadGuestJobSheetPdf(this.guestToken, true)
+            : await this.api.downloadEngineerJobPackPdf(this.organisationId, visit.id);
+          this.saveBlob(
+            blob,
+            `${this.slug(visit.reference || visit.title)}-job-pack-with-rams.pdf`,
+          );
+          this.saved.set('Job pack PDF downloaded');
+        },
+        'This can take a few moments.',
+      );
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to generate the job pack.');
     } finally {
@@ -334,18 +346,24 @@ export class EngineerVisitComponent {
     this.downloadingPdf.set(`rams:${rams.id}`);
     this.error.set('');
     try {
-      const blob = this.guestToken
-        ? await this.api.downloadGuestRamsRevisionPdf(
-            this.guestToken,
-            rams.id,
-            rams.currentRevisionNumber,
-          )
-        : await this.api.downloadRamsPdf(this.organisationId, rams.id);
-      this.saveBlob(
-        blob,
-        `${this.slug(rams.reference || rams.title)}-revision-${rams.currentRevisionNumber}.pdf`,
+      await this.generationProgress.run(
+        'Generating RAMS PDF',
+        async () => {
+          const blob = this.guestToken
+            ? await this.api.downloadGuestRamsRevisionPdf(
+                this.guestToken,
+                rams.id,
+                rams.currentRevisionNumber,
+              )
+            : await this.api.downloadRamsPdf(this.organisationId, rams.id);
+          this.saveBlob(
+            blob,
+            `${this.slug(rams.reference || rams.title)}-revision-${rams.currentRevisionNumber}.pdf`,
+          );
+          this.saved.set(`${rams.reference} PDF downloaded`);
+        },
+        'This can take a few moments.',
       );
-      this.saved.set(`${rams.reference} PDF downloaded`);
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to generate the RAMS PDF.');
     } finally {
@@ -414,6 +432,40 @@ export class EngineerVisitComponent {
 
   protected submissionSyncState(taskId: string): SubmissionSyncState | undefined {
     return this.submissionSyncStates()[taskId];
+  }
+
+  protected canRemoveCharger(task: VisitTask): boolean {
+    const visit = this.visit();
+    return Boolean(
+      visit &&
+      visit.submittedAt == null &&
+      visit.completedAt == null &&
+      !['SUBMITTED', 'COMPLETED'].includes(visit.status) &&
+      canRemoveVisitEvTask(task, this.visitId),
+    );
+  }
+
+  protected async removeCharger(task: VisitTask): Promise<void> {
+    const visit = this.visit();
+    if (!visit || !this.canRemoveCharger(task) || task.asset === undefined) return;
+    if (!confirm(`Remove ${task.asset.displayName} from this job? This cannot be undone.`)) return;
+    const unsynced = this.pendingAddTaskIds().has(task.id);
+    await this.run(async () => {
+      const updated = await this.offline.queueRemoveEvCharger(
+        visit,
+        task,
+        this.guestToken || undefined,
+      );
+      this.visit.set(updated);
+      this.pendingAddTaskIds.set(await this.offline.pendingAddTaskIdsForVisit(visit.id));
+      this.saved.set(
+        unsynced
+          ? 'Unsynced charger cancelled'
+          : this.offline.online()
+            ? 'Charger removal requested'
+            : 'Charger removal saved on this device and pending sync',
+      );
+    });
   }
 
   protected addVisitFinding(category: VisitFindingCategory = 'NOTE'): void {
@@ -607,18 +659,27 @@ export class EngineerVisitComponent {
       this.linkedRams().find((item) => item.revisions?.some(({ id }) => id === revision.id));
     if (!rams) return;
     await this.run(async () => {
-      const blob = this.guestToken
-        ? await this.api.downloadGuestRamsRevisionPdf(
-            this.guestToken,
-            rams.id,
-            revision.revisionNumber,
-          )
-        : await this.api.downloadRamsRevisionPdf(
-            this.organisationId,
-            rams.id,
-            revision.revisionNumber,
+      await this.generationProgress.run(
+        'Generating RAMS revision PDF',
+        async () => {
+          const blob = this.guestToken
+            ? await this.api.downloadGuestRamsRevisionPdf(
+                this.guestToken,
+                rams.id,
+                revision.revisionNumber,
+              )
+            : await this.api.downloadRamsRevisionPdf(
+                this.organisationId,
+                rams.id,
+                revision.revisionNumber,
+              );
+          this.saveBlob(
+            blob,
+            `${this.slug(rams.reference)}-revision-${revision.revisionNumber}.pdf`,
           );
-      this.saveBlob(blob, `${this.slug(rams.reference)}-revision-${revision.revisionNumber}.pdf`);
+        },
+        'This can take a few moments.',
+      );
     });
   }
 

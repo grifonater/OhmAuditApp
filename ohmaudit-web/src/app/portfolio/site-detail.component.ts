@@ -12,6 +12,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
   ApiService,
   type AssetMedia,
+  type AssetIconKey,
   type AssetSummary,
   type Entitlement,
   type ReportSummary,
@@ -20,12 +21,21 @@ import {
   type SiteDetail,
 } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
+import { AssetIconComponent } from '../shared/asset-icon.component';
+import { assetIconOptions, defaultAssetIconKey, resolvedAssetIconKey } from '../shared/asset-icons';
+import {
+  createSchedulesForGroup,
+  groupScheduleSuggestions,
+  scheduleSuggestionHeading,
+  type ScheduleSuggestionGroup,
+} from './site-schedule-suggestions';
 
 type SiteTab = 'overview' | 'assets' | 'reports' | 'reminders';
 @Component({
   selector: 'oa-site-detail',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [AssetIconComponent, ReactiveFormsModule, RouterLink],
   templateUrl: './site-detail.component.html',
   styleUrl: './site-detail.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -33,6 +43,7 @@ type SiteTab = 'overview' | 'assets' | 'reports' | 'reminders';
 export class SiteDetailComponent {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
@@ -48,6 +59,13 @@ export class SiteDetailComponent {
   protected readonly entitlements = signal<Entitlement[]>([]);
   protected readonly scheduleOccurrences = signal<ScheduleOccurrence[]>([]);
   protected readonly scheduleSuggestions = signal<ScheduleSuggestion[]>([]);
+  protected readonly groupedScheduleSuggestions = computed(() =>
+    groupScheduleSuggestions(this.scheduleSuggestions()),
+  );
+  protected readonly assetIconOptions = assetIconOptions;
+  protected readonly defaultAssetIconKey = defaultAssetIconKey;
+  protected readonly resolvedAssetIconKey = resolvedAssetIconKey;
+  protected readonly scheduleSuggestionHeading = scheduleSuggestionHeading;
   protected readonly evEnabled = computed(
     () => this.entitlements().find((item) => item.module.key === 'ev-charging')?.entitled ?? false,
   );
@@ -61,6 +79,7 @@ export class SiteDetailComponent {
   protected readonly editingSite = signal(false);
   protected readonly editingAssetId = signal<string | undefined>(undefined);
   protected readonly addingAsset = signal(false);
+  protected readonly iconPickerOpen = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
   protected readonly siteImageUrls = signal<Record<string, string>>({});
@@ -126,7 +145,13 @@ export class SiteDetailComponent {
         title: occurrence.scheduleRule.title,
         detail: `${occurrence.scheduleRule.asset?.displayName ?? 'Whole site'} · Due ${this.formatDate(occurrence.dueDate)}`,
       }));
-    return [...scheduleReminders, ...reportReminders, ...assetReminders];
+    const suggestionReminders = this.groupedScheduleSuggestions().map((group) => ({
+      id: `suggestion:${group.id}`,
+      level: 'info',
+      title: this.scheduleSuggestionHeading(group).replace(/\?$/u, ''),
+      detail: `Annual schedule suggested · Next due ${this.formatDate(group.suggestedStartDate)}`,
+    }));
+    return [...suggestionReminders, ...scheduleReminders, ...reportReminders, ...assetReminders];
   });
   protected readonly siteForm = new FormGroup({
     name: new FormControl('', {
@@ -148,6 +173,7 @@ export class SiteDetailComponent {
     }),
     assetReference: new FormControl('', { nonNullable: true, validators: Validators.required }),
     displayName: new FormControl('', { nonNullable: true, validators: Validators.required }),
+    iconKey: new FormControl<AssetIconKey | null>(null),
     manufacturer: new FormControl('', { nonNullable: true }),
     model: new FormControl('', { nonNullable: true }),
     serialNumber: new FormControl('', { nonNullable: true }),
@@ -252,7 +278,7 @@ export class SiteDetailComponent {
         siteId: this.siteId,
         ...this.assetForm.getRawValue(),
       });
-      this.assetForm.reset({ assetType: this.evEnabled() ? 'EV Charger' : 'General Asset' });
+      this.resetAssetForm();
       this.addingAsset.set(false);
       await this.load();
     });
@@ -263,15 +289,37 @@ export class SiteDetailComponent {
       assetType: asset.assetType,
       assetReference: asset.assetReference,
       displayName: asset.displayName,
+      iconKey: asset.iconKey ?? null,
       manufacturer: asset.manufacturer ?? '',
       model: asset.model ?? '',
       serialNumber: asset.serialNumber ?? '',
       notes: asset.notes ?? '',
     });
   }
+  protected selectedAssetIconKey(): AssetIconKey {
+    return resolvedAssetIconKey(
+      this.assetForm.controls.assetType.value,
+      this.assetForm.controls.iconKey.value,
+    );
+  }
+  protected selectedAssetIconLabel(): string {
+    if (this.assetForm.controls.iconKey.value === null) return 'Use type default';
+    return (
+      this.assetIconOptions.find(({ key }) => key === this.assetForm.controls.iconKey.value)
+        ?.label ?? 'General asset'
+    );
+  }
+  protected selectAssetIcon(iconKey: AssetIconKey | null): void {
+    this.assetForm.controls.iconKey.setValue(iconKey);
+    this.iconPickerOpen.set(false);
+  }
+  protected closeIconPickerOnBackdrop(event: Event): void {
+    if (event.target === event.currentTarget) this.iconPickerOpen.set(false);
+  }
   protected cancelAssetEdit(): void {
+    this.iconPickerOpen.set(false);
     this.editingAssetId.set(undefined);
-    this.assetForm.reset({ assetType: this.evEnabled() ? 'EV Charger' : 'General Asset' });
+    this.resetAssetForm();
   }
   protected openDuplicate(asset: AssetSummary): void {
     this.duplicateSource.set(asset);
@@ -296,6 +344,7 @@ export class SiteDetailComponent {
         assetType: source.assetType,
         assetReference: this.duplicateForm.controls.assetReference.value,
         displayName: this.duplicateForm.controls.displayName.value,
+        ...(source.iconKey === undefined ? {} : { iconKey: source.iconKey }),
         ...(source.manufacturer === undefined ? {} : { manufacturer: source.manufacturer }),
         ...(source.model === undefined ? {} : { model: source.model }),
         ...(source.serialNumber === undefined ? {} : { serialNumber: source.serialNumber }),
@@ -340,29 +389,40 @@ export class SiteDetailComponent {
   protected async openReport(report: ReportSummary): Promise<void> {
     if (!report.visitId && !report.mediaId && !report.inspectionRevisionId) return;
     await this.run(async () => {
-      const blob = report.visitId
-        ? await this.api.downloadVisitReportPdf(this.organisationId, report.visitId)
-        : report.mediaId
-          ? await this.api.downloadMedia(this.organisationId, report.mediaId)
-          : await this.api.downloadDocumentPdf(this.organisationId, report.id);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      await this.generationProgress.run(
+        'Generating report',
+        async () => {
+          const blob = report.visitId
+            ? await this.api.downloadVisitReportPdf(this.organisationId, report.visitId)
+            : report.mediaId
+              ? await this.api.downloadMedia(this.organisationId, report.mediaId)
+              : await this.api.downloadDocumentPdf(this.organisationId, report.id);
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank', 'noopener,noreferrer');
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        },
+        'This can take a few moments.',
+      );
     });
   }
-  protected async createSuggestedSchedule(suggestion: ScheduleSuggestion): Promise<void> {
+  protected async createSuggestedSchedules(group: ScheduleSuggestionGroup): Promise<void> {
     await this.run(async () => {
-      await this.api.createSchedule(this.organisationId, {
-        siteId: this.siteId,
-        ...(suggestion.asset === undefined ? {} : { assetId: suggestion.asset.id }),
-        title: suggestion.title,
-        moduleKey: suggestion.moduleKey,
-        frequencyMonths: suggestion.suggestedFrequencyMonths,
-        startDate: suggestion.suggestedStartDate.slice(0, 10),
-        notificationLeadDays: 30,
-      });
+      await createSchedulesForGroup(group, (suggestion) =>
+        this.api.createSchedule(this.organisationId, {
+          siteId: this.siteId,
+          ...(suggestion.asset === undefined || suggestion.asset === null
+            ? {}
+            : { assetId: suggestion.asset.id }),
+          title: suggestion.title,
+          moduleKey: suggestion.moduleKey,
+          frequencyMonths: suggestion.suggestedFrequencyMonths,
+          startDate: suggestion.suggestedStartDate.slice(0, 10),
+          notificationLeadDays: 30,
+        }),
+      );
+      const createdIds = new Set(group.suggestions.map(({ inspectionId }) => inspectionId));
       this.scheduleSuggestions.update((items) =>
-        items.filter((item) => item.inspectionId !== suggestion.inspectionId),
+        items.filter((item) => !createdIds.has(item.inspectionId)),
       );
       await this.loadScheduleContext();
     });
@@ -423,6 +483,13 @@ export class SiteDetailComponent {
   private revokeSiteImages(): void {
     Object.values(this.siteImageUrls()).forEach((url) => URL.revokeObjectURL(url));
     this.siteImageUrls.set({});
+  }
+  private resetAssetForm(): void {
+    this.iconPickerOpen.set(false);
+    this.assetForm.reset({
+      assetType: this.evEnabled() ? 'EV Charger' : 'General Asset',
+      iconKey: null,
+    });
   }
   private async run(operation: () => Promise<unknown>): Promise<void> {
     this.busy.set(true);

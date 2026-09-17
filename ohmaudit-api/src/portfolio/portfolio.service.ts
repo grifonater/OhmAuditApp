@@ -416,6 +416,7 @@ export class PortfolioService {
       assetType: string;
       assetReference: string;
       displayName: string;
+      iconKey?: string | null | undefined;
       manufacturer?: string | undefined;
       model?: string | undefined;
       serialNumber?: string | undefined;
@@ -453,6 +454,7 @@ export class PortfolioService {
             assetType: input.assetType,
             assetReference: input.assetReference,
             displayName: input.displayName,
+            ...(input.iconKey === undefined ? {} : { iconKey: input.iconKey }),
             ...(input.manufacturer === undefined ? {} : { manufacturer: input.manufacturer }),
             ...(input.model === undefined ? {} : { model: input.model }),
             ...(input.serialNumber === undefined ? {} : { serialNumber: input.serialNumber }),
@@ -536,6 +538,7 @@ export class PortfolioService {
       assetType?: string | undefined;
       assetReference?: string | undefined;
       displayName?: string | undefined;
+      iconKey?: string | null | undefined;
       manufacturer?: string | undefined;
       model?: string | undefined;
       serialNumber?: string | undefined;
@@ -544,7 +547,7 @@ export class PortfolioService {
   ) {
     const existing = await this.requireAsset(organisationId, assetId);
     const data = Object.fromEntries(
-      Object.entries(input).filter((entry): entry is [string, string] => entry[1] !== undefined),
+      Object.entries(input).filter(([, value]) => value !== undefined),
     );
     try {
       return await this.prisma.$transaction(async (transaction) => {
@@ -749,6 +752,19 @@ export class PortfolioService {
 
   async deleteMedia(organisationId: string, mediaId: string) {
     const media = await this.getMedia(organisationId, mediaId);
+    const historicalReference =
+      typeof this.prisma.inspectionRevisionMedia?.findFirst === 'function'
+        ? await this.prisma.inspectionRevisionMedia.findFirst({
+            where: { organisationId, mediaId },
+            select: { mediaId: true },
+          })
+        : null;
+    if (historicalReference !== null)
+      throw new DomainError(
+        'MEDIA_HISTORY_PROTECTED',
+        'This image is part of an inspection revision and cannot be deleted.',
+        409,
+      );
     await this.prisma.$transaction(async (transaction) => {
       await transaction.customer.updateMany({
         where: { organisationId, logoMediaId: mediaId },
@@ -794,6 +810,19 @@ export class PortfolioService {
         'INSPECTION_MEDIA_NOT_FOUND',
         'The media was not uploaded for this inspection.',
         404,
+      );
+    const historicalReference =
+      typeof this.prisma.inspectionRevisionMedia?.findFirst === 'function'
+        ? await this.prisma.inspectionRevisionMedia.findFirst({
+            where: { organisationId, mediaId: media.id },
+            select: { mediaId: true },
+          })
+        : null;
+    if (historicalReference !== null)
+      throw new DomainError(
+        'MEDIA_HISTORY_PROTECTED',
+        'This image is part of an inspection revision and cannot be deleted.',
+        409,
       );
     await this.prisma.$transaction(async (transaction) => {
       const linkedDefects = await transaction.defect.findMany({

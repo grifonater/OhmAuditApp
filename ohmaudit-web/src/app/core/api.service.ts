@@ -212,13 +212,46 @@ export interface AssetSummary {
   assetType: string;
   assetReference: string;
   displayName: string;
+  iconKey?: AssetIconKey | null;
   manufacturer?: string;
   model?: string;
   serialNumber?: string;
   status: string;
+  createdDuringVisitId?: string | null;
   notes?: string;
   media?: AssetMedia[];
 }
+export type AssetIconKey =
+  | 'ev-charger'
+  | 'solar-panel'
+  | 'emergency-light'
+  | 'distribution-board'
+  | 'battery'
+  | 'meter'
+  | 'general'
+  | 'fire-alarm'
+  | 'fire-extinguisher'
+  | 'cctv'
+  | 'access-control'
+  | 'server'
+  | 'network-router'
+  | 'air-conditioning'
+  | 'water-pump'
+  | 'gas-system'
+  | 'generator'
+  | 'lighting'
+  | 'socket'
+  | 'circuit-board'
+  | 'security'
+  | 'building'
+  | 'factory'
+  | 'door'
+  | 'tools'
+  | 'boiler'
+  | 'camera'
+  | 'electrical-supply'
+  | 'home'
+  | 'warehouse';
 export interface AssetMedia {
   id: string;
   category: string;
@@ -577,7 +610,8 @@ export interface ScheduleOccurrence {
 }
 export interface ScheduleSuggestion {
   inspectionId: string;
-  asset?: { id: string; displayName: string };
+  visitId?: string | null;
+  asset?: { id: string; displayName: string; assetType: string } | null;
   moduleKey: string;
   title: string;
   lastInspectionDate: string;
@@ -642,8 +676,8 @@ export interface VisitFinding {
 }
 export type VisitFindingInput = Pick<
   VisitFinding,
-  'clientFindingId' | 'category' | 'title' | 'severity' | 'photoMediaIds'
-> & { description?: string; status: 'OPEN' };
+  'clientFindingId' | 'category' | 'title' | 'severity' | 'status' | 'photoMediaIds'
+> & { description?: string };
 export interface VisitTaskInput {
   assetId?: string;
   moduleKey: string;
@@ -668,8 +702,8 @@ export interface VisitTask {
     inspectionType: string;
     status: string;
     currentRevisionNumber: number;
-    submittedAt?: string;
-    approvedAt?: string;
+    submittedAt?: string | null;
+    approvedAt?: string | null;
     draft?: { available: boolean; updatedAt?: string | null };
     revisions?: Array<{ id: string; revisionNumber: number; data: Record<string, unknown> }>;
     defects?: Array<{
@@ -958,6 +992,16 @@ export interface InspectionSummary {
     data: Record<string, unknown>;
     validation: Record<string, unknown>;
     snapshots?: Record<string, unknown>;
+    defectSnapshot?: Array<{
+      id: string;
+      assetId?: string | null;
+      title: string;
+      description?: string | null;
+      category: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
+      severity: string;
+      status: string;
+      photoMediaIds?: string[];
+    }> | null;
     createdAt: string;
     signatures?: Array<{
       signerName: string;
@@ -965,6 +1009,9 @@ export interface InspectionSummary {
       signedAt?: string;
       signatureData?: string;
     }>;
+    signatureSourceRevision?: {
+      signatures: Array<{ signerName: string; signerRole?: string; signedAt?: string }>;
+    } | null;
     documents?: ReportSummary[];
     evData?: {
       stableDetails: Record<string, unknown>;
@@ -1345,6 +1392,7 @@ export class ApiService {
       assetType: string;
       assetReference: string;
       displayName: string;
+      iconKey?: AssetIconKey | null;
       manufacturer?: string;
       model?: string;
       serialNumber?: string;
@@ -1369,6 +1417,7 @@ export class ApiService {
       assetType?: string;
       assetReference?: string;
       displayName?: string;
+      iconKey?: AssetIconKey | null;
       manufacturer?: string;
       model?: string;
       serialNumber?: string;
@@ -2192,6 +2241,12 @@ export class ApiService {
       { method: 'POST', body: JSON.stringify(input) },
     );
   }
+  removeVisitEvAsset(organisationId: string, visitId: string, assetId: string) {
+    return this.request<{ deleted: true }>(
+      `/visits/${encodeURIComponent(visitId)}/ev-assets/${encodeURIComponent(assetId)}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
+    );
+  }
   createVisit(
     organisationId: string,
     input: {
@@ -2349,6 +2404,12 @@ export class ApiService {
       body: JSON.stringify(input),
     });
   }
+  removeGuestVisitEvAsset(token: string, assetId: string) {
+    return this.publicRequest<{ deleted: true }>(
+      `/guest/visits/${encodeURIComponent(token)}/ev-assets/${encodeURIComponent(assetId)}`,
+      { method: 'DELETE' },
+    );
+  }
   async downloadGuestMedia(token: string, mediaId: string): Promise<Blob> {
     const response = await fetch(
       `${this.config.config.apiBaseUrl}/guest/visits/${encodeURIComponent(token)}/media/${mediaId}/content`,
@@ -2407,6 +2468,12 @@ export class ApiService {
         headers: { 'content-type': photo.type, 'x-file-size': String(photo.size) },
         body: photo,
       },
+    );
+  }
+  deleteInspectionReviewPhoto(organisationId: string, inspectionId: string, mediaId: string) {
+    return this.request<{ deleted: true }>(
+      `/inspections/${inspectionId}/review-media/${mediaId}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
     );
   }
   uploadGuestInspectionAssetPhoto(
@@ -2631,6 +2698,7 @@ export class ApiService {
     inspectionId: string,
     input: {
       reason: string;
+      expectedRevisionNumber: number;
       data: Record<string, unknown>;
       evData?: {
         stableDetails: Record<string, unknown>;
@@ -2639,13 +2707,20 @@ export class ApiService {
         functionalChecks: Record<string, unknown>;
         engineerObservations?: string;
       };
-      defects?: Array<{
-        id: string;
-        title: string;
-        description?: string;
-        severity: string;
-        status: string;
-      }>;
+      defects: {
+        upsert: Array<{
+          id: string;
+          title: string;
+          description?: string;
+          category: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
+          severity: string;
+          status: string;
+          photoMediaIds: string[];
+        }>;
+        remove: string[];
+      };
+      generalPhotoMediaIds: string[];
+      media: Array<{ mediaId: string; caption?: string }>;
     },
   ) {
     return this.request(

@@ -53,24 +53,24 @@
         }
       </div>
     </header>
-    @if (canManageSite() && scheduleSuggestions().length > 0) {
+    @if (canManageSite() && groupedScheduleSuggestions().length > 0) {
       <section class="schedule-nudges" aria-label="Schedule suggestions">
-        @for (suggestion of scheduleSuggestions(); track suggestion.inspectionId) {
+        @for (group of groupedScheduleSuggestions(); track group.id) {
           <article class="card schedule-nudge">
             <span class="schedule-nudge-icon">◷</span>
             <div>
               <p class="eyebrow">Keep inspections recurring</p>
-              <h2>Add {{ suggestion.title }} to the schedule?</h2>
+              <h2>{{ scheduleSuggestionHeading(group) }}</h2>
               <p>
-                Last inspected {{ formatDate(suggestion.lastInspectionDate) }}. An annual recurrence
-                will next be due {{ formatDate(suggestion.suggestedStartDate) }}.
+                Last inspected {{ formatDate(group.lastInspectionDate) }}. An annual recurrence will
+                next be due {{ formatDate(group.suggestedStartDate) }}.
               </p>
             </div>
             <button
               class="button primary"
               type="button"
               [disabled]="busy()"
-              (click)="createSuggestedSchedule(suggestion)"
+              (click)="createSuggestedSchedules(group)"
             >
               Add annual schedule
             </button>
@@ -331,7 +331,25 @@
                   <option>Solar PV System</option>
                   <option>General Asset</option>
                 </select></label
-              ><label class="field">Serial number<input formControlName="serialNumber" /></label
+              >
+              <div class="field full compact-icon-picker">
+                <span>Asset icon</span>
+                <button
+                  class="icon-picker-trigger"
+                  type="button"
+                  (click)="iconPickerOpen.set(true)"
+                >
+                  <span class="asset-icon-preview">
+                    <oa-asset-icon [iconKey]="selectedAssetIconKey()" [size]="26" />
+                  </span>
+                  <span>
+                    <strong>{{ selectedAssetIconLabel() }}</strong>
+                    <small>Choose from 30 asset icons</small>
+                  </span>
+                  <span class="button secondary compact">Change icon</span>
+                </button>
+              </div>
+              <label class="field">Serial number<input formControlName="serialNumber" /></label
               ><label class="field">Manufacturer<input formControlName="manufacturer" /></label
               ><label class="field">Model<input formControlName="model" /></label
               ><label class="field full">Notes<textarea formControlName="notes"></textarea></label>
@@ -353,11 +371,72 @@
             </form>
           </div>
         }
+        @if (iconPickerOpen()) {
+          <div
+            class="modal-backdrop"
+            tabindex="0"
+            (click)="closeIconPickerOnBackdrop($event)"
+            (keydown.escape)="iconPickerOpen.set(false)"
+          >
+            <section
+              class="component-modal icon-picker-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="asset-icon-picker-title"
+            >
+              <header>
+                <div>
+                  <p class="eyebrow">Asset appearance</p>
+                  <h2 id="asset-icon-picker-title">Choose an asset icon</h2>
+                </div>
+                <button
+                  class="icon-button"
+                  type="button"
+                  aria-label="Close icon selector"
+                  (click)="iconPickerOpen.set(false)"
+                >
+                  ×
+                </button>
+              </header>
+              <div class="icon-picker-modal-body">
+                <button
+                  class="icon-modal-choice default-choice"
+                  type="button"
+                  [class.selected]="assetForm.controls.iconKey.value === null"
+                  (click)="selectAssetIcon(null)"
+                >
+                  <oa-asset-icon
+                    [iconKey]="defaultAssetIconKey(assetForm.controls.assetType.value)"
+                    [size]="28"
+                  />
+                  <span
+                    ><strong>Use type default</strong><small>Updates with asset type</small></span
+                  >
+                </button>
+                <div class="icon-modal-grid">
+                  @for (icon of assetIconOptions; track icon.key) {
+                    <button
+                      class="icon-modal-choice"
+                      type="button"
+                      [class.selected]="assetForm.controls.iconKey.value === icon.key"
+                      (click)="selectAssetIcon(icon.key)"
+                    >
+                      <oa-asset-icon [iconKey]="icon.key" [size]="28" />
+                      <small>{{ icon.label }}</small>
+                    </button>
+                  }
+                </div>
+              </div>
+            </section>
+          </div>
+        }
         <div class="asset-collection" [class.list-view]="view() === 'list'">
           @for (asset of filteredAssets(); track asset.id) {
             <article class="asset-card card">
               <div class="asset-title">
-                <span class="asset-symbol">◇</span
+                <span class="asset-symbol"
+                  ><oa-asset-icon
+                    [iconKey]="resolvedAssetIconKey(asset.assetType, asset.iconKey)" /></span
                 ><span
                   ><strong>{{ asset.displayName }}</strong
                   ><small>{{ asset.assetReference }}</small></span
@@ -495,9 +574,8 @@
                   /><small>Must be unique at this site.</small></label
                 >
                 <p class="duplicate-copy-note">
-                  Copies asset type, manufacturer, model, serial number and notes from &ldquo;{{
-                    source.displayName
-                  }}&rdquo;.
+                  Copies asset type, icon, manufacturer, model, serial number and notes from
+                  &ldquo;{{ source.displayName }}&rdquo;.
                 </p>
                 <div class="form-actions full">
                   <button class="button secondary" type="button" (click)="closeDuplicate()">

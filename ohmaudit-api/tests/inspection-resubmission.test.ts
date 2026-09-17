@@ -98,6 +98,20 @@ describe('inspection resubmission consistency', () => {
         }),
       ]),
     });
+    expect(transaction.inspectionRevision.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        defectSnapshot: expect.arrayContaining([
+          expect.objectContaining({
+            title: 'Hot connection',
+            category: 'FAULT',
+            severity: 'MAJOR',
+            status: 'OPEN',
+            photoMediaIds: [mediaId],
+          }),
+          expect.objectContaining({ title: 'Monitor enclosure', category: 'CONDITION' }),
+        ]),
+      }),
+    });
     expect(draftDeleteMany).toHaveBeenCalledWith({
       where: { organisationId: 'organisation-a', inspectionId: 'inspection-a' },
     });
@@ -106,7 +120,7 @@ describe('inspection resubmission consistency', () => {
     );
   });
 
-  it('returns one copy of an identical legacy defect without deleting historical rows', async () => {
+  it('preserves identical findings as distinct records', async () => {
     const duplicate = {
       id: 'defect-a',
       assetId: null,
@@ -134,8 +148,7 @@ describe('inspection resubmission consistency', () => {
 
     const detail = await new InspectionService(prisma).detail('organisation-a', 'inspection-a');
 
-    expect(detail.defects).toHaveLength(1);
-    expect(detail.defects[0]?.id).toBe('defect-a');
+    expect(detail.defects.map(({ id }) => id)).toEqual(['defect-a', 'defect-b', 'defect-c']);
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 500 }));
   });
 

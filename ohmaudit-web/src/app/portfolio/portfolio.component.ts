@@ -17,6 +17,7 @@ import {
   type ReportSummary,
   type SiteSummary,
 } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 
 @Component({
   selector: 'oa-portfolio',
@@ -27,6 +28,7 @@ import {
 })
 export class PortfolioComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -212,14 +214,20 @@ export class PortfolioComponent {
   protected async openReport(report: ReportSummary): Promise<void> {
     if (!report.visitId && !report.mediaId && !report.inspectionRevisionId) return;
     try {
-      const blob = report.visitId
-        ? await this.api.downloadVisitReportPdf(this.organisationId, report.visitId)
-        : report.mediaId
-          ? await this.api.downloadMedia(this.organisationId, report.mediaId)
-          : await this.api.downloadDocumentPdf(this.organisationId, report.id);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await this.generationProgress.run(
+        'Generating report',
+        async () => {
+          const blob = report.visitId
+            ? await this.api.downloadVisitReportPdf(this.organisationId, report.visitId)
+            : report.mediaId
+              ? await this.api.downloadMedia(this.organisationId, report.mediaId)
+              : await this.api.downloadDocumentPdf(this.organisationId, report.id);
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank', 'noopener,noreferrer');
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        },
+        'This can take a few moments.',
+      );
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to open the report.');
     }

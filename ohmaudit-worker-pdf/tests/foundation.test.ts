@@ -6,6 +6,7 @@ import {
   renderEvCertificatePdf,
   renderThermalReportHtml,
   renderThermalCertificatePdf,
+  renderVisitReportHtml,
   renderVisitReportPdf,
 } from '../src/index';
 import pdfWorker from '../src/index';
@@ -347,6 +348,345 @@ describe('PDF worker', () => {
     expect(html).toContain('Page 3 of 3');
     expect(html).not.toContain('EVCP <12>');
   });
+  it('builds a combined EV pack with the redesigned cover and finding continuations', () => {
+    const evCertificate = {
+      testingCompany: {
+        name: 'Ohm & Audit Electrical',
+        addressLines: ['1 Test Street'],
+        registrationNumber: 'REG-1',
+      },
+      testingLocation: { name: 'Apex <Site>', addressLines: ['Site Road'] },
+      charger: {
+        name: 'EVCP-01',
+        location: 'North car park',
+        make: 'Example',
+        model: 'Rapid',
+        serialNumber: 'SN-1',
+        powerOutputKw: '50 kW',
+        photoJpegBase64: jpegBase64,
+      },
+      supplies: [],
+      connectors: [],
+      testDate: '2026-09-15',
+      outcome: 'PASS',
+      reasonForFailure: '',
+      notes: 'Unit satisfactory.',
+      engineerName: 'A Engineer',
+      certificateReference: 'EV-001',
+      observations: [],
+      photos: [],
+    };
+    const html = renderVisitReportHtml({
+      title: 'EV Inspection Report & Certificate Pack',
+      organisationName: 'Ohm & Audit Electrical',
+      customerName: 'Apex <Facilities>',
+      siteName: 'Apex House',
+      visitDate: '2026-09-15',
+      certificates: [
+        {
+          title: 'EV Certificate',
+          organisationName: 'Ohm & Audit Electrical',
+          customerName: 'Apex Facilities',
+          siteName: 'Apex House',
+          assetName: 'EVCP-01',
+          inspectionType: 'EV inspection',
+          effectiveDate: '2026-09-15',
+          revisionNumber: 1,
+          engineerName: 'A Engineer',
+          outcome: 'PASS',
+          summaryLines: [],
+          evCertificate,
+        },
+      ],
+      findings: Array.from({ length: 6 }, (_, index) => ({
+        category: index === 0 ? 'FAULT' : 'ADVICE',
+        title: `Observation ${index + 1}`,
+        description: `Finding detail ${index + 1}`,
+        severity: index === 0 ? 'HIGH' : 'LOW',
+        status: 'OPEN',
+        images:
+          index === 0
+            ? [
+                { mimeType: 'image/jpeg' as const, base64: jpegBase64, caption: 'Site image' },
+                { mimeType: 'image/jpeg' as const, base64: jpegBase64, caption: 'Detail image' },
+              ]
+            : [],
+      })),
+    });
+
+    expect(html).toContain('visit-cover');
+    expect(html).toContain('Inspection summary');
+    expect(html).toContain('General Installation Observations');
+    expect(html).toContain('Observation Evidence');
+    expect(html).toContain('Image 2 of 2');
+    expect(html).toContain('Detail image');
+    expect(html).toContain('Observation 6');
+    expect(html).toContain('certificate-document ev-document');
+    expect(html).toContain('certificate-title');
+    expect(html).toContain('EV Charge Point Test Certificate');
+    expect(html).toContain('data:image/jpeg;base64,');
+    expect(html).toContain('Apex &lt;Facilities&gt;');
+    expect(html).not.toContain('Apex <Facilities>');
+  });
+  it('uses only the explicit site hero image on the visit cover', () => {
+    const html = renderVisitReportHtml({
+      title: 'Visit report',
+      organisationName: 'OhmAudit',
+      customerName: 'Customer',
+      siteName: 'Site',
+      visitDate: '2026-09-15',
+      heroImage: { mimeType: 'image/png', base64: 'SEVS\nTw==' },
+      certificates: [
+        {
+          title: 'EV Certificate',
+          organisationName: 'OhmAudit',
+          customerName: 'Customer',
+          siteName: 'Site',
+          inspectionType: 'EV inspection',
+          effectiveDate: '2026-09-15',
+          revisionNumber: 1,
+          engineerName: 'Engineer',
+          outcome: 'PASS',
+          summaryLines: [],
+          evCertificate: {
+            testingCompany: { name: 'OhmAudit', addressLines: [], registrationNumber: 'REG-1' },
+            testingLocation: { name: 'Customer site', addressLines: [] },
+            charger: {
+              name: 'EVCP-01',
+              location: 'Car park',
+              make: 'Example',
+              model: 'Model',
+              serialNumber: 'SN-1',
+              powerOutputKw: '22 kW',
+              photoJpegBase64: 'Q0hBUkdFUg==',
+            },
+            supplies: [],
+            connectors: [],
+            testDate: '2026-09-15',
+            outcome: 'PASS',
+            reasonForFailure: '',
+            notes: '',
+            engineerName: 'Engineer',
+            certificateReference: 'EV-1',
+            observations: [],
+            photos: [],
+          },
+        },
+      ],
+      findings: [
+        {
+          category: 'NOTE',
+          title: 'Finding',
+          severity: 'LOW',
+          status: 'OPEN',
+          images: [{ mimeType: 'image/jpeg', base64: 'RklORElORw==' }],
+        },
+      ],
+    });
+    const hero = /<section class="visit-hero[\s\S]*?<\/section>/u.exec(html)?.[0];
+
+    expect(hero).toContain('data:image/png;base64,SEVSTw==');
+    expect(hero).not.toContain('Q0hBUkdFUg==');
+    expect(hero).not.toContain('RklORElORw==');
+  });
+  it('renders a solid branded visit hero when heroImage is absent', () => {
+    const html = renderVisitReportHtml({
+      title: 'Visit report',
+      organisationName: 'OhmAudit',
+      customerName: 'Customer',
+      siteName: 'Site',
+      visitDate: '2026-09-15',
+      certificates: [
+        {
+          title: 'Certificate',
+          organisationName: 'OhmAudit',
+          customerName: 'Customer',
+          siteName: 'Site',
+          inspectionType: 'Visual',
+          effectiveDate: '2026-09-15',
+          revisionNumber: 1,
+          engineerName: 'Engineer',
+          outcome: 'PASS',
+          summaryLines: [],
+          evCertificate: {
+            testingCompany: { name: 'OhmAudit', addressLines: [], registrationNumber: 'REG-1' },
+            testingLocation: { name: 'Customer site', addressLines: [] },
+            charger: {
+              name: 'EVCP-01',
+              location: 'Car park',
+              make: 'Example',
+              model: 'Model',
+              serialNumber: 'SN-1',
+              powerOutputKw: '22 kW',
+              photoJpegBase64: 'Q0hBUkdFUg==',
+            },
+            supplies: [],
+            connectors: [],
+            testDate: '2026-09-15',
+            outcome: 'PASS',
+            reasonForFailure: '',
+            notes: '',
+            engineerName: 'Engineer',
+            certificateReference: 'EV-1',
+            observations: [],
+            photos: [],
+          },
+        },
+      ],
+      findings: [
+        {
+          category: 'NOTE',
+          title: 'Finding',
+          severity: 'LOW',
+          status: 'OPEN',
+          images: [{ mimeType: 'image/jpeg', base64: 'RklORElORw==' }],
+        },
+      ],
+    });
+    const hero = /<section class="visit-hero[\s\S]*?<\/section>/u.exec(html)?.[0];
+
+    expect(hero).toBeDefined();
+    expect(hero).not.toContain('<img');
+    expect(hero).not.toContain('visit-hero-shade');
+    expect(hero).not.toContain('Q0hBUkdFUg==');
+    expect(hero).not.toContain('RklORElORw==');
+  });
+  it('keeps organisation and EV customer logos distinct from the site hero', () => {
+    const html = renderVisitReportHtml({
+      title: 'Visit report',
+      organisationName: 'OhmAudit',
+      customerName: 'Customer',
+      siteName: 'Site',
+      visitDate: '2026-09-15',
+      logoImage: { mimeType: 'image/png', base64: 'T1JH' },
+      heroImage: { mimeType: 'image/png', base64: 'SEVSTw==' },
+      certificates: [
+        {
+          title: 'EV Certificate',
+          organisationName: 'OhmAudit',
+          customerName: 'Customer',
+          siteName: 'Site',
+          inspectionType: 'EV inspection',
+          effectiveDate: '2026-09-15',
+          revisionNumber: 1,
+          engineerName: 'Engineer',
+          outcome: 'PASS',
+          summaryLines: [],
+          evCertificate: {
+            testingCompany: {
+              name: 'Wrong logo source',
+              addressLines: [],
+              registrationNumber: 'REG-1',
+              logoImage: { mimeType: 'image/png', base64: 'V1JPTkc=' },
+            },
+            testingLocation: {
+              name: 'Customer site',
+              addressLines: [],
+              logoImage: { mimeType: 'image/png', base64: 'Q1VTVA==' },
+            },
+            charger: {
+              name: 'EVCP-01',
+              location: 'Car park',
+              make: 'Example',
+              model: 'Model',
+              serialNumber: 'SN-1',
+              powerOutputKw: '22 kW',
+            },
+            supplies: [],
+            connectors: [],
+            testDate: '2026-09-15',
+            outcome: 'PASS',
+            reasonForFailure: '',
+            notes: '',
+            engineerName: 'Engineer',
+            certificateReference: 'EV-1',
+            observations: [],
+            photos: [],
+          },
+        },
+      ],
+    });
+    const header = /<header class="visit-cover-header">[\s\S]*?<\/header>/u.exec(html)?.[0];
+    const hero = /<section class="visit-hero[\s\S]*?<\/section>/u.exec(html)?.[0];
+
+    expect(header).toContain('class="visit-logo"');
+    expect(header).toContain('data:image/png;base64,T1JH');
+    expect(header).toContain('class="visit-customer-logo"');
+    expect(header).toContain('data:image/png;base64,Q1VTVA==');
+    expect(header).not.toContain('V1JPTkc=');
+    expect(header).not.toContain('SEVSTw==');
+    expect(hero).toContain('data:image/png;base64,SEVSTw==');
+  });
+  it('rejects an invalid visit hero image payload', async () => {
+    const response = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/visit-report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Visit report',
+          organisationName: 'OhmAudit',
+          customerName: 'Customer',
+          siteName: 'Site',
+          visitDate: '2026-09-15',
+          heroImage: { mimeType: 'image/gif', base64: 'AAAA' },
+          certificates: [
+            {
+              title: 'Certificate',
+              organisationName: 'OhmAudit',
+              customerName: 'Customer',
+              siteName: 'Site',
+              inspectionType: 'Visual',
+              effectiveDate: '2026-09-15',
+              revisionNumber: 1,
+              engineerName: 'Engineer',
+              outcome: 'PASS',
+              summaryLines: [],
+            },
+          ],
+        }),
+      }),
+      { APP_ENV: 'local', APP_VERSION: 'test', RENDER_TIMEOUT_MS: '30000' },
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ code: 'INVALID_DOCUMENT_PAYLOAD' });
+  });
+  it('uses binary JPEG streams in native fallback PDFs', () => {
+    const text = new TextDecoder().decode(
+      renderVisitReportPdf({
+        title: 'Combined report',
+        organisationName: 'Demo Electrical Ltd',
+        customerName: 'Customer',
+        siteName: 'Site',
+        visitDate: '2026-09-15',
+        certificates: [
+          {
+            title: 'Generic certificate',
+            organisationName: 'Demo Electrical Ltd',
+            customerName: 'Customer',
+            siteName: 'Site',
+            inspectionType: 'Visual',
+            effectiveDate: '2026-09-15',
+            revisionNumber: 1,
+            engineerName: 'Engineer',
+            outcome: 'PASS',
+            summaryLines: [],
+          },
+        ],
+        findings: [
+          {
+            category: 'NOTE',
+            title: 'Evidence',
+            severity: 'LOW',
+            status: 'OPEN',
+            images: [{ mimeType: 'image/jpeg', base64: jpegBase64 }],
+          },
+        ],
+      }),
+    );
+    expect(text).toContain('/Filter /DCTDecode');
+    expect(text).not.toContain('/ASCIIHexDecode');
+  });
   it('renders a multi-page thermal report with target conditions and fault guidance', () => {
     const text = new TextDecoder().decode(
       renderThermalCertificatePdf({
@@ -683,6 +1023,145 @@ describe('PDF worker', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
     expect(await response.text()).toContain('THERMAL IMAGING REPORT');
+  });
+  it('renders combined EV reports through Browser Run with redesigned HTML', async () => {
+    let options: BrowserRunPDFOptions | undefined;
+    const body = {
+      title: 'EV inspection pack',
+      organisationName: 'OhmAudit',
+      customerName: 'Customer',
+      siteName: 'Site',
+      visitDate: '2026-09-15',
+      certificates: [
+        {
+          title: 'EV certificate',
+          organisationName: 'OhmAudit',
+          customerName: 'Customer',
+          siteName: 'Site',
+          inspectionType: 'EV inspection',
+          effectiveDate: '2026-09-15',
+          revisionNumber: 1,
+          engineerName: 'Engineer',
+          outcome: 'PASS',
+          summaryLines: [],
+          evCertificate: {
+            testingCompany: { name: 'OhmAudit', addressLines: [], registrationNumber: 'REG-1' },
+            testingLocation: { name: 'Customer Site', addressLines: [] },
+            charger: {
+              name: 'EVCP-01',
+              location: 'Car park',
+              make: 'Example',
+              model: 'Model',
+              serialNumber: 'SN-1',
+              powerOutputKw: '22 kW',
+            },
+            supplies: [],
+            connectors: [],
+            testDate: '2026-09-15',
+            outcome: 'PASS',
+            reasonForFailure: '',
+            notes: '',
+            engineerName: 'Engineer',
+            certificateReference: 'EV-001',
+            observations: [],
+            photos: [],
+          },
+        },
+      ],
+    };
+    const response = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/visit-report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+      {
+        APP_ENV: 'local',
+        APP_VERSION: 'test',
+        RENDER_TIMEOUT_MS: '30000',
+        BROWSER: {
+          quickAction: (_action: 'pdf', received: BrowserRunPDFOptions) => {
+            options = received;
+            return Promise.resolve(
+              new Response('%PDF-1.7 browser', {
+                headers: { 'content-type': 'application/pdf', 'x-browser-ms-used': '321' },
+              }),
+            );
+          },
+        } as unknown as BrowserRun,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-ohmaudit-pdf-renderer')).toBe('browser-run');
+    expect(response.headers.get('x-ohmaudit-browser-ms-used')).toBe('321');
+    expect(options?.setJavaScriptEnabled).toBe(false);
+    expect(options?.pdfOptions).toMatchObject({
+      format: 'a4',
+      scale: 1,
+      printBackground: true,
+      preferCSSPageSize: true,
+      displayHeaderFooter: false,
+    });
+    expect(options !== undefined && 'html' in options ? options.html : '').toContain(
+      'certificate-document ev-document',
+    );
+  });
+  it('does not fall back to legacy native EV pages for a combined report', async () => {
+    const response = await pdfWorker.fetch(
+      new Request('https://pdf.test/render/visit-report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'EV pack',
+          organisationName: 'OhmAudit',
+          customerName: 'Customer',
+          siteName: 'Site',
+          visitDate: '2026-09-15',
+          certificates: [
+            {
+              title: 'EV certificate',
+              organisationName: 'OhmAudit',
+              customerName: 'Customer',
+              siteName: 'Site',
+              inspectionType: 'EV',
+              effectiveDate: '2026-09-15',
+              revisionNumber: 1,
+              engineerName: 'Engineer',
+              outcome: 'PASS',
+              summaryLines: [],
+              evCertificate: {
+                testingCompany: { name: 'OhmAudit', addressLines: [], registrationNumber: '' },
+                testingLocation: { name: 'Site', addressLines: [] },
+                charger: {
+                  name: 'EVCP',
+                  location: '',
+                  make: '',
+                  model: '',
+                  serialNumber: '',
+                  powerOutputKw: '',
+                },
+                supplies: [],
+                connectors: [],
+                testDate: '2026-09-15',
+                outcome: 'PASS',
+                reasonForFailure: '',
+                notes: '',
+                engineerName: 'Engineer',
+                certificateReference: 'EV-1',
+                observations: [],
+                photos: [],
+              },
+            },
+          ],
+        }),
+      }),
+      { APP_ENV: 'local', APP_VERSION: 'test', RENDER_TIMEOUT_MS: '30000' },
+    );
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'VISIT_REPORT_RENDERER_UNAVAILABLE',
+    });
   });
   it('uses Browser Run for an individual thermal PDF and streams its response', async () => {
     const browserPdf = new TextEncoder().encode('%PDF-1.7\nmanaged browser');

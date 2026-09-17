@@ -12,6 +12,7 @@ import {
   type RamsLibraryHazard,
   type VisitSummary,
 } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import {
   applyRamsTemplate,
   cloneMethodSteps,
@@ -50,6 +51,7 @@ type SupportingReferenceList =
 })
 export class RamsWorkspaceComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
@@ -716,12 +718,18 @@ export class RamsWorkspaceComponent {
     const rams = this.rams();
     if (!rams) return;
     await this.run(async () => {
-      const blob = await this.api.downloadRamsRevisionPdf(
-        this.organisationId,
-        rams.id,
-        revision.revisionNumber,
+      await this.generationProgress.run(
+        'Generating RAMS revision PDF',
+        async () => {
+          const blob = await this.api.downloadRamsRevisionPdf(
+            this.organisationId,
+            rams.id,
+            revision.revisionNumber,
+          );
+          this.saveBlob(blob, `${rams.reference}-revision-${revision.revisionNumber}.pdf`);
+        },
+        'This can take a few moments.',
       );
-      this.saveBlob(blob, `${rams.reference}-revision-${revision.revisionNumber}.pdf`);
     });
   }
 
@@ -781,16 +789,22 @@ export class RamsWorkspaceComponent {
     const rams = this.rams();
     if (!rams) return;
     await this.run(async () => {
-      const blob = await this.api.downloadRamsPdf(this.organisationId, rams.id);
-      this.saveBlob(
-        blob,
-        ramsPdfFileName(
-          this.draft()?.overview.title || rams.title || rams.reference,
-          rams.status,
-          rams.currentRevisionNumber,
-        ),
+      await this.generationProgress.run(
+        'Generating RAMS PDF',
+        async () => {
+          const blob = await this.api.downloadRamsPdf(this.organisationId, rams.id);
+          this.saveBlob(
+            blob,
+            ramsPdfFileName(
+              this.draft()?.overview.title || rams.title || rams.reference,
+              rams.status,
+              rams.currentRevisionNumber,
+            ),
+          );
+          this.notice.set('RAMS PDF downloaded.');
+        },
+        'This can take a few moments.',
       );
-      this.notice.set('RAMS PDF downloaded.');
     });
   }
 

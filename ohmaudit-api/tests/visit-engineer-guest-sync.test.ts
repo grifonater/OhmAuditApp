@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { addEvChargerPayloadInput, createApp, inspectionAssetMediaKindInput } from '../src/app';
+import {
+  addEvChargerPayloadInput,
+  createApp,
+  inspectionAssetMediaKindInput,
+  removeEvChargerPayloadInput,
+} from '../src/app';
 import type { AuthenticatedActor, TokenVerifier } from '../src/auth/auth.types';
 import type { PrismaClient } from '../src/generated/prisma/client';
 import { VisitService, type AddEvChargerPayload } from '../src/visits/visit.service';
@@ -70,6 +75,15 @@ describe('engineer guest API contracts', () => {
     expect(inspectionAssetMediaKindInput.parse('data-plate')).toBe('data-plate');
   });
 
+  it('protects visit-scoped charger deletion', async () => {
+    const response = await createApp().request(
+      `/api/v1/visits/${visitId}/ev-assets/${localIds.assetId}?organisationId=${organisationId}`,
+      { method: 'DELETE' },
+      environment,
+    );
+    expect(response.status).toBe(401);
+  });
+
   it('protects the engineer job-pack PDF route', async () => {
     const response = await createApp().request(
       `/api/v1/visits/${visitId}/engineer-job-pack.pdf?organisationId=${organisationId}`,
@@ -116,6 +130,11 @@ describe('engineer guest API contracts', () => {
         localIds: { ...payload.localIds, inspectionId: 'temporary-inspection' },
       }).success,
     ).toBe(false);
+  });
+
+  it('requires a UUID asset ID in the REMOVE_EV_CHARGER payload', () => {
+    expect(removeEvChargerPayloadInput.safeParse({ assetId: localIds.assetId }).success).toBe(true);
+    expect(removeEvChargerPayloadInput.safeParse({ assetId: 'asset-local' }).success).toBe(false);
   });
 });
 
@@ -278,6 +297,7 @@ describe('ADD_EV_CHARGER sync', () => {
     expect(assetCreateInput).toMatchObject({
       data: {
         status: 'PROPOSED',
+        createdDuringVisitId: visitId,
         evChargePoint: { create: { dcRcdType: 'RDC_DD', organisationId } },
       },
       include: { evChargePoint: true },
@@ -463,5 +483,225 @@ describe('ADD_EV_CHARGER sync', () => {
       ),
     ).rejects.toMatchObject({ code: 'VISIT_NOT_ACTIVE', status: 409 });
     expect(assetCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('engineer EV charger removal', () => {
+  function removalPrisma(
+    assetOverrides: Record<string, unknown> = {},
+    visitOverrides: Record<string, unknown> = {},
+  ) {
+    const transaction = {
+      visit: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: visitId,
+          siteId: 'site-a',
+          status: 'IN_PROGRESS',
+          submittedAt: null,
+          completedAt: null,
+          archivedAt: null,
+          ...visitOverrides,
+        }),
+      },
+      asset: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'asset-a',
+          organisationId,
+          siteId: 'site-a',
+          status: 'PROPOSED',
+          createdDuringVisitId: visitId,
+          assetType: 'EV Charger',
+          visitTasks: [
+            {
+              id: 'task-a',
+              visitId,
+              moduleKey: 'ev-charging',
+              status: 'IN_PROGRESS',
+              inspection: { id: 'inspection-a' },
+            },
+          ],
+          inspections: [
+            {
+              id: 'inspection-a',
+              visitId,
+              visitTaskId: 'task-a',
+              moduleKey: 'ev-charging',
+              status: 'IN_PROGRESS',
+              submittedAt: null,
+              revisions: [],
+            },
+          ],
+          proposedChanges: [],
+          evChargePoint: { id: 'charge-point-a' },
+          ...assetOverrides,
+        }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      document: { count: vi.fn().mockResolvedValue(0) },
+      media: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'media-a', storageKey: 'asset/media-a.jpg' }]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      entityTag: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      defect: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      inspection: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      visitTask: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      evChargePoint: { delete: vi.fn().mockResolvedValue({ id: 'charge-point-a' }) },
+      auditEvent: { create: vi.fn().mockResolvedValue({ id: 'audit-a' }) },
+    };
+    return {
+      transaction,
+      prisma: {
+        $transaction: (operation: (client: typeof transaction) => unknown) =>
+          operation(transaction),
+      } as unknown as PrismaClient,
+    };
+  }
+
+  it('deletes only the same-job provisional graph and returns media storage cleanup keys', async () => {
+    const { prisma, transaction } = removalPrisma();
+
+    await expect(
+      new VisitService(prisma).removeEvAsset(
+        organisationId,
+        visitId,
+        'asset-a',
+        'engineer-a',
+        'correlation-a',
+      ),
+    ).resolves.toMatchObject({
+      deleted: true,
+      assetId: 'asset-a',
+      taskIds: ['task-a'],
+      inspectionIds: ['inspection-a'],
+      storageKeys: ['asset/media-a.jpg'],
+    });
+    expect(transaction.inspection.deleteMany).toHaveBeenCalled();
+    expect(transaction.visitTask.deleteMany).toHaveBeenCalled();
+    expect(transaction.evChargePoint.delete).toHaveBeenCalled();
+    expect(transaction.asset.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: 'asset-a',
+        organisationId,
+        siteId: 'site-a',
+        status: 'PROPOSED',
+        createdDuringVisitId: visitId,
+      },
+    });
+    expect(transaction.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        // Vitest's asymmetric matcher is intentionally untyped at this boundary.
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: expect.objectContaining({ eventType: 'EngineerEvAssetRemoved', entityId: 'asset-a' }),
+      }),
+    );
+  });
+
+  it('never removes an ACTIVE registered asset or a proposed asset from another visit', async () => {
+    for (const overrides of [
+      { status: 'ACTIVE' },
+      { createdDuringVisitId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+    ]) {
+      const { prisma, transaction } = removalPrisma(overrides);
+      await expect(
+        new VisitService(prisma).removeEvAsset(
+          organisationId,
+          visitId,
+          'asset-a',
+          undefined,
+          'correlation-a',
+        ),
+      ).rejects.toMatchObject({ code: 'EV_ASSET_NOT_REMOVABLE', status: 409 });
+      expect(transaction.asset.deleteMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects revisions, proposed changes, documents, and submitted inspections', async () => {
+    const unsafeAssets = [
+      {
+        inspections: [
+          {
+            id: 'inspection-a',
+            visitId,
+            visitTaskId: 'task-a',
+            moduleKey: 'ev-charging',
+            status: 'IN_PROGRESS',
+            submittedAt: null,
+            revisions: [{ id: 'revision-a' }],
+          },
+        ],
+      },
+      { proposedChanges: [{ id: 'change-a' }] },
+      {
+        inspections: [
+          {
+            id: 'inspection-a',
+            visitId,
+            visitTaskId: 'task-a',
+            moduleKey: 'ev-charging',
+            status: 'SUBMITTED',
+            submittedAt: new Date(),
+            revisions: [],
+          },
+        ],
+      },
+    ];
+    for (const overrides of unsafeAssets) {
+      const { prisma } = removalPrisma(overrides);
+      await expect(
+        new VisitService(prisma).removeEvAsset(
+          organisationId,
+          visitId,
+          'asset-a',
+          undefined,
+          'correlation-a',
+        ),
+      ).rejects.toMatchObject({ code: 'EV_ASSET_REMOVAL_LOCKED', status: 409 });
+    }
+    const { prisma, transaction } = removalPrisma();
+    transaction.document.count.mockResolvedValue(1);
+    await expect(
+      new VisitService(prisma).removeEvAsset(
+        organisationId,
+        visitId,
+        'asset-a',
+        undefined,
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ code: 'EV_ASSET_REMOVAL_LOCKED', status: 409 });
+  });
+
+  it('rejects completed jobs and completed tasks', async () => {
+    const completedVisit = removalPrisma({}, { status: 'COMPLETED', completedAt: new Date() });
+    await expect(
+      new VisitService(completedVisit.prisma).removeEvAsset(
+        organisationId,
+        visitId,
+        'asset-a',
+        undefined,
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ code: 'EV_ASSET_REMOVAL_LOCKED', status: 409 });
+
+    const completedTask = removalPrisma({
+      visitTasks: [
+        {
+          id: 'task-a',
+          visitId,
+          moduleKey: 'ev-charging',
+          status: 'COMPLETED',
+          inspection: { id: 'inspection-a' },
+        },
+      ],
+    });
+    await expect(
+      new VisitService(completedTask.prisma).removeEvAsset(
+        organisationId,
+        visitId,
+        'asset-a',
+        undefined,
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ code: 'EV_ASSET_REMOVAL_LOCKED', status: 409 });
   });
 });

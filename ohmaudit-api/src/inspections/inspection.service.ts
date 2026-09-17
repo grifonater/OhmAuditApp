@@ -34,6 +34,35 @@ type SubmittedDefect = {
   photoMediaIds?: string[] | undefined;
 };
 
+type CorrectedDefect = {
+  id: string;
+  title: string;
+  description?: string | undefined;
+  category?: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION' | undefined;
+  severity: 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
+  status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'DISMISSED';
+  photoMediaIds: string[];
+};
+
+type RevisionMediaInput = { mediaId: string; caption?: string | undefined };
+
+function defectSnapshot(defects: Array<Record<string, unknown>>): Prisma.InputJsonValue {
+  return defects.map((defect) => ({
+    id: defect['id'],
+    assetId: defect['assetId'] ?? null,
+    title: defect['title'],
+    description: defect['description'] ?? null,
+    category: defect['category'] ?? 'FAULT',
+    severity: defect['severity'],
+    status: defect['status'] ?? 'OPEN',
+    photoMediaIds: defect['photoMediaIds'] ?? [],
+    resolvedAt:
+      defect['resolvedAt'] instanceof Date
+        ? defect['resolvedAt'].toISOString()
+        : (defect['resolvedAt'] ?? null),
+  })) as Prisma.InputJsonValue;
+}
+
 export function evRcdFailureReasons(evData: {
   stableDetails: Record<string, unknown>;
   connectorTests: unknown[];
@@ -162,6 +191,8 @@ export class InspectionService {
         revisions: {
           include: {
             signatures: true,
+            signatureSourceRevision: { include: { signatures: true } },
+            media: { include: { media: true }, orderBy: { sortOrder: 'asc' } },
             documents: true,
             evData: true,
             emergencyLightingResults: { include: { fitting: true } },
@@ -214,22 +245,18 @@ export class InspectionService {
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
             take: 500,
           });
-    const seenDefects = new Set<string>();
-    const defects = inspection.defects.filter((defect) => {
-      const fingerprint = JSON.stringify([
-        defect.assetId,
-        defect.title.trim(),
-        defect.description?.trim() ?? '',
-        defect.category,
-        defect.severity,
-        defect.status,
-        defect.photoMediaIds,
-      ]);
-      if (seenDefects.has(fingerprint)) return false;
-      seenDefects.add(fingerprint);
-      return true;
-    });
-    return { ...inspection, defects, evidenceMedia };
+    const currentRevision = inspection.revisions[0];
+    const revisionMedia = currentRevision?.media ?? [];
+    const effectiveEvidenceMedia =
+      currentRevision?.defectSnapshot !== null && currentRevision?.defectSnapshot !== undefined
+        ? revisionMedia.map((snapshot) => ({
+            ...snapshot.media,
+            caption: snapshot.caption,
+            category: snapshot.category,
+            revisionDefectId: snapshot.defectId,
+          }))
+        : evidenceMedia;
+    return { ...inspection, evidenceMedia: effectiveEvidenceMedia };
   }
 
   async upsertDraft(
@@ -281,6 +308,7 @@ export class InspectionService {
     correlationId: string,
     input: {
       reason: string;
+      expectedRevisionNumber: number;
       data: Record<string, unknown>;
       evData?:
         | {
@@ -291,23 +319,26 @@ export class InspectionService {
             engineerObservations?: string | undefined;
           }
         | undefined;
-      defects?:
-        | Array<{
-            id: string;
-            title: string;
-            description?: string | undefined;
-            category?: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION' | undefined;
-            severity: 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
-            status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'DISMISSED';
-          }>
-        | undefined;
+      defects: { upsert: CorrectedDefect[]; remove: string[] };
+      generalPhotoMediaIds: string[];
+      media: RevisionMediaInput[];
     },
   ) {
     const inspection = await this.detail(organisationId, inspectionId);
-    if (inspection.status !== 'SUBMITTED' && inspection.status !== 'UNDER_REVIEW')
+    if (
+      inspection.status !== 'SUBMITTED' &&
+      inspection.status !== 'UNDER_REVIEW' &&
+      inspection.status !== 'APPROVED'
+    )
       throw new DomainError(
         'INSPECTION_NOT_OVERRIDABLE',
-        'Only inspections awaiting review can be corrected.',
+        'Only submitted, under-review, or approved inspections can be corrected.',
+        409,
+      );
+    if (inspection.currentRevisionNumber !== input.expectedRevisionNumber)
+      throw new DomainError(
+        'INSPECTION_REVISION_CONFLICT',
+        'This inspection has changed. Reload it before saving corrections.',
         409,
       );
     const source = inspection.revisions[0];
@@ -318,6 +349,122 @@ export class InspectionService {
         409,
       );
     const revisionNumber = inspection.currentRevisionNumber + 1;
+    const existingById = new Map(inspection.defects.map((defect) => [defect.id, defect]));
+    const corrections = new Map(input.defects.upsert.map((defect) => [defect.id, defect]));
+    if (corrections.size !== input.defects.upsert.length)
+      throw new DomainError('INSPECTION_DEFECT_ID_DUPLICATE', 'Finding IDs must be unique.', 422);
+    const removals = new Set(input.defects.remove);
+    for (const defectId of removals)
+      if (!existingById.has(defectId))
+        throw new DomainError(
+          'INSPECTION_DEFECT_NOT_FOUND',
+          'A finding selected for removal was not found.',
+          404,
+        );
+    if ([...removals].some((id) => corrections.has(id)))
+      throw new DomainError(
+        'INSPECTION_DEFECT_OPERATION_CONFLICT',
+        'A finding cannot be upserted and removed in the same revision.',
+        422,
+      );
+    const correctedDefects = [
+      ...inspection.defects.filter(({ id }) => !removals.has(id) && !corrections.has(id)),
+      ...corrections.values(),
+    ].map((defect): CorrectedDefect & { assetId: string | null; resolvedAt: Date | null } => {
+      const existing = existingById.get(defect.id);
+      return {
+        id: defect.id,
+        title: defect.title,
+        assetId: existing?.assetId ?? inspection.assetId,
+        ...(defect.description?.trim() ? { description: defect.description.trim() } : {}),
+        category: defect.category ?? existing?.category ?? 'FAULT',
+        severity: defect.severity,
+        status: defect.status,
+        photoMediaIds: Array.isArray(defect.photoMediaIds)
+          ? defect.photoMediaIds.flatMap((id) => (typeof id === 'string' ? [id] : []))
+          : [],
+        resolvedAt: defect.status === 'RESOLVED' ? (existing?.resolvedAt ?? new Date()) : null,
+      };
+    });
+    const defectPhotoOwner = new Map<string, string>();
+    for (const defect of correctedDefects)
+      for (const mediaId of defect.photoMediaIds) {
+        if (defectPhotoOwner.has(mediaId))
+          throw new DomainError(
+            'DEFECT_MEDIA_CROSS_LINKED',
+            'An image can only be attached to one finding in an inspection.',
+            422,
+          );
+        defectPhotoOwner.set(mediaId, defect.id);
+      }
+    const generalIds = new Set(input.generalPhotoMediaIds);
+    if (generalIds.size !== input.generalPhotoMediaIds.length)
+      throw new DomainError(
+        'INSPECTION_MEDIA_DUPLICATE',
+        'Inspection image IDs must be unique.',
+        422,
+      );
+    if ([...generalIds].some((id) => defectPhotoOwner.has(id)))
+      throw new DomainError(
+        'INSPECTION_MEDIA_MEMBERSHIP_CONFLICT',
+        'An image cannot be both general evidence and finding evidence.',
+        422,
+      );
+    const allMediaIds = [...generalIds, ...defectPhotoOwner.keys()];
+    const mediaRows =
+      allMediaIds.length === 0
+        ? []
+        : await this.prisma.media.findMany({
+            where: {
+              id: { in: allMediaIds },
+              organisationId,
+              status: 'AVAILABLE',
+              mimeType: { in: ['image/jpeg', 'image/png', 'image/webp'] },
+              OR: [
+                { entityType: 'Inspection', entityId: inspectionId },
+                ...(inspection.assetId === null
+                  ? []
+                  : [
+                      {
+                        entityType: 'Asset',
+                        entityId: inspection.assetId,
+                        tags: { has: `inspection:${inspectionId}` },
+                      },
+                    ]),
+              ],
+            },
+          });
+    if (mediaRows.length !== allMediaIds.length)
+      throw new DomainError(
+        'INSPECTION_MEDIA_INVALID',
+        'Every image must be available and belong to this inspection and organisation.',
+        422,
+      );
+    const captions = new Map(
+      input.media.map((item) => [item.mediaId, item.caption?.trim() || null]),
+    );
+    if (
+      captions.size !== input.media.length ||
+      input.media.some(({ mediaId }) => !allMediaIds.includes(mediaId))
+    )
+      throw new DomainError(
+        'INSPECTION_MEDIA_INVALID',
+        'Image metadata must refer to each selected inspection image at most once.',
+        422,
+      );
+    const mediaById = new Map(mediaRows.map((media) => [media.id, media]));
+    const revisionMedia = allMediaIds.map((mediaId, sortOrder) => {
+      const media = mediaById.get(mediaId)!;
+      const defectId = defectPhotoOwner.get(mediaId);
+      return {
+        organisationId,
+        mediaId,
+        ...(defectId === undefined ? {} : { defectId }),
+        category: defectId === undefined ? media.category : 'inspection-fault',
+        caption: captions.has(mediaId) ? (captions.get(mediaId) ?? null) : media.caption,
+        sortOrder,
+      };
+    });
     const rcdFailures = input.evData === undefined ? [] : evRcdFailureReasons(input.evData);
     const effectiveData =
       rcdFailures.length === 0
@@ -348,6 +495,21 @@ export class InspectionService {
           };
 
     return this.prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.inspection.updateMany({
+        where: {
+          id: inspectionId,
+          organisationId,
+          currentRevisionNumber: input.expectedRevisionNumber,
+          status: inspection.status,
+        },
+        data: { currentRevisionNumber: revisionNumber },
+      });
+      if (claimed.count !== 1)
+        throw new DomainError(
+          'INSPECTION_REVISION_CONFLICT',
+          'This inspection has changed. Reload it before saving corrections.',
+          409,
+        );
       const revision = await transaction.inspectionRevision.create({
         data: {
           organisationId,
@@ -356,15 +518,10 @@ export class InspectionService {
           data: effectiveData as Prisma.InputJsonValue,
           validation: effectiveValidation,
           snapshots: source.snapshots as Prisma.InputJsonValue,
+          defectSnapshot: defectSnapshot(correctedDefects),
+          signatureSourceRevisionId: source.signatureSourceRevisionId ?? source.id,
           createdByUserId: actorUserId,
-          signatures: {
-            create: source.signatures.map((signature) => ({
-              signerName: signature.signerName,
-              signerRole: signature.signerRole,
-              signatureData: signature.signatureData,
-              signedAt: signature.signedAt,
-            })),
-          },
+          ...(revisionMedia.length === 0 ? {} : { media: { createMany: { data: revisionMedia } } }),
           ...(effectiveEvData === undefined
             ? {}
             : {
@@ -401,29 +558,48 @@ export class InspectionService {
             })),
           });
       }
-      for (const defect of input.defects ?? []) {
-        const existing = inspection.defects.find(({ id }) => id === defect.id);
-        if (existing === undefined)
-          throw new DomainError(
-            'INSPECTION_DEFECT_NOT_FOUND',
-            'A defect selected for correction was not found.',
-            404,
-          );
-        await transaction.defect.update({
-          where: { id: defect.id },
-          data: {
-            title: defect.title,
-            description: defect.description?.trim() || null,
-            ...(defect.category === undefined ? {} : { category: defect.category }),
-            severity: defect.severity,
-            status: defect.status,
-            ...(defect.status === 'RESOLVED' ? { resolvedAt: new Date() } : {}),
-          },
+      if (removals.size > 0)
+        await transaction.defect.deleteMany({
+          where: { id: { in: [...removals] }, inspectionId, organisationId },
         });
+      for (const defect of corrections.values()) {
+        const existing = existingById.get(defect.id);
+        const data = {
+          title: defect.title,
+          description: defect.description?.trim() || null,
+          ...(defect.category === undefined ? {} : { category: defect.category }),
+          severity: defect.severity,
+          status: defect.status,
+          photoMediaIds: defect.photoMediaIds,
+          resolvedAt: defect.status === 'RESOLVED' ? (existing?.resolvedAt ?? new Date()) : null,
+        };
+        if (existing === undefined)
+          await transaction.defect.create({
+            data: {
+              id: defect.id,
+              organisationId,
+              inspectionId,
+              ...(inspection.assetId === null ? {} : { assetId: inspection.assetId }),
+              ...data,
+              category: defect.category ?? 'FAULT',
+            },
+          });
+        else {
+          const updated = await transaction.defect.updateMany({
+            where: { id: defect.id, inspectionId, organisationId },
+            data,
+          });
+          if (updated.count !== 1)
+            throw new DomainError(
+              'INSPECTION_DEFECT_NOT_FOUND',
+              'A finding selected for correction was not found.',
+              404,
+            );
+        }
       }
       await transaction.inspection.update({
         where: { id: inspectionId },
-        data: { status: 'UNDER_REVIEW', currentRevisionNumber: revisionNumber },
+        data: { status: inspection.status === 'APPROVED' ? 'APPROVED' : 'UNDER_REVIEW' },
       });
       await transaction.auditEvent.create({
         data: {
@@ -437,7 +613,10 @@ export class InspectionService {
             reason: input.reason,
             previousRevisionNumber: source.revisionNumber,
             revisionNumber,
-            defectCount: input.defects?.length ?? 0,
+            defectUpsertCount: input.defects.upsert.length,
+            defectRemoveCount: input.defects.remove.length,
+            mediaCount: revisionMedia.length,
+            inspectionStatus: inspection.status === 'APPROVED' ? 'APPROVED' : 'UNDER_REVIEW',
           },
         },
       });
@@ -605,6 +784,32 @@ export class InspectionService {
         severity: 'MAJOR' as const,
       }));
     const effectiveDefects = [...baseDefects, ...emergencyDefects];
+    const defectRows = effectiveDefects.map((defect) => ({
+      id: crypto.randomUUID(),
+      organisationId,
+      inspectionId,
+      assetId: defect.assetId ?? null,
+      title: defect.title,
+      description: defect.description ?? null,
+      category: defect.category ?? 'FAULT',
+      severity: defect.severity,
+      status: 'OPEN' as const,
+      photoMediaIds: 'photoMediaIds' in defect ? (defect.photoMediaIds ?? []) : [],
+      resolvedAt: null,
+    }));
+    const submittedMediaOwner = new Map<string, string>();
+    for (const defect of defectRows)
+      for (const mediaId of defect.photoMediaIds) submittedMediaOwner.set(mediaId, defect.id);
+    const submissionRevisionMedia = inspection.evidenceMedia.map((media, sortOrder) => ({
+      organisationId,
+      mediaId: media.id,
+      ...(submittedMediaOwner.has(media.id)
+        ? { defectId: submittedMediaOwner.get(media.id)! }
+        : {}),
+      category: submittedMediaOwner.has(media.id) ? 'inspection-fault' : media.category,
+      caption: media.caption,
+      sortOrder,
+    }));
     const brand = await this.prisma.organisationBrandProfile.findUnique({
       where: { organisationId },
     });
@@ -623,6 +828,10 @@ export class InspectionService {
             site: inspection.site,
             asset: inspection.asset,
           },
+          defectSnapshot: defectSnapshot(defectRows),
+          ...(submissionRevisionMedia.length === 0
+            ? {}
+            : { media: { createMany: { data: submissionRevisionMedia } } }),
           ...(actorUserId === undefined ? {} : { createdByUserId: actorUserId }),
           signatures: {
             create: {
@@ -674,16 +883,7 @@ export class InspectionService {
       await transaction.defect.deleteMany({ where: { organisationId, inspectionId } });
       if (effectiveDefects.length > 0)
         await transaction.defect.createMany({
-          data: effectiveDefects.map((defect) => ({
-            organisationId,
-            inspectionId,
-            ...(defect.assetId === undefined ? {} : { assetId: defect.assetId }),
-            title: defect.title,
-            ...(defect.description === undefined ? {} : { description: defect.description }),
-            category: defect.category ?? 'FAULT',
-            severity: defect.severity,
-            photoMediaIds: 'photoMediaIds' in defect ? (defect.photoMediaIds ?? []) : [],
-          })),
+          data: defectRows,
         });
       const isNewAsset = inspection.asset?.status === 'PROPOSED';
       const proposedAssetChanges =

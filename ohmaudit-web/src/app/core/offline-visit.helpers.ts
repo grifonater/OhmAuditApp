@@ -111,6 +111,36 @@ export function buildOptimisticEvTask(
   };
 }
 
+export function canRemoveVisitEvTask(
+  task: {
+    moduleKey: string;
+    status: string;
+    asset?: { status: string; createdDuringVisitId?: string | null };
+    inspection?: {
+      status: string;
+      currentRevisionNumber: number;
+      submittedAt?: string | null;
+      revisions?: unknown[];
+    };
+  },
+  visitId: string,
+): boolean {
+  const asset = task.asset;
+  if (task.moduleKey !== 'ev-charging' || asset === undefined) return false;
+  const local = asset.status === 'PROVISIONAL';
+  const serverProvisional = asset.status === 'PROPOSED' && asset.createdDuringVisitId === visitId;
+  if (!local && !serverProvisional) return false;
+  if (['SUBMITTED', 'COMPLETED'].includes(task.status)) return false;
+  const inspection = task.inspection;
+  return (
+    inspection === undefined ||
+    (!['SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'SUPERSEDED'].includes(inspection.status) &&
+      inspection.submittedAt == null &&
+      inspection.currentRevisionNumber === 0 &&
+      (inspection.revisions?.length ?? 0) === 0)
+  );
+}
+
 export function idReplacements(idMap: VisitIdMap): Record<string, string> {
   return Object.values(idMap).reduce<Record<string, string>>((result, entry) => {
     result[entry.local] = entry.server;

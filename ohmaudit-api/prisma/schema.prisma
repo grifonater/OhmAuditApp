@@ -215,6 +215,7 @@ model Organisation {
   inspections                   Inspection[]
   inspectionDrafts              InspectionDraft[]
   inspectionRevisions           InspectionRevision[]
+  inspectionRevisionMedia       InspectionRevisionMedia[]
   defects                       Defect[]
   visitFindings                 VisitFinding[]
   customFieldDefinitions        CustomFieldDefinition[]
@@ -345,38 +346,38 @@ model Customer {
 }
 
 model Site {
-  id                   String         @id @default(uuid()) @db.Uuid
-  organisationId       String         @map("organisation_id") @db.Uuid
-  customerId           String         @map("customer_id") @db.Uuid
-  name                 String
-  reference            String?
-  status               RecordStatus   @default(ACTIVE)
-  mainPhotoMediaId     String?        @map("main_photo_media_id") @db.Uuid
-  addressLine1         String?        @map("address_line_1")
-  addressLine2         String?        @map("address_line_2")
-  city                 String?
-  county               String?
-  postcode             String?
-  countryCode          String         @default("GB") @map("country_code")
-  latitude             Decimal?       @db.Decimal(9, 6)
-  longitude            Decimal?       @db.Decimal(9, 6)
-  locationAccuracy     Decimal?       @map("location_accuracy") @db.Decimal(8, 2)
-  parkingInformation   String?        @map("parking_information")
-  accessInstructions   String?        @map("access_instructions")
-  openingTimes         String?        @map("opening_times")
-  ppeRequirements      String?        @map("ppe_requirements")
-  inductionInformation String?        @map("induction_information")
-  internalNotes        String?        @map("internal_notes")
-  emergencyLightingLabelSettings Json? @map("emergency_lighting_label_settings")
-  createdAt            DateTime       @default(now()) @map("created_at")
-  updatedAt            DateTime       @updatedAt @map("updated_at")
-  organisation         Organisation   @relation(fields: [organisationId], references: [id])
-  customer             Customer       @relation(fields: [customerId], references: [id])
-  assets               Asset[]
-  contacts             Contact[]
-  visits               Visit[]
-  inspections          Inspection[]
-  scheduleRules        ScheduleRule[]
+  id                             String         @id @default(uuid()) @db.Uuid
+  organisationId                 String         @map("organisation_id") @db.Uuid
+  customerId                     String         @map("customer_id") @db.Uuid
+  name                           String
+  reference                      String?
+  status                         RecordStatus   @default(ACTIVE)
+  mainPhotoMediaId               String?        @map("main_photo_media_id") @db.Uuid
+  addressLine1                   String?        @map("address_line_1")
+  addressLine2                   String?        @map("address_line_2")
+  city                           String?
+  county                         String?
+  postcode                       String?
+  countryCode                    String         @default("GB") @map("country_code")
+  latitude                       Decimal?       @db.Decimal(9, 6)
+  longitude                      Decimal?       @db.Decimal(9, 6)
+  locationAccuracy               Decimal?       @map("location_accuracy") @db.Decimal(8, 2)
+  parkingInformation             String?        @map("parking_information")
+  accessInstructions             String?        @map("access_instructions")
+  openingTimes                   String?        @map("opening_times")
+  ppeRequirements                String?        @map("ppe_requirements")
+  inductionInformation           String?        @map("induction_information")
+  internalNotes                  String?        @map("internal_notes")
+  emergencyLightingLabelSettings Json?          @map("emergency_lighting_label_settings")
+  createdAt                      DateTime       @default(now()) @map("created_at")
+  updatedAt                      DateTime       @updatedAt @map("updated_at")
+  organisation                   Organisation   @relation(fields: [organisationId], references: [id])
+  customer                       Customer       @relation(fields: [customerId], references: [id])
+  assets                         Asset[]
+  contacts                       Contact[]
+  visits                         Visit[]
+  inspections                    Inspection[]
+  scheduleRules                  ScheduleRule[]
 
   @@unique([organisationId, reference])
   @@index([organisationId, customerId, status])
@@ -434,6 +435,7 @@ model Asset {
   assetType               String                   @map("asset_type")
   assetReference          String                   @map("asset_reference")
   displayName             String                   @map("display_name")
+  iconKey                 String?                  @map("icon_key")
   manufacturer            String?
   model                   String?
   serialNumber            String?                  @map("serial_number")
@@ -441,6 +443,7 @@ model Asset {
   commissionedAt          DateTime?                @map("commissioned_at") @db.Date
   decommissionedAt        DateTime?                @map("decommissioned_at") @db.Date
   replacementAssetId      String?                  @map("replacement_asset_id") @db.Uuid
+  createdDuringVisitId    String?                  @map("created_during_visit_id") @db.Uuid
   latitude                Decimal?                 @db.Decimal(9, 6)
   longitude               Decimal?                 @db.Decimal(9, 6)
   locationAccuracy        Decimal?                 @map("location_accuracy") @db.Decimal(8, 2)
@@ -455,6 +458,7 @@ model Asset {
   assetModel              AssetModel?              @relation(fields: [assetModelId], references: [id])
   replacementAsset        Asset?                   @relation("AssetReplacement", fields: [replacementAssetId], references: [id])
   replacedAssets          Asset[]                  @relation("AssetReplacement")
+  createdDuringVisit      Visit?                   @relation("VisitCreatedAssets", fields: [createdDuringVisitId], references: [id], onDelete: SetNull)
   inspections             Inspection[]
   visitTasks              VisitTask[]
   scheduleRules           ScheduleRule[]
@@ -467,6 +471,7 @@ model Asset {
   @@index([organisationId, siteId, status])
   @@index([organisationId, serialNumber])
   @@index([organisationId, manufacturer, model])
+  @@index([createdDuringVisitId])
   @@map("assets")
 }
 
@@ -498,26 +503,27 @@ model EntityTag {
 }
 
 model Media {
-  id               String       @id @default(uuid()) @db.Uuid
-  organisationId   String       @map("organisation_id") @db.Uuid
-  storageKey       String       @unique @map("storage_key")
-  entityType       String       @map("entity_type")
-  entityId         String       @map("entity_id") @db.Uuid
+  id               String                    @id @default(uuid()) @db.Uuid
+  organisationId   String                    @map("organisation_id") @db.Uuid
+  storageKey       String                    @unique @map("storage_key")
+  entityType       String                    @map("entity_type")
+  entityId         String                    @map("entity_id") @db.Uuid
   category         String
   caption          String?
-  originalFilename String?      @map("original_filename")
-  tags             String[]     @default([])
-  sortOrder        Int          @default(0) @map("sort_order")
-  isPrimary        Boolean      @default(false) @map("is_primary")
-  capturedAt       DateTime?    @map("captured_at")
-  capturedByUserId String?      @map("captured_by_user_id") @db.Uuid
-  mimeType         String       @map("mime_type")
+  originalFilename String?                   @map("original_filename")
+  tags             String[]                  @default([])
+  sortOrder        Int                       @default(0) @map("sort_order")
+  isPrimary        Boolean                   @default(false) @map("is_primary")
+  capturedAt       DateTime?                 @map("captured_at")
+  capturedByUserId String?                   @map("captured_by_user_id") @db.Uuid
+  mimeType         String                    @map("mime_type")
   width            Int?
   height           Int?
   size             Int
-  status           MediaStatus  @default(PENDING_UPLOAD)
-  createdAt        DateTime     @default(now()) @map("created_at")
-  organisation     Organisation @relation(fields: [organisationId], references: [id])
+  status           MediaStatus               @default(PENDING_UPLOAD)
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  organisation     Organisation              @relation(fields: [organisationId], references: [id])
+  revisionMedia    InspectionRevisionMedia[]
 
   @@index([organisationId, entityType, entityId])
   @@map("media")
@@ -695,6 +701,7 @@ model Visit {
   syncMutations        SyncMutation[]
   rams                 RamsVisit[]
   ramsAcknowledgements RamsAcknowledgement[]
+  createdAssets        Asset[]               @relation("VisitCreatedAssets")
 
   @@index([organisationId, scheduledStart, status])
   @@index([organisationId, assignedUserId])
@@ -952,26 +959,50 @@ model InspectionDraft {
 }
 
 model InspectionRevision {
-  id                       String                           @id @default(uuid()) @db.Uuid
-  organisationId           String                           @map("organisation_id") @db.Uuid
-  inspectionId             String                           @map("inspection_id") @db.Uuid
-  revisionNumber           Int                              @map("revision_number")
-  data                     Json
-  validation               Json                             @default("{}")
-  snapshots                Json                             @default("{}")
-  createdByUserId          String?                          @map("created_by_user_id") @db.Uuid
-  createdAt                DateTime                         @default(now()) @map("created_at")
-  clientMutationId         String?                          @unique @map("client_mutation_id")
-  organisation             Organisation                     @relation(fields: [organisationId], references: [id])
-  inspection               Inspection                       @relation(fields: [inspectionId], references: [id])
-  signatures               InspectionSignature[]
-  documents                Document[]
-  evData                   EvInspectionData?
-  emergencyLightingResults EmergencyLightingFittingResult[] @relation("EmergencyLightingRevisionResults")
+  id                        String                           @id @default(uuid()) @db.Uuid
+  organisationId            String                           @map("organisation_id") @db.Uuid
+  inspectionId              String                           @map("inspection_id") @db.Uuid
+  revisionNumber            Int                              @map("revision_number")
+  data                      Json
+  validation                Json                             @default("{}")
+  snapshots                 Json                             @default("{}")
+  defectSnapshot            Json?                            @map("defect_snapshot")
+  signatureSourceRevisionId String?                          @map("signature_source_revision_id") @db.Uuid
+  createdByUserId           String?                          @map("created_by_user_id") @db.Uuid
+  createdAt                 DateTime                         @default(now()) @map("created_at")
+  clientMutationId          String?                          @unique @map("client_mutation_id")
+  organisation              Organisation                     @relation(fields: [organisationId], references: [id])
+  inspection                Inspection                       @relation(fields: [inspectionId], references: [id])
+  signatures                InspectionSignature[]
+  documents                 Document[]
+  evData                    EvInspectionData?
+  emergencyLightingResults  EmergencyLightingFittingResult[] @relation("EmergencyLightingRevisionResults")
+  media                     InspectionRevisionMedia[]
+  signatureSourceRevision   InspectionRevision?              @relation("InspectionRevisionSignatureSource", fields: [signatureSourceRevisionId], references: [id], onDelete: Restrict)
+  signatureDerivedRevisions InspectionRevision[]             @relation("InspectionRevisionSignatureSource")
 
   @@unique([inspectionId, revisionNumber])
   @@index([organisationId, createdAt])
   @@map("inspection_revisions")
+}
+
+model InspectionRevisionMedia {
+  inspectionRevisionId String             @map("inspection_revision_id") @db.Uuid
+  mediaId              String             @map("media_id") @db.Uuid
+  organisationId       String             @map("organisation_id") @db.Uuid
+  defectId             String?            @map("defect_id") @db.Uuid
+  category             String
+  caption              String?
+  sortOrder            Int                @default(0) @map("sort_order")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  revision             InspectionRevision @relation(fields: [inspectionRevisionId], references: [id], onDelete: Cascade)
+  media                Media              @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+  organisation         Organisation       @relation(fields: [organisationId], references: [id])
+
+  @@id([inspectionRevisionId, mediaId])
+  @@index([organisationId, mediaId])
+  @@index([inspectionRevisionId, defectId])
+  @@map("inspection_revision_media")
 }
 
 model InspectionSignature {

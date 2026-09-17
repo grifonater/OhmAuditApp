@@ -10,6 +10,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, type CustomerDetail, type ReportSummary } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressLogo } from '../core/image-compression';
 
 @Component({
@@ -21,6 +22,7 @@ import { compressLogo } from '../core/image-compression';
 })
 export class ClientDetailComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -218,14 +220,20 @@ export class ClientDetailComponent {
   protected async openReport(report: ReportSummary): Promise<void> {
     if (!report.visitId && !report.mediaId && !report.inspectionRevisionId) return;
     await this.run(async () => {
-      const blob = report.visitId
-        ? await this.api.downloadVisitReportPdf(this.organisationId, report.visitId)
-        : report.mediaId
-          ? await this.api.downloadMedia(this.organisationId, report.mediaId)
-          : await this.api.downloadDocumentPdf(this.organisationId, report.id);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      await this.generationProgress.run(
+        'Generating report',
+        async () => {
+          const blob = report.visitId
+            ? await this.api.downloadVisitReportPdf(this.organisationId, report.visitId)
+            : report.mediaId
+              ? await this.api.downloadMedia(this.organisationId, report.mediaId)
+              : await this.api.downloadDocumentPdf(this.organisationId, report.id);
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank', 'noopener,noreferrer');
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        },
+        'This can take a few moments.',
+      );
     });
   }
 

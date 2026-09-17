@@ -10,6 +10,7 @@ import {
   type SiteSummary,
   type VisitSummary,
 } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import { OfflineVisitService } from '../core/offline-visit.service';
 
 @Component({
@@ -21,6 +22,7 @@ import { OfflineVisitService } from '../core/offline-visit.service';
 })
 export class VisitsComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   protected readonly offline = inject(OfflineVisitService);
@@ -295,10 +297,20 @@ export class VisitsComponent {
     this.jobSheetDownload.set({ visitId: visit.id, includeRams });
     this.error.set('');
     try {
-      const blob = await this.api.downloadJobSheetPdf(this.organisationId, visit.id, includeRams);
-      this.saveBlob(
-        blob,
-        `${this.slug(visit.reference || visit.title)}-${includeRams ? 'job-pack-with-rams' : 'job-sheet'}.pdf`,
+      await this.generationProgress.run(
+        includeRams ? 'Preparing job pack' : 'Preparing job sheet',
+        async () => {
+          const blob = await this.api.downloadJobSheetPdf(
+            this.organisationId,
+            visit.id,
+            includeRams,
+          );
+          this.saveBlob(
+            blob,
+            `${this.slug(visit.reference || visit.title)}-${includeRams ? 'job-pack-with-rams' : 'job-sheet'}.pdf`,
+          );
+        },
+        'This can take a few moments.',
       );
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to generate the job sheet.');

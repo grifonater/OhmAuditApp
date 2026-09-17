@@ -544,6 +544,16 @@
                     </button>
                   </div>
                 }
+                @if (canRemoveCharger(task)) {
+                  <button
+                    class="button danger compact"
+                    type="button"
+                    [disabled]="busy()"
+                    (click)="removeCharger(task)"
+                  >
+                    Remove charger
+                  </button>
+                }
                 <button
                   class="button primary touch-button"
                   type="button"

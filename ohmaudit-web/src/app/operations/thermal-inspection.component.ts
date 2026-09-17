@@ -16,6 +16,7 @@ import {
   type VisitSummary,
   type VisitTask,
 } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
 import {
@@ -65,6 +66,7 @@ const emptyDetails = (): ThermalDetails => ({
 })
 export class ThermalInspectionComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   protected readonly offline = inject(OfflineVisitService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -541,18 +543,24 @@ export class ThermalInspectionComponent {
     this.previewError.set('');
     this.error.set('');
     try {
-      await this.saveDraft();
-      await this.awaitMetadataWrites();
-      const mediaIds = await this.offline.uploadThermalImages(inspection.id);
-      const blob = await this.api.previewThermalInspectionPdf(
-        this.organisationId,
-        inspection.id,
-        thermalPreviewBody(this.buildReport(mediaIds)),
+      await this.generationProgress.run(
+        'Preparing report preview',
+        async () => {
+          await this.saveDraft();
+          await this.awaitMetadataWrites();
+          const mediaIds = await this.offline.uploadThermalImages(inspection.id);
+          const blob = await this.api.previewThermalInspectionPdf(
+            this.organisationId,
+            inspection.id,
+            thermalPreviewBody(this.buildReport(mediaIds)),
+          );
+          const url = URL.createObjectURL(blob);
+          if (previewWindow === null) window.open(url, '_blank', 'noopener,noreferrer');
+          else previewWindow.location.href = url;
+          setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
+        },
+        'This can take a few moments.',
       );
-      const url = URL.createObjectURL(blob);
-      if (previewWindow === null) window.open(url, '_blank', 'noopener,noreferrer');
-      else previewWindow.location.href = url;
-      setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
     } catch (error: unknown) {
       previewWindow?.close();
       this.previewError.set(

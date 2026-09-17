@@ -108,4 +108,32 @@ describe('portfolio media deletion', () => {
     ).rejects.toMatchObject({ code: 'INSPECTION_MEDIA_NOT_FOUND', status: 404 });
     expect(deleteMany).not.toHaveBeenCalled();
   });
+
+  it('protects media referenced by an immutable inspection revision', async () => {
+    const mediaDeleteMany = vi.fn();
+    const prisma = {
+      media: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'media-a',
+          organisationId: 'organisation-a',
+          entityType: 'Inspection',
+          entityId: 'inspection-a',
+        }),
+      },
+      inspectionRevisionMedia: {
+        findFirst: vi.fn().mockResolvedValue({ mediaId: 'media-a' }),
+      },
+      $transaction: vi.fn(),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new PortfolioService(prisma).deleteInspectionMedia(
+        'organisation-a',
+        'inspection-a',
+        null,
+        'media-a',
+      ),
+    ).rejects.toMatchObject({ code: 'MEDIA_HISTORY_PROTECTED', status: 409 });
+    expect(mediaDeleteMany).not.toHaveBeenCalled();
+  });
 });

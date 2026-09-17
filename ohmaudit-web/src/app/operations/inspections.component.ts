@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, type InspectionSummary } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
+import { VisitFindingsEditorComponent } from '../shared/visit-findings-editor.component';
 
 interface ChangeRow {
   label: string;
@@ -16,6 +18,7 @@ interface ChangeSection {
 
 interface InspectionSession {
   id: string;
+  visitId?: string;
   title: string;
   customerName: string;
   siteName: string;
@@ -28,12 +31,14 @@ interface InspectionSession {
 
 @Component({
   selector: 'oa-inspections',
+  imports: [VisitFindingsEditorComponent],
   templateUrl: './inspections.component.html',
   styleUrls: ['./operations.css', './inspections.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InspectionsComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
@@ -50,6 +55,7 @@ export class InspectionsComponent {
       const id = inspection.visit?.id ?? `inspection-${inspection.id}`;
       const existing = grouped.get(id) ?? {
         id,
+        ...(inspection.visit?.id === undefined ? {} : { visitId: inspection.visit.id }),
         title: inspection.visit?.title ?? inspection.inspectionType,
         customerName: inspection.customer.name,
         siteName: inspection.site.name,
@@ -133,19 +139,31 @@ export class InspectionsComponent {
   protected async issue(): Promise<void> {
     const item = this.selected();
     if (!item) return;
-    await this.run(async () => {
-      const result = await this.api.issueInspectionDocument(this.organisationId, item.id);
-      this.success.set(`${result.document.title} issued successfully`);
-      await this.open(item.id);
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Issuing certificate',
+        async () => {
+          const result = await this.api.issueInspectionDocument(this.organisationId, item.id);
+          this.success.set(`${result.document.title} issued successfully`);
+          await this.open(item.id);
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
   protected async openCertificate(documentId: string): Promise<void> {
-    await this.run(async () => {
-      const blob = await this.api.downloadDocumentPdf(this.organisationId, documentId);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Opening certificate',
+        async () => {
+          const blob = await this.api.downloadDocumentPdf(this.organisationId, documentId);
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank', 'noopener,noreferrer');
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
   protected format(value: string | undefined): string {
     return value

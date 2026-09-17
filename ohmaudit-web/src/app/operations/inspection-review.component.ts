@@ -7,11 +7,13 @@ import {
   signal,
 } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ApiService, type InspectionSummary } from '../core/api.service';
+import { ApiService, type AssetMedia, type InspectionSummary } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
+import { VisitFindingsEditorComponent } from '../shared/visit-findings-editor.component';
 
 type ProposedChange = NonNullable<InspectionSummary['proposedAssetChanges']>[number];
-type ReviewSection = 'overview' | 'tests' | 'evidence' | 'updates' | 'history';
+type ReviewSection = 'overview' | 'tests' | 'evidence' | 'updates' | 'findings' | 'history';
 type FieldType = 'text' | 'number' | 'select' | 'supply';
 
 interface ChangeField {
@@ -33,6 +35,7 @@ interface DefectDraft {
   id: string;
   title: string;
   description: string;
+  category: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
   severity: 'ADVISORY' | 'MINOR' | 'MAJOR' | 'DANGEROUS';
   status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'DISMISSED';
   photoMediaIds: string[];
@@ -49,26 +52,35 @@ interface OverrideDraft {
     engineerObservations?: string;
   };
   defects: DefectDraft[];
+  originalDefectIds: string[];
+  generalPhotoMediaIds: string[];
+  media: Array<AssetMedia & { staged?: boolean }>;
 }
 
 @Component({
   selector: 'oa-inspection-review',
-  imports: [RouterLink],
+  imports: [RouterLink, VisitFindingsEditorComponent],
   templateUrl: './inspection-review.component.html',
   styleUrls: ['./operations.css', './inspection-review.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InspectionReviewComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
-  private readonly reviewId = this.route.snapshot.paramMap.get('reviewId') ?? '';
+  protected readonly reviewId = this.route.snapshot.paramMap.get('reviewId') ?? '';
   protected readonly capabilities = signal<string[]>([]);
   protected readonly canApprove = computed(() =>
     this.capabilities().includes('inspections.approve'),
+  );
+  protected readonly canCorrectInspections = computed(
+    () =>
+      this.capabilities().includes('inspections.review') &&
+      this.capabilities().includes('inspections.approve'),
   );
   protected readonly canIssueCertificates = computed(() =>
     this.capabilities().includes('certificates.issue'),
@@ -127,6 +139,7 @@ export class InspectionReviewComponent {
   protected readonly visitTitle = computed(
     () => this.inspections()[0]?.visit?.title ?? 'Inspection review',
   );
+  protected readonly visitId = computed(() => this.inspections()[0]?.visit?.id);
   protected readonly customerSite = computed(() => {
     const item = this.inspections()[0];
     return item === undefined ? '' : item.customer.name + ' / ' + item.site.name;
@@ -304,10 +317,16 @@ export class InspectionReviewComponent {
         id: defect.id,
         title: defect.title,
         description: defect.description ?? '',
+        category: this.defectCategory(defect.category),
         severity: this.defectSeverity(defect.severity),
         status: this.defectStatus(defect.status),
         photoMediaIds: defect.photoMediaIds ?? [],
       })),
+      originalDefectIds: item.defects.map(({ id }) => id),
+      generalPhotoMediaIds: (item.evidenceMedia ?? [])
+        .filter((media) => !item.defects.some((defect) => defect.photoMediaIds?.includes(media.id)))
+        .map(({ id }) => id),
+      media: structuredClone(item.evidenceMedia ?? []),
     });
     this.activeSection.set('tests');
   }
@@ -374,11 +393,118 @@ export class InspectionReviewComponent {
       const defect = defects[index];
       if (defect === undefined) return draft;
       const value = this.eventValue(event);
-      if (key === 'severity') defect.severity = this.defectSeverity(value);
+      if (key === 'category') defect.category = this.defectCategory(value);
+      else if (key === 'severity') defect.severity = this.defectSeverity(value);
       else if (key === 'status') defect.status = this.defectStatus(value);
       else if (key === 'title' || key === 'description') defect[key] = value;
       return { ...draft, defects };
     });
+  }
+
+  protected addDefect(): void {
+    this.overrideDraft.update((draft) =>
+      draft === undefined
+        ? draft
+        : {
+            ...draft,
+            defects: [
+              ...draft.defects,
+              {
+                id: crypto.randomUUID(),
+                title: 'New finding',
+                description: '',
+                category: 'FAULT',
+                severity: 'MINOR',
+                status: 'OPEN',
+                photoMediaIds: [],
+              },
+            ],
+          },
+    );
+  }
+
+  protected removeDefect(index: number): void {
+    this.overrideDraft.update((draft) => {
+      if (draft === undefined) return draft;
+      const removed = draft.defects[index];
+      if (removed === undefined) return draft;
+      return {
+        ...draft,
+        defects: draft.defects.filter((_, candidate) => candidate !== index),
+        generalPhotoMediaIds: [
+          ...draft.generalPhotoMediaIds,
+          ...removed.photoMediaIds.filter((id) => !draft.generalPhotoMediaIds.includes(id)),
+        ],
+      };
+    });
+  }
+
+  protected setDraftMediaCaption(mediaId: string, event: Event): void {
+    const caption = this.eventValue(event);
+    this.overrideDraft.update((draft) =>
+      draft === undefined
+        ? draft
+        : {
+            ...draft,
+            media: draft.media.map((media) =>
+              media.id === mediaId ? { ...media, caption } : media,
+            ),
+          },
+    );
+  }
+
+  protected setDraftMediaOwner(mediaId: string, event: Event): void {
+    const defectId = this.eventValue(event);
+    this.overrideDraft.update((draft) => {
+      if (draft === undefined) return draft;
+      return {
+        ...draft,
+        generalPhotoMediaIds:
+          defectId === ''
+            ? [...new Set([...draft.generalPhotoMediaIds, mediaId])]
+            : draft.generalPhotoMediaIds.filter((id) => id !== mediaId),
+        defects: draft.defects.map((defect) => ({
+          ...defect,
+          photoMediaIds:
+            defect.id === defectId
+              ? [...new Set([...defect.photoMediaIds, mediaId])]
+              : defect.photoMediaIds.filter((id) => id !== mediaId),
+        })),
+      };
+    });
+  }
+
+  protected draftMediaOwner(draft: OverrideDraft, mediaId: string): string {
+    return draft.defects.find((defect) => defect.photoMediaIds.includes(mediaId))?.id ?? '';
+  }
+
+  protected async removeDraftMedia(mediaId: string): Promise<void> {
+    const draft = this.overrideDraft();
+    const media = draft?.media.find(({ id }) => id === mediaId);
+    if (draft === undefined || media === undefined) return;
+    if (media.staged) {
+      const item = this.inspection();
+      if (item === undefined) return;
+      await this.run(() =>
+        this.api.deleteInspectionReviewPhoto(this.organisationId, item.id, mediaId),
+      );
+      if (this.error()) return;
+      const url = this.imageUrls()[mediaId];
+      if (url) URL.revokeObjectURL(url);
+    }
+    this.overrideDraft.update((current) =>
+      current === undefined
+        ? current
+        : {
+            ...current,
+            media: current.media.filter(({ id }) => id !== mediaId),
+            generalPhotoMediaIds: current.generalPhotoMediaIds.filter((id) => id !== mediaId),
+            defects: current.defects.map((defect) => ({
+              ...defect,
+              photoMediaIds: defect.photoMediaIds.filter((id) => id !== mediaId),
+            })),
+          },
+    );
   }
 
   protected async saveOverride(): Promise<void> {
@@ -391,14 +517,27 @@ export class InspectionReviewComponent {
     await this.run(async () => {
       await this.api.overrideInspection(this.organisationId, item.id, {
         reason: draft.reason.trim(),
+        expectedRevisionNumber: item.currentRevisionNumber,
         data: draft.data,
         ...(draft.evData === undefined ? {} : { evData: draft.evData }),
-        defects: draft.defects.map((defect) => ({
-          id: defect.id,
-          title: defect.title,
-          ...(defect.description.trim() === '' ? {} : { description: defect.description }),
-          severity: defect.severity,
-          status: defect.status,
+        defects: {
+          upsert: draft.defects.map((defect) => ({
+            id: defect.id,
+            title: defect.title,
+            ...(defect.description.trim() === '' ? {} : { description: defect.description }),
+            category: defect.category,
+            severity: defect.severity,
+            status: defect.status,
+            photoMediaIds: defect.photoMediaIds,
+          })),
+          remove: draft.originalDefectIds.filter(
+            (id) => !draft.defects.some((defect) => defect.id === id),
+          ),
+        },
+        generalPhotoMediaIds: draft.generalPhotoMediaIds,
+        media: draft.media.map((media) => ({
+          mediaId: media.id,
+          ...(media.caption?.trim() ? { caption: media.caption.trim() } : {}),
         })),
       });
       this.success.set('Administrator correction saved as a new audited revision.');
@@ -706,27 +845,38 @@ export class InspectionReviewComponent {
   protected async downloadCertificate(): Promise<void> {
     const item = this.inspection();
     if (item === undefined || item.status !== 'APPROVED') return;
-    await this.run(async () => {
-      const document =
-        this.latest(item)?.documents?.[0] ??
-        (await this.api.issueInspectionDocument(this.organisationId, item.id, this.overriding()))
-          .document;
-      const blob = await this.api.downloadDocumentPdf(this.organisationId, document.id);
-      this.saveBlob(
-        blob,
-        this.fileName(
-          item.moduleKey === 'thermal-imaging'
-            ? `${item.site.name} thermal imaging report.pdf`
-            : `${item.asset?.assetReference || item.asset?.displayName || 'EV charger'} certificate.pdf`,
-        ),
-      );
-      this.success.set(
-        item.moduleKey === 'thermal-imaging'
-          ? 'Thermal report downloaded.'
-          : 'Certificate downloaded.',
-      );
-      await this.refreshSelected();
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        item.moduleKey === 'thermal-imaging' ? 'Preparing thermal report' : 'Preparing certificate',
+        async () => {
+          const document =
+            this.latest(item)?.documents?.[0] ??
+            (
+              await this.api.issueInspectionDocument(
+                this.organisationId,
+                item.id,
+                this.overriding(),
+              )
+            ).document;
+          const blob = await this.api.downloadDocumentPdf(this.organisationId, document.id);
+          this.saveBlob(
+            blob,
+            this.fileName(
+              item.moduleKey === 'thermal-imaging'
+                ? `${item.site.name} thermal imaging report.pdf`
+                : `${item.asset?.assetReference || item.asset?.displayName || 'EV charger'} certificate.pdf`,
+            ),
+          );
+          this.success.set(
+            item.moduleKey === 'thermal-imaging'
+              ? 'Thermal report downloaded.'
+              : 'Certificate downloaded.',
+          );
+          await this.refreshSelected();
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected async previewThermalReport(): Promise<void> {
@@ -735,41 +885,58 @@ export class InspectionReviewComponent {
       return;
     const previewWindow = window.open('about:blank', '_blank');
     if (previewWindow !== null) previewWindow.opener = null;
-    await this.run(async () => {
-      try {
-        const document =
-          this.latest(item)?.documents?.[0] ??
-          (await this.api.issueInspectionDocument(this.organisationId, item.id, this.overriding()))
-            .document;
-        const blob = await this.api.previewDocumentHtml(this.organisationId, document.id);
-        const url = URL.createObjectURL(blob);
-        if (previewWindow === null) window.open(url, '_blank', 'noopener,noreferrer');
-        else previewWindow.location.href = url;
-        setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
-        this.success.set('Thermal report preview opened.');
-        await this.refreshSelected();
-      } catch (error: unknown) {
-        previewWindow?.close();
-        throw error;
-      }
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Preparing thermal report',
+        async () => {
+          try {
+            const document =
+              this.latest(item)?.documents?.[0] ??
+              (
+                await this.api.issueInspectionDocument(
+                  this.organisationId,
+                  item.id,
+                  this.overriding(),
+                )
+              ).document;
+            const blob = await this.api.previewDocumentHtml(this.organisationId, document.id);
+            const url = URL.createObjectURL(blob);
+            if (previewWindow === null) window.open(url, '_blank', 'noopener,noreferrer');
+            else previewWindow.location.href = url;
+            setTimeout(() => URL.revokeObjectURL(url), 5 * 60_000);
+            this.success.set('Thermal report preview opened.');
+            await this.refreshSelected();
+          } catch (error: unknown) {
+            previewWindow?.close();
+            throw error;
+          }
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected async downloadVisitPack(): Promise<void> {
     const visitId = this.inspections()[0]?.visit?.id;
     if (visitId === undefined || this.approvedCount() === 0) return;
-    await this.run(async () => {
-      const issued = await this.api.issueVisitDocuments(this.organisationId, visitId);
-      if (issued.documents.length === 0)
-        throw new Error('Approve at least one inspection before downloading the job pack.');
-      const blob = await this.api.downloadVisitReportPdf(this.organisationId, visitId);
-      this.saveBlob(blob, this.fileName(`${this.visitTitle()} combined report.pdf`));
-      this.success.set(
-        `${issued.documents.length} certificate${issued.documents.length === 1 ? '' : 's'} downloaded as one PDF.`,
-      );
-      await this.refreshSelected();
-      await this.refreshSummaries();
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Preparing combined report',
+        async () => {
+          const issued = await this.api.issueVisitDocuments(this.organisationId, visitId);
+          if (issued.documents.length === 0)
+            throw new Error('Approve at least one inspection before downloading the job pack.');
+          const blob = await this.api.downloadVisitReportPdf(this.organisationId, visitId);
+          this.saveBlob(blob, this.fileName(`${this.visitTitle()} combined report.pdf`));
+          this.success.set(
+            `${issued.documents.length} certificate${issued.documents.length === 1 ? '' : 's'} downloaded as one PDF.`,
+          );
+          await this.refreshSelected();
+          await this.refreshSummaries();
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected imageUrl(mediaId: string): string {
@@ -777,7 +944,16 @@ export class InspectionReviewComponent {
   }
 
   protected canAddReviewPhoto(item: InspectionSummary): boolean {
-    return item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW';
+    return (
+      this.overrideDraft() !== undefined && this.canCorrectInspections() && this.canCorrect(item)
+    );
+  }
+
+  protected canCorrect(item: InspectionSummary): boolean {
+    return (
+      this.canCorrectInspections() &&
+      ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'].includes(item.status)
+    );
   }
 
   protected setReviewPhotoCaption(event: Event): void {
@@ -805,16 +981,34 @@ export class InspectionReviewComponent {
       }
       await this.run(async () => {
         const photo = await compressPhoto(file);
-        await this.api.uploadInspectionReviewPhoto(
+        const uploaded = await this.api.uploadInspectionReviewPhoto(
           this.organisationId,
           item.id,
           photo,
           caption,
           crypto.randomUUID(),
-          this.reviewPhotoDefectId() || undefined,
+          undefined,
         );
-        this.success.set('Inspection image added to the review evidence.');
-        await this.refreshSelected();
+        const media = { ...uploaded.media, caption, staged: true };
+        this.overrideDraft.update((draft) => {
+          if (draft === undefined) return draft;
+          const defectId = this.reviewPhotoDefectId();
+          return {
+            ...draft,
+            media: [...draft.media, media],
+            generalPhotoMediaIds:
+              defectId === ''
+                ? [...draft.generalPhotoMediaIds, media.id]
+                : draft.generalPhotoMediaIds,
+            defects: draft.defects.map((defect) =>
+              defect.id === defectId
+                ? { ...defect, photoMediaIds: [...defect.photoMediaIds, media.id] }
+                : defect,
+            ),
+          };
+        });
+        this.imageUrls.update((urls) => ({ ...urls, [media.id]: URL.createObjectURL(photo) }));
+        this.success.set('Image staged. Save the revision to apply it.');
       });
     } finally {
       input.value = '';
@@ -831,6 +1025,15 @@ export class InspectionReviewComponent {
 
   protected overrideConnectors(draft: OverrideDraft): Record<string, unknown>[] {
     return this.records(draft.evData?.connectorTests);
+  }
+
+  protected engineerName(): string {
+    const revision = this.latest();
+    return (
+      revision?.signatures?.[0]?.signerName ??
+      revision?.signatureSourceRevision?.signatures[0]?.signerName ??
+      'Not recorded'
+    );
   }
 
   private async loadSession(): Promise<void> {
@@ -1064,6 +1267,12 @@ export class InspectionReviewComponent {
     return ['ADVISORY', 'MINOR', 'MAJOR', 'DANGEROUS'].includes(value)
       ? (value as DefectDraft['severity'])
       : 'MINOR';
+  }
+
+  private defectCategory(value: string | undefined): DefectDraft['category'] {
+    return ['ADVICE', 'NOTE', 'FAULT', 'CONDITION'].includes(value ?? '')
+      ? (value as DefectDraft['category'])
+      : 'FAULT';
   }
 
   private defectStatus(value: string): DefectDraft['status'] {

@@ -20,6 +20,7 @@ import {
   type VisitSummary,
   type VisitTask,
 } from '../core/api.service';
+import { GenerationProgressService } from '../core/generation-progress.service';
 import {
   buildVisitTaskInputs,
   eligibleTaskAssets,
@@ -55,6 +56,7 @@ const EVENT_LABELS: Record<string, string> = {
 })
 export class JobOverviewComponent {
   private readonly api = inject(ApiService);
+  private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
@@ -327,12 +329,18 @@ export class JobOverviewComponent {
 
   protected async issueCertificates(): Promise<void> {
     if (!this.canIssue()) return;
-    await this.run(async () => {
-      await this.api.issueVisitDocuments(this.organisationId, this.visitId);
-      this.documentsLoaded.set(false);
-      await this.loadDocuments();
-      this.notice.set('Certificates issued for all approved inspections.');
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Issuing certificates',
+        async () => {
+          await this.api.issueVisitDocuments(this.organisationId, this.visitId);
+          this.documentsLoaded.set(false);
+          await this.loadDocuments();
+          this.notice.set('Certificates issued for all approved inspections.');
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected async openRamsLinker(): Promise<void> {
@@ -383,29 +391,47 @@ export class JobOverviewComponent {
 
   protected async downloadDocument(document: VisitDocument): Promise<void> {
     if (!this.canGenerate()) return;
-    await this.run(async () => {
-      const blob = await this.api.downloadDocumentPdf(this.organisationId, document.id);
-      this.saveBlob(blob, this.slug(document.title) + '.pdf');
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Preparing document',
+        async () => {
+          const blob = await this.api.downloadDocumentPdf(this.organisationId, document.id);
+          this.saveBlob(blob, this.slug(document.title) + '.pdf');
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected async previewDocument(document: VisitDocument): Promise<void> {
     if (!this.canGenerate()) return;
-    await this.run(async () => {
-      const blob = await this.api.previewDocumentHtml(this.organisationId, document.id);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Preparing document preview',
+        async () => {
+          const blob = await this.api.previewDocumentHtml(this.organisationId, document.id);
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank', 'noopener,noreferrer');
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected async downloadCombinedReport(): Promise<void> {
     if (!this.canGenerate()) return;
-    await this.run(async () => {
-      const blob = await this.api.downloadVisitReportPdf(this.organisationId, this.visitId);
-      const job = this.job();
-      this.saveBlob(blob, `${this.slug(job?.reference || job?.title || 'job')}-job-report.pdf`);
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Preparing job report',
+        async () => {
+          const blob = await this.api.downloadVisitReportPdf(this.organisationId, this.visitId);
+          const job = this.job();
+          this.saveBlob(blob, `${this.slug(job?.reference || job?.title || 'job')}-job-report.pdf`);
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected canDownloadDraft(task: VisitTask): boolean {
@@ -419,10 +445,19 @@ export class JobOverviewComponent {
   protected async downloadDraft(task: VisitTask): Promise<void> {
     const inspection = task.inspection;
     if (!inspection || !this.canDownloadDraft(task)) return;
-    await this.run(async () => {
-      const blob = await this.api.downloadInspectionDraftPdf(this.organisationId, inspection.id);
-      this.saveBlob(blob, `${this.slug(task.title)}-draft.pdf`);
-    });
+    await this.run(() =>
+      this.generationProgress.run(
+        'Preparing draft report',
+        async () => {
+          const blob = await this.api.downloadInspectionDraftPdf(
+            this.organisationId,
+            inspection.id,
+          );
+          this.saveBlob(blob, `${this.slug(task.title)}-draft.pdf`);
+        },
+        'This can take a few moments.',
+      ),
+    );
   }
 
   protected formatDate(value: string | undefined, includeTime = false): string {

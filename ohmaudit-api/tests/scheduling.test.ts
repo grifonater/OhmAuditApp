@@ -36,6 +36,32 @@ describe('schedule materialisation', () => {
     );
   });
 
+  it('returns visit identity with recurring inspection suggestions', async () => {
+    const prisma = {
+      site: { findFirst: vi.fn().mockResolvedValue({ id: 'site-a' }) },
+      inspection: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'inspection-a',
+            visitId: 'visit-a',
+            assetId: 'asset-a',
+            moduleKey: 'ev-charging',
+            inspectionType: 'EVCP 1 inspection',
+            effectiveDate: new Date('2026-09-15T00:00:00.000Z'),
+            asset: { id: 'asset-a', displayName: 'EVCP 1', assetType: 'EV Charger' },
+          },
+        ]),
+      },
+      scheduleRule: { findMany: vi.fn().mockResolvedValue([]) },
+    } as unknown as PrismaClient;
+
+    const suggestions = await new ScheduleService(prisma).suggestions('organisation-a', 'site-a');
+
+    expect(suggestions).toEqual([
+      expect.objectContaining({ inspectionId: 'inspection-a', visitId: 'visit-a' }),
+    ]);
+  });
+
   it('completes the nearest occurrence and rebuilds future dates after approval', async () => {
     const occurrenceUpdate = vi.fn();
     let firstCreatedDueDate: Date | undefined;

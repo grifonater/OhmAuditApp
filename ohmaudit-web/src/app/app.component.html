@@ -1,1 +1,13 @@
 <router-outlet />
+
+@if (generationProgress(); as progress) {
+  <div class="generation-backdrop" role="status" aria-live="polite" aria-atomic="true">
+    <div class="generation-progress">
+      <div class="generation-spinner" aria-hidden="true"></div>
+      <div>
+        <strong>{{ progress.title }}</strong>
+        <p>{{ progress.detail }}</p>
+      </div>
+    </div>
+  </div>
+}

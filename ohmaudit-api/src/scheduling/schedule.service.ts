@@ -127,11 +127,12 @@ export class ScheduleService {
         where: { organisationId, siteId, status: 'APPROVED', effectiveDate: { not: null } },
         select: {
           id: true,
+          visitId: true,
           assetId: true,
           moduleKey: true,
           inspectionType: true,
           effectiveDate: true,
-          asset: { select: { id: true, displayName: true } },
+          asset: { select: { id: true, displayName: true, assetType: true } },
         },
         orderBy: { effectiveDate: 'desc' },
       }),
@@ -157,6 +158,7 @@ export class ScheduleService {
       return [
         {
           inspectionId: inspection.id,
+          visitId: inspection.visitId,
           asset: inspection.asset,
           moduleKey: inspection.moduleKey,
           title: inspection.inspectionType,

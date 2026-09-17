@@ -26,6 +26,12 @@ importers:
       '@angular/service-worker':
         specifier: ^22.0.8
         version: 22.1.1(@angular/core@22.1.1(@angular/compiler@22.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@hugeicons/angular':
+        specifier: ^1.0.11
+        version: 1.0.11(@angular/common@22.1.1(@angular/core@22.1.1(@angular/compiler@22.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.1(@angular/compiler@22.1.1)(rxjs@7.8.2))
+      '@hugeicons/core-free-icons':
+        specifier: ^4.3.3
+        version: 4.3.3
       '@supabase/supabase-js':
         specifier: ^2.0.0
         version: 2.112.3
@@ -782,6 +788,15 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@hugeicons/angular@1.0.11':
+    resolution: {integrity: sha512-6TTKOFuVlFljIr33yW6OUOQRPTvWmE7zlaVlA0CCWoWCEXPYv2zozD/1WUH16X6Nfl4bcRZsVHUtf0dHzQ3nsA==}
+    peerDependencies:
+      '@angular/common': '>=17.1.0 <23.0.0'
+      '@angular/core': '>=17.1.0 <23.0.0'
+
+  '@hugeicons/core-free-icons@4.3.3':
+    resolution: {integrity: sha512-rpCPwJXhIjEKhMYb2AbNU6nS1HD2vXjeT65LL8SOaEHoN0cI57UTgnroU8q/TlocQQfnxeGz9C3KiyIausfzxg==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -4251,6 +4266,14 @@ snapshots:
   '@hono/node-server@1.19.17(hono@4.13.1)':
     dependencies:
       hono: 4.13.1
+
+  '@hugeicons/angular@1.0.11(@angular/common@22.1.1(@angular/core@22.1.1(@angular/compiler@22.1.1)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.1(@angular/compiler@22.1.1)(rxjs@7.8.2))':
+    dependencies:
+      '@angular/common': 22.1.1(@angular/core@22.1.1(@angular/compiler@22.1.1)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@angular/core': 22.1.1(@angular/compiler@22.1.1)(rxjs@7.8.2)
+      tslib: 2.8.1
+
+  '@hugeicons/core-free-icons@4.3.3': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

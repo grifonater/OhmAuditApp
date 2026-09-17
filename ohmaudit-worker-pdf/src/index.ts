@@ -2,11 +2,13 @@ import { renderThermalReportHtml } from './thermal-report-html';
 import { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
 import { renderJobSheetReportHtml, type JobSheetRenderPayload } from './job-sheet-report-html';
 import { renderEvCertificateHtml } from './ev-certificate-html';
+import { renderVisitReportHtml } from './visit-report-html';
 
 export { renderThermalReportHtml } from './thermal-report-html';
 export { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
 export { renderJobSheetReportHtml, type JobSheetRenderPayload } from './job-sheet-report-html';
 export { renderEvCertificateHtml } from './ev-certificate-html';
+export { renderVisitReportHtml } from './visit-report-html';
 
 export interface PdfBindings {
   APP_ENV: 'local' | 'development' | 'staging' | 'production';
@@ -192,12 +194,17 @@ export interface VisitReportPayload {
   visitDate: string;
   certificates: CertificatePayload[];
   findings?: VisitReportFinding[];
+  heroImage?: ReportImagePayload;
   logoJpegBase64?: string;
   logoImage?: ReportImagePayload;
 }
 
 function upperUserText(value: string): string {
   return value.toLocaleUpperCase('en-GB');
+}
+
+function normaliseReportImage(image: ReportImagePayload): ReportImagePayload {
+  return { mimeType: image.mimeType, base64: image.base64.replaceAll(/\s/gu, '') };
 }
 
 function uppercaseEvCertificate(payload: EvCertificatePayload): EvCertificatePayload {
@@ -380,6 +387,9 @@ function uppercaseVisitReport(payload: VisitReportPayload): VisitReportPayload {
         ...(image.caption === undefined ? {} : { caption: upperUserText(image.caption) }),
       })),
     })),
+    ...(payload.heroImage === undefined
+      ? {}
+      : { heroImage: normaliseReportImage(payload.heroImage) }),
     ...(payload.logoJpegBase64 === undefined ? {} : { logoJpegBase64: payload.logoJpegBase64 }),
     ...(payload.logoImage === undefined ? {} : { logoImage: payload.logoImage }),
   };
@@ -422,7 +432,7 @@ function certificateLines(payload: CertificatePayload): string[] {
 
 function jpegDetails(
   base64: string | undefined,
-): { hex: string; width: number; height: number } | undefined {
+): { bytes: Uint8Array; width: number; height: number } | undefined {
   if (!base64) return undefined;
   const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
   let offset = 2;
@@ -441,8 +451,7 @@ function jpegDetails(
     ) {
       const height = (bytes[offset + 5] ?? 0) * 256 + (bytes[offset + 6] ?? 0);
       const width = (bytes[offset + 7] ?? 0) * 256 + (bytes[offset + 8] ?? 0);
-      const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('') + '>';
-      return { hex, width, height };
+      return { bytes, width, height };
     }
     if (length < 2) break;
     offset += length + 2;
@@ -456,41 +465,79 @@ interface PdfImage {
 }
 
 function renderPageContents(contents: string[], requestedImages: PdfImage[] = []): Uint8Array {
+  const encoder = new TextEncoder();
+  const concatenate = (parts: readonly Uint8Array[]): Uint8Array => {
+    const output = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
+    let offset = 0;
+    for (const part of parts) {
+      output.set(part, offset);
+      offset += part.byteLength;
+    }
+    return output;
+  };
   const fontObjectNumber = 3 + contents.length * 2;
   const images = requestedImages.flatMap(({ name, base64 }) => {
     const details = jpegDetails(base64);
     return details === undefined ? [] : [{ name, ...details }];
   });
   const pageObjectNumbers = contents.map((_, index) => 3 + index * 2);
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    `<< /Type /Pages /Kids [${pageObjectNumbers.map((number) => `${number} 0 R`).join(' ')}] /Count ${contents.length} >>`,
+  const objects: Uint8Array[] = [
+    encoder.encode('<< /Type /Catalog /Pages 2 0 R >>'),
+    encoder.encode(
+      `<< /Type /Pages /Kids [${pageObjectNumbers.map((number) => `${number} 0 R`).join(' ')}] /Count ${contents.length} >>`,
+    ),
   ];
   const imageResources = images
     .map(({ name }, index) => `/${name} ${fontObjectNumber + index + 1} 0 R`)
     .join(' ');
   for (const [index, content] of contents.entries()) {
+    const contentBytes = encoder.encode(content);
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObjectNumber} 0 R >>${images.length === 0 ? '' : ` /XObject << ${imageResources} >>`} >> /Contents ${4 + index * 2} 0 R >>`,
-      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+      encoder.encode(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontObjectNumber} 0 R >>${images.length === 0 ? '' : ` /XObject << ${imageResources} >>`} >> /Contents ${4 + index * 2} 0 R >>`,
+      ),
+      concatenate([
+        encoder.encode(`<< /Length ${contentBytes.byteLength} >>\nstream\n`),
+        contentBytes,
+        encoder.encode('\nendstream'),
+      ]),
     );
   }
-  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objects.push(encoder.encode('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'));
   for (const image of images)
     objects.push(
-      `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${image.hex.length} >>\nstream\n${image.hex}\nendstream`,
+      concatenate([
+        encoder.encode(
+          `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.byteLength} >>\nstream\n`,
+        ),
+        image.bytes,
+        encoder.encode('\nendstream'),
+      ]),
     );
-  let pdf = '%PDF-1.4\n';
+  const parts: Uint8Array[] = [encoder.encode('%PDF-1.4\n')];
+  let byteLength = parts[0]!.byteLength;
   const offsets = [0];
   objects.forEach((object, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    offsets.push(byteLength);
+    const objectBytes = concatenate([
+      encoder.encode(`${index + 1} 0 obj\n`),
+      object,
+      encoder.encode('\nendobj\n'),
+    ]);
+    parts.push(objectBytes);
+    byteLength += objectBytes.byteLength;
   });
-  const xref = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets.slice(1)) pdf += `${offset.toString().padStart(10, '0')} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return new TextEncoder().encode(pdf);
+  const xref = byteLength;
+  const xrefLines = offsets
+    .slice(1)
+    .map((offset) => `${offset.toString().padStart(10, '0')} 00000 n \n`)
+    .join('');
+  parts.push(
+    encoder.encode(
+      `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${xrefLines}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`,
+    ),
+  );
+  return concatenate(parts);
 }
 
 function renderPages(pages: string[][], logoJpegBase64?: string): Uint8Array {
@@ -1438,6 +1485,7 @@ function isVisitReportPayload(value: unknown): value is VisitReportPayload {
     Array.isArray(item['certificates']) &&
     item['certificates'].length > 0 &&
     item['certificates'].every(isPayload) &&
+    (item['heroImage'] === undefined || isReportMediaImage(item['heroImage'])) &&
     (findings === undefined ||
       (Array.isArray(findings) &&
         findings.every(
@@ -2294,6 +2342,60 @@ async function renderEvCertificateWithBrowser(
   }
 }
 
+async function renderVisitReportWithBrowser(
+  environment: PdfBindings,
+  payload: VisitReportPayload,
+  filename: string,
+): Promise<Response | undefined> {
+  if (environment.BROWSER === undefined) return undefined;
+  const configuredTimeout = Number.parseInt(environment.RENDER_TIMEOUT_MS, 10);
+  const timeout = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(configuredTimeout, 5_000), 120_000)
+    : 30_000;
+  try {
+    const rendered = await environment.BROWSER.quickAction('pdf', {
+      html: renderVisitReportHtml(payload),
+      emulateMediaType: 'print',
+      setJavaScriptEnabled: false,
+      actionTimeout: timeout,
+      pdfOptions: {
+        format: 'a4',
+        scale: 1,
+        printBackground: true,
+        preferCSSPageSize: true,
+        displayHeaderFooter: false,
+        timeout,
+      },
+    });
+    const renderedType = rendered.headers.get('content-type');
+    if (!rendered.ok || (renderedType !== null && !renderedType.includes('application/pdf'))) {
+      console.error(
+        JSON.stringify({ event: 'pdf.visit_browser_run_failed', status: rendered.status }),
+      );
+      return undefined;
+    }
+    const headers = new Headers({
+      'content-type': 'application/pdf',
+      'content-disposition': `inline; filename="${filename}"`,
+      'cache-control': 'private, no-store',
+      'x-content-type-options': 'nosniff',
+      'x-ohmaudit-pdf-renderer': 'browser-run',
+    });
+    const browserTime = rendered.headers.get('x-browser-ms-used');
+    if (browserTime !== null) headers.set('x-ohmaudit-browser-ms-used', browserTime);
+    return new Response(rendered.body, { headers });
+  } catch (error: unknown) {
+    console.error(
+      JSON.stringify({
+        event: 'pdf.visit_browser_run_unavailable',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : 'Unknown Browser Run error',
+      }),
+    );
+    return undefined;
+  }
+}
+
 function reportImageDataUri(image: ReportImagePayload): string | undefined {
   if (
     !['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType) ||
@@ -2519,6 +2621,30 @@ export default {
       });
     }
     const checkedPayload = payload as CertificatePayload | VisitReportPayload;
+    if (visitReport) {
+      const visitPayload = checkedPayload as VisitReportPayload;
+      const visitBrowserPdf = await renderVisitReportWithBrowser(
+        env,
+        visitPayload,
+        `${templateId}.pdf`,
+      );
+      if (visitBrowserPdf !== undefined) return visitBrowserPdf;
+      if (visitPayload.certificates.some(({ evCertificate }) => evCertificate !== undefined))
+        return Response.json(
+          {
+            code: 'VISIT_REPORT_RENDERER_UNAVAILABLE',
+            message:
+              'The browser renderer is required for combined reports containing EV certificates.',
+          },
+          {
+            status: 503,
+            headers: {
+              'cache-control': 'private, no-store',
+              'x-content-type-options': 'nosniff',
+            },
+          },
+        );
+    }
     const evBrowserPdf = await renderEvCertificateWithBrowser(
       env,
       checkedPayload,
