@@ -372,12 +372,13 @@ describe('PDF worker', () => {
       reasonForFailure: '',
       notes: 'Unit satisfactory.',
       engineerName: 'A Engineer',
-      certificateReference: 'EV-001',
+      certificateReference: 'JOB-101-1',
       observations: [],
       photos: [],
     };
     const html = renderVisitReportHtml({
       title: 'EV Inspection Report & Certificate Pack',
+      reportReference: 'JOB-101',
       organisationName: 'Ohm & Audit Electrical',
       customerName: 'Apex <Facilities>',
       siteName: 'Apex House',
@@ -415,6 +416,8 @@ describe('PDF worker', () => {
     });
 
     expect(html).toContain('visit-cover');
+    expect(html).toContain('Report Ref: JOB-101');
+    expect(html).toContain('JOB-101-1');
     expect(html).toContain('Inspection summary');
     expect(html).toContain('General Installation Observations');
     expect(html).toContain('Observation Evidence');

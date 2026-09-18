@@ -101,6 +101,11 @@ export class JobOverviewComponent {
     { key: 'documents', label: 'Documents' },
   ];
   protected readonly canEdit = computed(() => this.capabilities().includes('visits.create'));
+  protected readonly canComplete = computed(
+    () =>
+      this.capabilities().includes('visits.create') ||
+      this.capabilities().includes('inspections.approve'),
+  );
   protected readonly canAssign = computed(() => this.capabilities().includes('visits.assign'));
   protected readonly canIssue = computed(() => this.capabilities().includes('certificates.issue'));
   protected readonly canManageRams = computed(() => this.capabilities().includes('rams.manage'));
@@ -188,7 +193,7 @@ export class JobOverviewComponent {
     () => this.job()?.tasks.filter((task) => task.status === 'COMPLETED').length ?? 0,
   );
   protected readonly canCompleteJob = computed(() => {
-    return this.canEdit() && visitReadyForCompletion(this.job());
+    return this.canComplete() && visitReadyForCompletion(this.job());
   });
   protected readonly progressEvents = computed(() =>
     this.timelineEvents().map((event) => ({

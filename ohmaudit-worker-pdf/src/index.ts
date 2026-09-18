@@ -61,6 +61,7 @@ export interface VisitReportFinding {
 
 export interface CertificatePayload {
   draft?: boolean;
+  reportReference?: string;
   title: string;
   organisationName: string;
   customerName: string;
@@ -188,6 +189,7 @@ export interface EvCertificatePayload {
 
 export interface VisitReportPayload {
   title: string;
+  reportReference?: string;
   organisationName: string;
   customerName: string;
   siteName: string;
@@ -271,7 +273,7 @@ function uppercaseEvCertificate(payload: EvCertificatePayload): EvCertificatePay
     reasonForFailure: upperUserText(payload.reasonForFailure),
     notes: upperUserText(payload.notes),
     engineerName: upperUserText(payload.engineerName),
-    certificateReference: upperUserText(payload.certificateReference),
+    certificateReference: payload.certificateReference,
     observations: (payload.observations ?? []).map((observation) => ({
       category: upperUserText(observation.category),
       title: upperUserText(observation.title),
@@ -303,7 +305,7 @@ function uppercaseThermalCertificate(
     siteAddress: payload.siteAddress.map(upperUserText),
     reportDate: upperUserText(payload.reportDate),
     engineerName: upperUserText(payload.engineerName),
-    reportReference: upperUserText(payload.reportReference),
+    reportReference: payload.reportReference,
     outcome: upperUserText(payload.outcome),
     ...(payload.details === undefined
       ? {}
@@ -339,6 +341,7 @@ function uppercaseThermalCertificate(
 function uppercaseCertificate(payload: CertificatePayload): CertificatePayload {
   return {
     ...(payload.draft === undefined ? {} : { draft: payload.draft }),
+    ...(payload.reportReference === undefined ? {} : { reportReference: payload.reportReference }),
     title: upperUserText(payload.title),
     organisationName: upperUserText(payload.organisationName),
     customerName: upperUserText(payload.customerName),
@@ -364,6 +367,7 @@ function uppercaseCertificate(payload: CertificatePayload): CertificatePayload {
 function uppercaseVisitReport(payload: VisitReportPayload): VisitReportPayload {
   return {
     title: upperUserText(payload.title),
+    ...(payload.reportReference === undefined ? {} : { reportReference: payload.reportReference }),
     organisationName: upperUserText(payload.organisationName),
     customerName: upperUserText(payload.customerName),
     siteName: upperUserText(payload.siteName),
@@ -416,6 +420,9 @@ function readingAbove(value: string, threshold: number): boolean {
 function certificateLines(payload: CertificatePayload): string[] {
   return [
     payload.title,
+    ...(payload.reportReference === undefined
+      ? []
+      : [`Report reference: ${payload.reportReference}`]),
     `Issued by: ${payload.organisationName}`,
     `Customer: ${payload.customerName}`,
     `Site: ${payload.siteName}`,
@@ -1264,6 +1271,9 @@ export function renderVisitReportPdf(payload: VisitReportPayload): Uint8Array {
         throw new Error('Native visit finding evidence must be a valid JPEG image.');
   const cover = [
     payload.title,
+    ...(payload.reportReference === undefined
+      ? []
+      : [`Report reference: ${payload.reportReference}`]),
     `Issued by: ${payload.organisationName}`,
     `Customer: ${payload.customerName}`,
     `Site: ${payload.siteName}`,
@@ -1409,6 +1419,7 @@ function isPayload(value: unknown): value is CertificatePayload {
   return (
     typeof item['title'] === 'string' &&
     typeof item['organisationName'] === 'string' &&
+    isOptionalString(item['reportReference']) &&
     Array.isArray(item['summaryLines']) &&
     (item['evCertificate'] === undefined || isEvCertificatePayload(item['evCertificate'])) &&
     (item['thermalCertificate'] === undefined ||
@@ -1482,6 +1493,7 @@ function isVisitReportPayload(value: unknown): value is VisitReportPayload {
   return (
     typeof item['title'] === 'string' &&
     typeof item['organisationName'] === 'string' &&
+    isOptionalString(item['reportReference']) &&
     Array.isArray(item['certificates']) &&
     item['certificates'].length > 0 &&
     item['certificates'].every(isPayload) &&

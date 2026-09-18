@@ -32,6 +32,11 @@ import { DomainError } from './shared/domain-error';
 import type { ApiBindings } from './shared/environment';
 import { parseEnvironment } from './shared/environment';
 import { requestContext, type RequestVariables } from './shared/request-context';
+import {
+  inspectionReportReference,
+  orderedInspectionIds,
+  preferredReportReference,
+} from './shared/report-reference';
 
 type AppEnvironment = { Bindings: ApiBindings; Variables: RequestVariables };
 type AppOptions = { tokenVerifier?: TokenVerifier; identityStore?: IdentityStore };
@@ -5527,6 +5532,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           customer: true,
           site: true,
           asset: { include: { evChargePoint: true } },
+          visit: {
+            include: {
+              tasks: {
+                orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+                select: { inspection: { select: { id: true } } },
+              },
+              inspections: {
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                select: { id: true },
+              },
+            },
+          },
         },
       }),
       prisma.organisationBrandProfile.findUnique({ where: { organisationId } }),
@@ -5571,6 +5588,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const organisationName =
       brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation';
     const reportDate = draft.updatedAt;
+    const draftVisitInspectionIds =
+      inspection.visit === null
+        ? undefined
+        : orderedInspectionIds(
+            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection?.id),
+            inspection.visit.inspections.map(({ id }) => id),
+          );
+    const draftReportReference = inspectionReportReference({
+      jobReference: inspection.visit?.reference,
+      externalReference: inspection.visit?.externalReference,
+      currentReference:
+        reportText(data['reportReference']) || `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+      inspectionId: inspection.id,
+      ...(draftVisitInspectionIds === undefined
+        ? {}
+        : { orderedInspectionIds: draftVisitInspectionIds }),
+    });
     const summaryLines = Object.entries(data)
       .slice(0, 25)
       .map(([key, value]) => `${key}: ${reportText(value, JSON.stringify(value) ?? '')}`);
@@ -5603,6 +5637,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       engineerName,
       outcome: reportText(data['outcome'], 'Not recorded'),
       summaryLines,
+      reportReference: draftReportReference,
       ...(moduleKey !== 'thermal-imaging'
         ? {}
         : {
@@ -5613,9 +5648,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 organisationId,
                 inspectionId,
                 revisionData: data,
-                reportReference:
-                  reportText(data['reportReference']) ||
-                  `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+                reportReference: draftReportReference,
                 organisationName,
                 customerName: inspection.customer.name,
                 siteName: inspection.site.name,
@@ -5637,7 +5670,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         : {
             evCertificate: {
               ...evCertificateData({
-                documentId: `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+                documentId: draftReportReference,
                 testingCompany: {
                   name: organisationName,
                   addressLines: [
@@ -5743,7 +5776,22 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const [inspection, brand] = await Promise.all([
       prisma.inspection.findFirst({
         where: { id: inspectionId, organisationId },
-        include: { customer: true, site: true },
+        include: {
+          customer: true,
+          site: true,
+          visit: {
+            include: {
+              tasks: {
+                orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+                select: { inspection: { select: { id: true } } },
+              },
+              inspections: {
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                select: { id: true },
+              },
+            },
+          },
+        },
       }),
       prisma.organisationBrandProfile.findUnique({ where: { organisationId } }),
     ]);
@@ -5759,6 +5807,24 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation';
     const reportDate = inspection.effectiveDate ?? new Date();
     const effectiveDate = reportDate.toISOString().slice(0, 10);
+    const previewVisitInspectionIds =
+      inspection.visit === null
+        ? undefined
+        : orderedInspectionIds(
+            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection?.id),
+            inspection.visit.inspections.map(({ id }) => id),
+          );
+    const previewReportReference = inspectionReportReference({
+      jobReference: inspection.visit?.reference,
+      externalReference: inspection.visit?.externalReference,
+      currentReference:
+        reportText(input.data['reportReference']) ||
+        `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+      inspectionId: inspection.id,
+      ...(previewVisitInspectionIds === undefined
+        ? {}
+        : { orderedInspectionIds: previewVisitInspectionIds }),
+    });
     const rendered = await requestPdfRender(environment, '/render/thermal-imaging-certificate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -5772,6 +5838,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         revisionNumber: 0,
         engineerName: input.signature.signerName,
         outcome: reportText(input.data['outcome'], 'Recorded'),
+        reportReference: previewReportReference,
         summaryLines: [
           `Draft build: api v${environment.APP_VERSION}`,
           'Report status: Draft',
@@ -5789,9 +5856,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           organisationId,
           inspectionId,
           revisionData: input.data,
-          reportReference:
-            reportText(input.data['reportReference']) ||
-            `DRAFT-${inspection.id.slice(0, 8).toUpperCase()}`,
+          reportReference: previewReportReference,
           organisationName,
           customerName: inspection.customer.name,
           siteName: inspection.site.name,
@@ -6424,7 +6489,19 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const [visit, visitDocuments, brand, accreditation] = await Promise.all([
       prisma.visit.findFirst({
         where: { id: visitId, organisationId },
-        include: { customer: true, site: true, findings: true },
+        include: {
+          customer: true,
+          site: true,
+          findings: true,
+          tasks: {
+            orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+            select: { inspection: { select: { id: true } } },
+          },
+          inspections: {
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            select: { id: true },
+          },
+        },
       }),
       prisma.document.findMany({
         where: {
@@ -6469,9 +6546,19 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       )
         currentDocumentByInspection.set(revision.inspection.id, document);
     }
-    const documents = [...currentDocumentByInspection.values()].sort((left, right) =>
-      left.title.localeCompare(right.title),
+    const visitInspectionIds = orderedInspectionIds(
+      visit.tasks.map(({ inspection }) => inspection?.id),
+      visit.inspections.map(({ id }) => id),
     );
+    const inspectionOrder = new Map(visitInspectionIds.map((id, index) => [id, index]));
+    const documents = [...currentDocumentByInspection.values()].sort((left, right) => {
+      const leftId = left.inspectionRevision?.inspection.id ?? '';
+      const rightId = right.inspectionRevision?.inspection.id ?? '';
+      const order =
+        (inspectionOrder.get(leftId) ?? Number.MAX_SAFE_INTEGER) -
+        (inspectionOrder.get(rightId) ?? Number.MAX_SAFE_INTEGER);
+      return order || left.title.localeCompare(right.title);
+    });
     if (documents.length === 0)
       throw new DomainError(
         'VISIT_REPORT_EMPTY',
@@ -6570,6 +6657,19 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         return `${value}`;
       return JSON.stringify(value) ?? '';
     };
+    const combinedReportReference = preferredReportReference({
+      jobReference: visit.reference,
+      externalReference: visit.externalReference,
+      currentReference:
+        documents[0]?.reportReference?.trim() ||
+        reportText(
+          (documents[0]?.inspectionRevision?.data as Record<string, unknown> | undefined)?.[
+            'reportReference'
+          ],
+        ) ||
+        documents[0]?.id ||
+        visit.id,
+    });
     const certificates = await Promise.all(
       documents.flatMap((document) => {
         const revision = document.inspectionRevision;
@@ -6577,6 +6677,16 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         const inspection = revision.inspection;
         return [
           (async () => {
+            const reportReference = inspectionReportReference({
+              jobReference: visit.reference,
+              externalReference: visit.externalReference,
+              currentReference:
+                document.reportReference?.trim() ||
+                reportText((revision.data as Record<string, unknown>)['reportReference']) ||
+                document.id,
+              inspectionId: inspection.id,
+              orderedInspectionIds: visitInspectionIds,
+            });
             const snapshotAssetPhotoId = revision.media.find(
               ({ category }) => category === 'asset-image',
             )?.mediaId;
@@ -6617,6 +6727,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
               summaryLines: Object.entries(revision.data as Record<string, unknown>)
                 .slice(0, 25)
                 .map(([key, value]) => `${key}: ${printableValue(value)}`),
+              reportReference,
               ...(inspection.moduleKey !== 'thermal-imaging'
                 ? {}
                 : {
@@ -6632,10 +6743,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                           (revision.data as Record<string, unknown>)['outcome'],
                           'Recorded',
                         ),
-                      reportReference:
-                        document.reportReference?.trim() ||
-                        reportText((revision.data as Record<string, unknown>)['reportReference']) ||
-                        document.id,
+                      reportReference,
                       organisationName:
                         brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                       customerName: inspection.customer.name,
@@ -6660,7 +6768,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 ? {}
                 : {
                     evCertificate: evCertificateData({
-                      documentId: document.id,
+                      documentId: reportReference,
                       testingCompany: {
                         name:
                           brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
@@ -6723,6 +6831,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         customerName: visit.customer.name,
         siteName: visit.site.name,
         visitDate: visit.scheduledStart.toISOString().slice(0, 10),
+        reportReference: combinedReportReference,
         certificates,
         findings,
         ...reportLogoFields(companyLogoImage),
@@ -6765,7 +6874,18 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 site: true,
                 asset: { include: { evChargePoint: true } },
                 defects: true,
-                visit: true,
+                visit: {
+                  include: {
+                    tasks: {
+                      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+                      select: { inspection: { select: { id: true } } },
+                    },
+                    inspections: {
+                      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                      select: { id: true },
+                    },
+                  },
+                },
               },
             },
             signatures: true,
@@ -6786,6 +6906,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         409,
       );
     const inspection = revision.inspection;
+    const visitInspectionIds =
+      inspection.visit === null
+        ? undefined
+        : orderedInspectionIds(
+            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection?.id),
+            inspection.visit.inspections.map(({ id }) => id),
+          );
+    const reportReference = inspectionReportReference({
+      jobReference: inspection.visit?.reference,
+      externalReference: inspection.visit?.externalReference,
+      currentReference:
+        document.reportReference?.trim() ||
+        reportText((revision.data as Record<string, unknown>)['reportReference']) ||
+        document.id,
+      inspectionId: inspection.id,
+      ...(visitInspectionIds === undefined ? {} : { orderedInspectionIds: visitInspectionIds }),
+    });
     const snapshotAssetPhotoId = revision.media.find(
       ({ category }) => category === 'asset-image',
     )?.mediaId;
@@ -6793,7 +6930,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       documentFormat === 'pdf' &&
       inspection.moduleKey === 'thermal-imaging' &&
       environment.MEDIA_BUCKET !== undefined
-        ? `generated-reports/browser-v2/${organisationId}/${document.id}.pdf`
+        ? `generated-reports/browser-v3/${organisationId}/${document.id}/${encodeURIComponent(reportReference)}.pdf`
         : undefined;
     if (thermalPdfCacheKey !== undefined && environment.MEDIA_BUCKET !== undefined) {
       const cachedPdf = await environment.MEDIA_BUCKET.get(thermalPdfCacheKey);
@@ -6874,6 +7011,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           document.overallOutcome?.trim() ||
           printableValue((revision.data as Record<string, unknown>)['outcome'] ?? 'Recorded'),
         summaryLines,
+        reportReference,
         ...reportLogoFields(locationLogoImage),
         ...(inspection.moduleKey !== 'thermal-imaging'
           ? {}
@@ -6887,11 +7025,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                 outcome:
                   document.overallOutcome?.trim() ||
                   reportText((revision.data as Record<string, unknown>)['outcome'], 'Recorded'),
-                reportReference:
-                  document.reportReference?.trim() ||
-                  reportText((revision.data as Record<string, unknown>)['reportReference']) ||
-                  inspection.visit?.reference ||
-                  document.id,
+                reportReference,
                 organisationName:
                   brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                 customerName: inspection.customer.name,
@@ -6912,7 +7046,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           ? {}
           : {
               evCertificate: evCertificateData({
-                documentId: document.id,
+                documentId: reportReference,
                 testingCompany: {
                   name: brand?.tradingName ?? brand?.registeredName ?? 'Ohm Audit Organisation',
                   addressLines: [

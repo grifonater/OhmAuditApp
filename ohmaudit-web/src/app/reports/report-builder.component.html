@@ -1,0 +1,156 @@
+<main class="page reports-page">
+  <header class="reports-header">
+    <div>
+      <p class="eyebrow">Organisation intelligence</p>
+      <h1>Report builder</h1>
+      <p>Shape live organisation data into a clear, reusable report.</p>
+    </div>
+    <div class="header-actions">
+      <span class="prototype-badge">Design preview</span>
+      <button class="button primary" type="button" disabled>Generate report</button>
+    </div>
+  </header>
+
+  <section class="builder-shell">
+    <aside class="builder-rail" aria-label="Report configuration">
+      <div class="rail-heading">
+        <span>01</span>
+        <div><b>Choose a dataset</b><small>Start with an organisation-wide view.</small></div>
+      </div>
+      <div class="report-types">
+        @for (type of reportTypes; track type.key) {
+          <button
+            type="button"
+            [class.selected]="selectedType() === type.key"
+            (click)="selectType(type.key)"
+          >
+            <span class="type-mark">{{ type.label.charAt(0) }}</span>
+            <span
+              ><b>{{ type.label }}</b
+              ><small>{{ type.detail }}</small></span
+            >
+            <i aria-hidden="true">›</i>
+          </button>
+        }
+      </div>
+
+      <div class="rail-heading second">
+        <span>02</span>
+        <div><b>Organise</b><small>Set the report structure.</small></div>
+      </div>
+      <label class="field compact-field">
+        Group rows by
+        <select [value]="groupBy()" (change)="setGroupBy($event)">
+          <option>Client</option>
+          <option>Site</option>
+          <option>Asset type</option>
+          <option>Status</option>
+          <option>No grouping</option>
+        </select>
+      </label>
+      <label class="field compact-field">
+        Date range
+        <select>
+          <option>All records</option>
+          <option>Last 12 months</option>
+          <option>This calendar year</option>
+          <option>Custom range</option>
+        </select>
+      </label>
+    </aside>
+
+    <section class="builder-workspace">
+      <div class="workspace-toolbar">
+        <div>
+          <p class="eyebrow">Working report</p>
+          <h2>{{ selectedTypeLabel() }}</h2>
+        </div>
+        <div class="format-switch" aria-label="Report format">
+          <button class="active" type="button">Table</button>
+          <button type="button">Summary</button>
+          <button type="button">Cards</button>
+        </div>
+      </div>
+
+      <div class="filter-strip">
+        <label
+          ><span>Client</span
+          ><select>
+            <option>All clients</option>
+          </select></label
+        >
+        <label
+          ><span>Site</span
+          ><select>
+            <option>All sites</option>
+          </select></label
+        >
+        <label
+          ><span>Status</span
+          ><select>
+            <option>All statuses</option>
+          </select></label
+        >
+        <button type="button">+ Add filter</button>
+      </div>
+
+      <section class="columns-panel">
+        <div class="section-title">
+          <div>
+            <span>03</span>
+            <h3>Visible columns</h3>
+          </div>
+          <small>{{ visibleColumns().length }} of {{ columns().length }} selected</small>
+        </div>
+        <div class="column-chips">
+          @for (column of columns(); track column.key) {
+            <button
+              type="button"
+              [class.selected]="selectedColumns().has(column.key)"
+              (click)="toggleColumn(column.key)"
+            >
+              <span>{{ selectedColumns().has(column.key) ? '✓' : '+' }}</span
+              >{{ column.label }}
+            </button>
+          }
+        </div>
+      </section>
+
+      <section class="preview-panel">
+        <div class="preview-heading">
+          <div>
+            <span class="live-dot"></span>
+            <div><b>Live preview</b><small>Sample organisation data</small></div>
+          </div>
+          <span>Grouped by {{ groupBy() }}</span>
+        </div>
+        <div class="preview-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                @for (column of visibleColumns(); track column.key) {
+                  <th>{{ column.label }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of previewRows(); track $index) {
+                <tr>
+                  @for (column of visibleColumns(); track column.key) {
+                    <td [class.status-cell]="column.key === 'status'">
+                      {{ previewValue(row, column.key) }}
+                    </td>
+                  }
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <footer>
+          <span>Showing {{ previewRows().length }} sample rows</span
+          ><span>Final report will include all matching records</span>
+        </footer>
+      </section>
+    </section>
+  </section>
+</main>

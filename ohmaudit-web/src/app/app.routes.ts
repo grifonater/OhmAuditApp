@@ -190,6 +190,15 @@ export const routes: Routes = [
           import('./operations/calendar.component').then((module) => module.CalendarComponent),
       },
       {
+        path: 'org/:organisationId/reports',
+        canActivate: [authorizationGuard],
+        data: { capabilities: ['sites.read'] },
+        loadComponent: () =>
+          import('./reports/report-builder.component').then(
+            (module) => module.ReportBuilderComponent,
+          ),
+      },
+      {
         path: 'org/:organisationId/visits',
         canActivate: [authorizationGuard],
         data: { capabilities: ['sites.read'] },

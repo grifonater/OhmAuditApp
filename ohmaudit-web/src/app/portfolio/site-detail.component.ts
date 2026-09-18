@@ -146,11 +146,13 @@ export class SiteDetailComponent {
         title: occurrence.scheduleRule.title,
         detail: `${occurrence.scheduleRule.asset?.displayName ?? 'Whole site'} · Due ${this.formatDate(occurrence.dueDate)}`,
       }));
-    const suggestionReminders = this.groupedScheduleSuggestions().map((group) => ({
-      id: `suggestion:${group.id}`,
+    const suggestionReminders = this.scheduleSuggestions().map((suggestion) => ({
+      id: `suggestion:${suggestion.inspectionId}`,
       level: 'info',
-      title: this.scheduleSuggestionHeading(group).replace(/\?$/u, ''),
-      detail: `Annual schedule suggested · Next due ${this.formatDate(group.suggestedStartDate)}`,
+      title: suggestion.asset
+        ? `${suggestion.asset.displayName} inspection reminder`
+        : `${suggestion.title} reminder`,
+      detail: `${suggestion.title} · Annual schedule suggested · Next due ${this.formatDate(suggestion.suggestedStartDate)}`,
     }));
     return [...suggestionReminders, ...scheduleReminders, ...reportReminders, ...assetReminders];
   });

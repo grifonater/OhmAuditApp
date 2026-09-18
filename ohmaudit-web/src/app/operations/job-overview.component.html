@@ -8,11 +8,35 @@
   @if (job(); as currentJob) {
     <header class="card job-hero">
       @if (jobSitePhotoUrl(); as sitePhotoUrl) {
-        <div class="job-mark job-mark-photo" aria-hidden="true">
+        <a
+          class="job-mark job-mark-photo"
+          [routerLink]="[
+            '/app/org',
+            organisationId,
+            'portfolio/clients',
+            currentJob.customer.id,
+            'sites',
+            currentJob.site.id,
+          ]"
+          [attr.aria-label]="'Open site details for ' + currentJob.site.name"
+          title="Open site details"
+        >
           <img [src]="sitePhotoUrl" alt="" />
-        </div>
+        </a>
       } @else {
-        <div class="job-mark" aria-hidden="true">
+        <a
+          class="job-mark"
+          [routerLink]="[
+            '/app/org',
+            organisationId,
+            'portfolio/clients',
+            currentJob.customer.id,
+            'sites',
+            currentJob.site.id,
+          ]"
+          [attr.aria-label]="'Open site details for ' + currentJob.site.name"
+          title="Open site details"
+        >
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -27,7 +51,7 @@
               d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"
             />
           </svg>
-        </div>
+        </a>
       }
       <div class="job-identity">
         <div class="job-reference-line">
@@ -61,20 +85,20 @@
         >
       </div>
       <div class="job-actions">
+        @if (canCompleteJob()) {
+          <button
+            oaAsyncButton
+            class="button primary compact"
+            type="button"
+            [oaAsyncPending]="busy()"
+            [oaAsyncError]="error()"
+            [disabled]="busy()"
+            (click)="completeJob()"
+          >
+            Mark job complete
+          </button>
+        }
         @if (canEdit()) {
-          @if (canCompleteJob()) {
-            <button
-              oaAsyncButton
-              class="button primary compact"
-              type="button"
-              [oaAsyncPending]="busy()"
-              [oaAsyncError]="error()"
-              [disabled]="busy()"
-              (click)="completeJob()"
-            >
-              Mark job complete
-            </button>
-          }
           <button class="button secondary compact" type="button" (click)="startEditing()">
             Edit job
           </button>

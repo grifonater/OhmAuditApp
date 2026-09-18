@@ -105,7 +105,7 @@ function findingEvidencePages(
 
 function genericCertificate(certificate: CertificatePayload): string {
   return `<section class="visit-page generic-certificate">
-    <header class="visit-continuation-header"><div><div class="visit-eyebrow">Inspection certificate</div><h1>${text(certificate.title)}</h1></div><div class="visit-header-meta">${text(certificate.assetName, certificate.inspectionType)}<br>${text(certificate.effectiveDate)}</div></header>
+    <header class="visit-continuation-header"><div><div class="visit-eyebrow">Inspection certificate</div><h1>${text(certificate.title)}</h1></div><div class="visit-header-meta">${text(certificate.assetName, certificate.inspectionType)}<br>${text(certificate.effectiveDate)}${certificate.reportReference ? `<br>Report Ref: ${text(certificate.reportReference)}` : ''}</div></header>
     <div class="generic-result ${certificate.outcome.toLocaleUpperCase('en-GB') === 'PASS' ? 'pass' : ''}">${text(certificate.outcome.replaceAll('_', ' '))}</div>
     <div class="generic-grid">
       <div><span>Customer</span><strong>${text(certificate.customerName)}</strong></div><div><span>Site</span><strong>${text(certificate.siteName)}</strong></div>
@@ -113,7 +113,7 @@ function genericCertificate(certificate: CertificatePayload): string {
       <div><span>Effective date</span><strong>${text(certificate.effectiveDate)}</strong></div><div><span>Revision</span><strong>${certificate.revisionNumber}</strong></div>
     </div>
     <section class="generic-summary"><h2>Inspection summary</h2>${certificate.summaryLines.length ? `<ul>${certificate.summaryLines.map((line) => `<li>${text(line)}</li>`).join('')}</ul>` : '<p>No additional summary information was recorded.</p>'}</section>
-    <div class="visit-footer"><span>${text(certificate.organisationName)}</span><span>${text(certificate.assetName, certificate.inspectionType)}</span><span>Certificate</span></div>
+    <div class="visit-footer"><span>${text(certificate.reportReference, certificate.organisationName)}</span><span>${text(certificate.assetName, certificate.inspectionType)}</span><span>Certificate</span></div>
   </section>`;
 }
 
@@ -171,12 +171,16 @@ export function renderVisitReportHtml(payload: VisitReportPayload): string {
     ),
   ];
   const reportReference =
+    payload.reportReference ??
     payload.certificates
       .map(
-        ({ evCertificate, thermalCertificate }) =>
-          evCertificate?.certificateReference ?? thermalCertificate?.reportReference,
+        ({ evCertificate, thermalCertificate, reportReference }) =>
+          reportReference ??
+          evCertificate?.certificateReference ??
+          thermalCertificate?.reportReference,
       )
-      .find(Boolean) ?? payload.visitDate;
+      .find(Boolean) ??
+    payload.visitDate;
   const firstEv = payload.certificates.find(
     ({ evCertificate }) => evCertificate !== undefined,
   )?.evCertificate;
