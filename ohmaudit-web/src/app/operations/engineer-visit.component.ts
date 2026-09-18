@@ -114,7 +114,12 @@ type ConnectorTestGroup = FormGroup<{
   selector: 'oa-engineer-visit',
   imports: [ReactiveFormsModule, RamsReadOnlyComponent, SignaturePadComponent],
   templateUrl: './engineer-visit.component.html',
-  styleUrls: ['./operations.css', './engineer-visit.mobile.css', './engineer-visit.landing.css'],
+  styleUrls: [
+    './operations.css',
+    './engineer-visit.mobile.css',
+    './engineer-visit.landing.css',
+    './engineer-visit.desktop.css',
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class EngineerVisitComponent {

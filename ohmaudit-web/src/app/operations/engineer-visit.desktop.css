@@ -1,0 +1,239 @@
+@media (min-width: 64rem) {
+  .engineer-shell,
+  .engineer-shell.inspection-active {
+    width: 100%;
+    max-width: 84rem;
+    min-height: auto;
+    margin: 0 auto;
+    padding: 1.5rem;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: var(--inspection-canvas);
+    box-shadow: none;
+  }
+
+  .engineer-header,
+  .inspection-active .engineer-header {
+    position: static;
+    inset: auto;
+    width: 100%;
+    margin: 0 0 1rem;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .inspection-active .sync-banner {
+    min-height: auto;
+    justify-content: space-between;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid var(--inspection-border);
+    border-radius: 0.55rem;
+    box-shadow: none;
+  }
+
+  .job-landing {
+    width: 100%;
+    max-width: 84rem;
+    padding: 0;
+  }
+
+  .job-landing-hero {
+    margin: 0;
+    border-radius: 0.8rem;
+  }
+
+  .engineer-workspace-nav {
+    top: 0.75rem;
+  }
+
+  :host-context(.app-frame) .engineer-workspace-nav {
+    top: 5.35rem;
+  }
+
+  .landing-details,
+  .landing-briefing {
+    grid-column: 1 / -1;
+  }
+
+  .job-information-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .visit-findings-workspace .finding-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .engineer-inspection-form.ev-mobile-app {
+    min-height: auto;
+    padding-bottom: 0;
+  }
+
+  .ev-mobile-app .inspection-titlebar {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    min-height: 4rem;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--inspection-border);
+    border-radius: 0.8rem 0.8rem 0 0;
+    box-shadow: var(--oa-shadow-sm);
+  }
+
+  :host-context(.app-frame) .ev-mobile-app .inspection-titlebar {
+    top: 4.6rem;
+  }
+
+  .ev-mobile-app .asset-identity-hero {
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 1.25rem;
+    min-height: 8.5rem;
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border-radius: 0;
+  }
+
+  .ev-mobile-app .asset-identity-hero img,
+  .ev-mobile-app .asset-photo-placeholder {
+    width: 7rem;
+    height: 7rem;
+  }
+
+  .ev-mobile-app .asset-identity-hero .eyebrow {
+    display: block;
+  }
+
+  .ev-mobile-app .asset-identity-hero h1 {
+    padding-right: 8rem;
+    font-size: 1.45rem;
+  }
+
+  .ev-mobile-app .asset-identity-hero p {
+    max-width: 52rem;
+    font-size: 0.8rem;
+  }
+
+  .ev-mobile-app .inspection-progress {
+    top: 4rem;
+    margin: 0 0 1rem;
+    padding: 0.75rem 1.5rem 0.65rem;
+    border: 1px solid var(--inspection-border);
+    border-top: 0;
+    border-radius: 0 0 0.8rem 0.8rem;
+  }
+
+  :host-context(.app-frame) .ev-mobile-app .inspection-progress {
+    top: 8.6rem;
+  }
+
+  .ev-mobile-app .inspection-progress span {
+    overflow: visible;
+    font-size: 0.72rem;
+    text-overflow: clip;
+  }
+
+  .ev-mobile-app .inspection-step {
+    margin: 0 0 1rem;
+    padding: 1.25rem;
+    border-radius: 0.8rem;
+  }
+
+  .ev-mobile-app .form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.8rem;
+  }
+
+  .ev-mobile-app .form-grid .full {
+    grid-column: 1 / -1;
+  }
+
+  .ev-mobile-app .data-plate-intro {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .ev-mobile-app .data-plate-intro .data-plate-actions {
+    grid-column: auto;
+    min-width: 18rem;
+  }
+
+  .ev-mobile-app .data-plate-preview {
+    max-width: 30rem;
+    max-height: 20rem;
+    justify-self: center;
+  }
+
+  #supplies .repeat-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ev-mobile-app .quick-test-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ev-mobile-app .test-reading-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ev-mobile-app .test-reading-grid.two,
+  .ev-mobile-app .reading-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ev-mobile-app .finding-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ev-mobile-app .finding-entry {
+    margin-top: 0;
+  }
+
+  .ev-step-pager {
+    position: sticky;
+    left: auto;
+    bottom: 1rem;
+    z-index: 25;
+    grid-template-columns: 11rem minmax(5rem, 1fr) 13rem;
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.7rem;
+    transform: none;
+    border: 1px solid var(--inspection-border);
+    border-radius: 0.8rem;
+    background: rgb(255 255 255 / 96%);
+    box-shadow: 0 0.6rem 1.6rem rgb(4 27 58 / 12%);
+  }
+
+  :host-context(.app-main) .ev-step-pager,
+  :host-context(.app-frame) .ev-step-pager {
+    left: auto;
+  }
+
+  .ev-step-pager .button {
+    min-height: 2.8rem;
+  }
+
+  .engineer-inspection-form:not(.ev-mobile-app) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 1rem;
+    padding-bottom: 0;
+  }
+
+  .engineer-inspection-form:not(.ev-mobile-app) > .inspection-titlebar,
+  .engineer-inspection-form:not(.ev-mobile-app) > .asset-identity-hero {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+  }
+
+  .engineer-inspection-form:not(.ev-mobile-app) > .inspection-step {
+    margin-bottom: 0;
+  }
+
+  .inspection-active > .empty-state {
+    max-width: 48rem;
+    margin-inline: auto;
+  }
+}

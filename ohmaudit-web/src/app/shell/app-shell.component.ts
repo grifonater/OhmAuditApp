@@ -21,6 +21,7 @@ import {
   type SiteSummary,
 } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
+import { OfflineVisitService } from '../core/offline-visit.service';
 import { OrganisationContextService } from '../core/organisation-context.service';
 import { clearPendingInvitation, readPendingInvitation } from '../core/pending-invitation';
 
@@ -70,6 +71,7 @@ export class AppShellComponent {
   private readonly context = inject(OrganisationContextService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly updates = inject(SwUpdate);
+  protected readonly offline = inject(OfflineVisitService);
   private readonly sidebar = viewChild.required<ElementRef<HTMLElement>>('sidebar');
 
   protected readonly account = signal<CurrentUserResponse | undefined>(undefined);

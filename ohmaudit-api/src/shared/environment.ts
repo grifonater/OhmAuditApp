@@ -1,5 +1,17 @@
 import { z } from 'zod';
 
+const webOrigin = z.url().refine((value) => {
+  const url = new URL(value);
+  return (
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    url.username === '' &&
+    url.password === '' &&
+    url.pathname === '/' &&
+    url.search === '' &&
+    url.hash === ''
+  );
+}, 'Expected an HTTP(S) origin without a path, query, or fragment');
+
 const environmentSchema = z.object({
   APP_ENV: z.enum(['local', 'development', 'staging', 'production']),
   APP_VERSION: z.string().min(1),
@@ -7,6 +19,7 @@ const environmentSchema = z.object({
   SUPABASE_JWT_AUDIENCE: z.string().min(1),
   SUPABASE_PUBLISHABLE_KEY: z.string().min(1).optional(),
   WEB_APP_URL: z.url().optional(),
+  PUBLIC_WEB_ORIGIN: webOrigin,
   ALLOWED_ORIGINS: z.string().min(1),
   DATABASE_URL: z.string().min(1).optional(),
   HYPERDRIVE: z.object({ connectionString: z.string().min(1) }).optional(),

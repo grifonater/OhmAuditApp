@@ -26,9 +26,11 @@
       <a routerLink="/app" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
         <span class="nav-icon">⌂</span><span>Dashboard</span>
       </a>
-      <a routerLink="/offline-jobs" routerLinkActive="active">
-        <span class="nav-icon">↓</span><span>Downloaded jobs</span>
-      </a>
+      @if (!offline.online()) {
+        <a routerLink="/offline-jobs" routerLinkActive="active">
+          <span class="nav-icon">↓</span><span>Downloaded jobs</span>
+        </a>
+      }
       @if (activeMembership(); as membership) {
         @if (hasCapability('customers.read') && hasCapability('sites.read')) {
           <a [routerLink]="organisationLink('/portfolio')" routerLinkActive="active">

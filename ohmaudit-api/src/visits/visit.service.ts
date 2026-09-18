@@ -524,6 +524,76 @@ export class VisitService {
     });
   }
 
+  async removeAssetTasks(
+    organisationId: string,
+    visitId: string,
+    assetId: string,
+    actorUserId: string,
+    correlationId: string,
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      const visit = await transaction.visit.findFirst({
+        where: { id: visitId, organisationId },
+        select: {
+          id: true,
+          status: true,
+          archivedAt: true,
+          tasks: {
+            where: { assetId },
+            select: {
+              id: true,
+              moduleKey: true,
+              status: true,
+              inspection: { select: { id: true } },
+            },
+          },
+        },
+      });
+      if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+      this.rejectArchived(visit.archivedAt);
+      if (!['DRAFT', 'SCHEDULED', 'IN_PROGRESS'].includes(visit.status))
+        throw new DomainError(
+          'VISIT_ASSET_REMOVE_BLOCKED',
+          'Assets cannot be removed after the job has been submitted or completed.',
+          409,
+        );
+      if (visit.tasks.length === 0)
+        throw new DomainError(
+          'VISIT_ASSET_NOT_FOUND',
+          'This asset is not assigned to the job.',
+          404,
+        );
+      if (visit.tasks.some((task) => task.status !== 'PENDING' || task.inspection !== null))
+        throw new DomainError(
+          'VISIT_ASSET_REMOVE_BLOCKED',
+          'This asset cannot be removed because one of its inspections has already started.',
+          409,
+        );
+
+      const taskIds = visit.tasks.map(({ id }) => id);
+      await transaction.visitTask.deleteMany({
+        where: { organisationId, visitId, id: { in: taskIds } },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'VisitAssetRemoved',
+          entityType: 'Visit',
+          entityId: visitId,
+          data: {
+            assetId,
+            taskIds,
+            moduleKeys: visit.tasks.map(({ moduleKey }) => moduleKey),
+            taskCount: taskIds.length,
+          },
+        },
+      });
+      return { deletedTaskCount: taskIds.length };
+    });
+  }
+
   async archive(
     organisationId: string,
     visitId: string,
@@ -930,6 +1000,46 @@ export class VisitService {
     });
   }
 
+  async listFindingMedia(
+    organisationId: string,
+    visitId: string,
+    findings: Array<{ clientFindingId: string; photoMediaIds: unknown }>,
+  ) {
+    const mediaOwners = new Map<string, string>();
+    for (const finding of findings) {
+      if (!Array.isArray(finding.photoMediaIds)) continue;
+      for (const mediaId of finding.photoMediaIds)
+        if (typeof mediaId === 'string') mediaOwners.set(mediaId, finding.clientFindingId);
+    }
+    if (mediaOwners.size === 0) return [];
+    const media = await this.prisma.media.findMany({
+      where: {
+        id: { in: [...mediaOwners.keys()] },
+        organisationId,
+        entityType: 'Visit',
+        entityId: visitId,
+        status: 'AVAILABLE',
+        mimeType: { in: ['image/jpeg', 'image/png', 'image/webp'] },
+      },
+      select: {
+        id: true,
+        category: true,
+        caption: true,
+        originalFilename: true,
+        tags: true,
+        sortOrder: true,
+        isPrimary: true,
+        mimeType: true,
+        createdAt: true,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return media.filter((item) => {
+      const findingTags = item.tags.filter((tag) => tag.startsWith('finding:'));
+      return findingTags.length === 1 && findingTags[0] === `finding:${mediaOwners.get(item.id)}`;
+    });
+  }
+
   async upsertFindings(organisationId: string, visitId: string, findings: VisitFindingInput[]) {
     return this.prisma.$transaction((transaction) =>
       this.replaceFindings(transaction, organisationId, visitId, findings),
@@ -1031,6 +1141,35 @@ export class VisitService {
       await transaction.media.deleteMany({ where: { id: mediaId, organisationId } });
     });
     return media;
+  }
+
+  async updateFindingMediaCaption(
+    organisationId: string,
+    visitId: string,
+    clientFindingId: string,
+    mediaId: string,
+    caption: string,
+  ) {
+    await this.requireVisit(organisationId, visitId);
+    const findingTag = `finding:${clientFindingId}`;
+    const media = await this.prisma.media.findFirst({
+      where: {
+        id: mediaId,
+        organisationId,
+        entityType: 'Visit',
+        entityId: visitId,
+        status: 'AVAILABLE',
+        mimeType: { in: ['image/jpeg', 'image/png', 'image/webp'] },
+      },
+    });
+    const findingTags = media?.tags.filter((tag) => tag.startsWith('finding:')) ?? [];
+    if (media === null || findingTags.length !== 1 || findingTags[0] !== findingTag)
+      throw new DomainError(
+        'VISIT_FINDING_MEDIA_NOT_FOUND',
+        'The image was not uploaded for this job finding.',
+        404,
+      );
+    return this.prisma.media.update({ where: { id: mediaId }, data: { caption } });
   }
 
   async syncReplay(

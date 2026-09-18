@@ -1,6 +1,13 @@
 import type { PrismaClient } from '../generated/prisma/client';
 import { DomainError } from '../shared/domain-error';
 
+export const portfolioVisibleAssetStatuses = [
+  'ACTIVE',
+  'INACTIVE',
+  'DECOMMISSIONED',
+  'REPLACED',
+] as const;
+
 export interface InspectionMediaUpdate {
   mediaId: string;
   caption?: string | undefined;
@@ -38,7 +45,12 @@ export class PortfolioService {
       this.prisma.customer.count({ where: { organisationId, status: { not: 'ARCHIVED' } } }),
       this.prisma.site.count({ where: { organisationId, status: { not: 'ARCHIVED' } } }),
       this.prisma.asset.count({
-        where: { organisationId, status: { in: ['PROPOSED', 'ACTIVE', 'INACTIVE'] } },
+        where: {
+          organisationId,
+          status: { in: [...portfolioVisibleAssetStatuses] },
+          customer: { status: { not: 'ARCHIVED' } },
+          site: { status: { not: 'ARCHIVED' } },
+        },
       }),
     ]);
     return { customers, sites, assets };
@@ -53,7 +65,14 @@ export class PortfolioService {
     const [items, total] = await Promise.all([
       this.prisma.customer.findMany({
         where,
-        include: { _count: { select: { sites: true, assets: true } } },
+        include: {
+          _count: {
+            select: {
+              sites: true,
+              assets: { where: { status: { in: [...portfolioVisibleAssetStatuses] } } },
+            },
+          },
+        },
         orderBy: { name: 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -176,8 +195,21 @@ export class PortfolioService {
       where: { id: customerId, organisationId },
       include: {
         contacts: true,
-        sites: { include: { _count: { select: { assets: true } } }, orderBy: { name: 'asc' } },
-        _count: { select: { assets: true } },
+        sites: {
+          include: {
+            _count: {
+              select: {
+                assets: { where: { status: { in: [...portfolioVisibleAssetStatuses] } } },
+              },
+            },
+          },
+          orderBy: { name: 'asc' },
+        },
+        _count: {
+          select: {
+            assets: { where: { status: { in: [...portfolioVisibleAssetStatuses] } } },
+          },
+        },
       },
     });
     if (customer === null)
@@ -947,7 +979,11 @@ export class PortfolioService {
         },
         include: {
           customer: { select: { id: true, name: true } },
-          _count: { select: { assets: true } },
+          _count: {
+            select: {
+              assets: { where: { status: { in: [...portfolioVisibleAssetStatuses] } } },
+            },
+          },
         },
         take: 10,
       }),

@@ -275,6 +275,86 @@ describe('Job management', () => {
     ).rejects.toMatchObject({ code: 'VISIT_TASK_DUPLICATE', status: 409 });
   });
 
+  it('removes every unstarted task for an asset without deleting the asset', async () => {
+    const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
+    const auditCreate = vi.fn().mockResolvedValue({ id: 'audit-a' });
+    const transaction = {
+      visit: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'visit-a',
+          status: 'SCHEDULED',
+          archivedAt: null,
+          tasks: [
+            { id: 'task-a', moduleKey: 'core', status: 'PENDING', inspection: null },
+            { id: 'task-b', moduleKey: 'ev-charging', status: 'PENDING', inspection: null },
+          ],
+        }),
+      },
+      visitTask: { deleteMany },
+      auditEvent: { create: auditCreate },
+    };
+    const prisma = {
+      $transaction: (operation: (client: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).removeAssetTasks(
+        'organisation-a',
+        'visit-a',
+        'asset-a',
+        'user-a',
+        'correlation-a',
+      ),
+    ).resolves.toEqual({ deletedTaskCount: 2 });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: {
+        organisationId: 'organisation-a',
+        visitId: 'visit-a',
+        id: { in: ['task-a', 'task-b'] },
+      },
+    });
+    const auditInput = auditCreate.mock.calls[0]?.[0] as
+      { data: { eventType: string; entityId: string; data: Record<string, unknown> } } | undefined;
+    expect(auditInput?.data.eventType).toBe('VisitAssetRemoved');
+    expect(auditInput?.data.entityId).toBe('visit-a');
+    expect(auditInput?.data.data).toMatchObject({ assetId: 'asset-a', taskCount: 2 });
+  });
+
+  it('refuses to remove an asset after one of its inspections has started', async () => {
+    const transaction = {
+      visit: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'visit-a',
+          status: 'IN_PROGRESS',
+          archivedAt: null,
+          tasks: [
+            {
+              id: 'task-a',
+              moduleKey: 'core',
+              status: 'IN_PROGRESS',
+              inspection: { id: 'inspection-a' },
+            },
+          ],
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: (operation: (client: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).removeAssetTasks(
+        'organisation-a',
+        'visit-a',
+        'asset-a',
+        'user-a',
+        'correlation-a',
+      ),
+    ).rejects.toMatchObject({ code: 'VISIT_ASSET_REMOVE_BLOCKED', status: 409 });
+  });
+
   it('archives a job, revokes active guest links, and audits once', async () => {
     const archivedVisit = {
       id: 'visit-a',

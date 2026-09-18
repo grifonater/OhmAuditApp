@@ -13,6 +13,7 @@ const environment = {
   APP_VERSION: 'test',
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_JWT_AUDIENCE: 'authenticated',
+  PUBLIC_WEB_ORIGIN: 'http://localhost:4200',
   ALLOWED_ORIGINS: 'http://localhost:4200',
 } as ApiBindings;
 

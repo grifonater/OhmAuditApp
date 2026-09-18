@@ -57,17 +57,52 @@ describe('Portfolio tenant isolation', () => {
       { organisationId: 'organisation-a', status: { not: 'ARCHIVED' } },
       {
         organisationId: 'organisation-a',
-        status: { in: ['PROPOSED', 'ACTIVE', 'INACTIVE'] },
+        status: { in: ['ACTIVE', 'INACTIVE', 'DECOMMISSIONED', 'REPLACED'] },
+        customer: { status: { not: 'ARCHIVED' } },
+        site: { status: { not: 'ARCHIVED' } },
       },
     ]);
   });
 
-  it('always scopes customer retrieval by organisation and returns a non-disclosing 404', async () => {
-    let receivedWhere: unknown;
+  it('excludes proposed and removed assets from customer list totals', async () => {
+    let receivedInclude: unknown;
     const prisma = {
       customer: {
-        findFirst: (input: { where: unknown }) => {
+        findMany: (input: { include: unknown }) => {
+          receivedInclude = input.include;
+          return Promise.resolve([]);
+        },
+        count: () => Promise.resolve(0),
+      },
+    } as unknown as PrismaClient;
+
+    const service = new PortfolioService(prisma);
+    await expect(service.listCustomers('organisation-a', '', 1, 20)).resolves.toMatchObject({
+      items: [],
+      total: 0,
+    });
+    expect(receivedInclude).toEqual({
+      _count: {
+        select: {
+          sites: true,
+          assets: {
+            where: {
+              status: { in: ['ACTIVE', 'INACTIVE', 'DECOMMISSIONED', 'REPLACED'] },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('always scopes customer retrieval by organisation and returns a non-disclosing 404', async () => {
+    let receivedWhere: unknown;
+    let receivedInclude: unknown;
+    const prisma = {
+      customer: {
+        findFirst: (input: { where: unknown; include: unknown }) => {
           receivedWhere = input.where;
+          receivedInclude = input.include;
           return Promise.resolve(null);
         },
       },
@@ -78,6 +113,30 @@ describe('Portfolio tenant isolation', () => {
       status: 404,
     });
     expect(receivedWhere).toEqual({ id: 'customer-from-a', organisationId: 'organisation-b' });
+    expect(receivedInclude).toMatchObject({
+      sites: {
+        include: {
+          _count: {
+            select: {
+              assets: {
+                where: {
+                  status: { in: ['ACTIVE', 'INACTIVE', 'DECOMMISSIONED', 'REPLACED'] },
+                },
+              },
+            },
+          },
+        },
+      },
+      _count: {
+        select: {
+          assets: {
+            where: {
+              status: { in: ['ACTIVE', 'INACTIVE', 'DECOMMISSIONED', 'REPLACED'] },
+            },
+          },
+        },
+      },
+    });
   });
 
   it('returns a useful conflict when an asset reference is already in use at the site', async () => {

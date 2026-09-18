@@ -315,6 +315,32 @@ textarea:focus {
   border: 1px solid #bde3d3;
   background: #edf9f4;
 }
+/* These selectors are reserved for transient notifications rendered at the viewport edge. */
+.floating-error,
+.success-message.floating-message,
+oa-job-overview .notice,
+oa-rams-workspace .notice {
+  animation: transient-notification-expire 0.2s ease 5s forwards;
+}
+@keyframes transient-notification-expire {
+  to {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating-error,
+  .success-message.floating-message,
+  oa-job-overview .notice,
+  oa-rams-workspace .notice {
+    animation-duration: 1ms;
+  }
+}
+oa-job-overview .job-page:not(:has(.job-hero)) > .floating-error,
+oa-rams-workspace .rams-page:not(:has(.rams-hero)) > .floating-error {
+  animation: none;
+}
 .sr-only {
   position: absolute;
   width: 1px;

@@ -33,6 +33,7 @@ const EVENT_LABELS: Record<string, string> = {
   VisitCreated: 'Job created',
   VisitUpdated: 'Job details updated',
   VisitTasksAdded: 'Inspection tasks added',
+  VisitAssetRemoved: 'Asset removed from job',
   VisitArchived: 'Job archived',
   VisitCertificatesIssued: 'Certificates issued',
   InspectionSubmitted: 'Inspection submitted',
@@ -160,14 +161,25 @@ export class JobOverviewComponent {
   });
   protected readonly assetDetails = computed(() => {
     type JobAsset = NonNullable<VisitTask['asset']>;
-    const counts = new Map<string, number>();
+    const tasks = new Map<string, VisitTask[]>();
     const assets = new Map<string, JobAsset>();
     for (const task of this.job()?.tasks ?? []) {
       if (task.asset === undefined) continue;
-      counts.set(task.asset.id, (counts.get(task.asset.id) ?? 0) + 1);
+      tasks.set(task.asset.id, [...(tasks.get(task.asset.id) ?? []), task]);
       assets.set(task.asset.id, task.asset);
     }
-    return [...assets.values()].map((asset) => ({ asset, taskCount: counts.get(asset.id) ?? 0 }));
+    return [...assets.values()].map((asset) => {
+      const assetTasks = tasks.get(asset.id) ?? [];
+      return {
+        asset,
+        taskCount: assetTasks.length,
+        removable: assetTasks.every(
+          (task) =>
+            task.status === 'PENDING' &&
+            (task.inspection === undefined || task.inspection === null),
+        ),
+      };
+    });
   });
   protected readonly completedTaskCount = computed(
     () => this.job()?.tasks.filter((task) => task.status === 'COMPLETED').length ?? 0,
@@ -308,6 +320,23 @@ export class JobOverviewComponent {
     });
   }
 
+  protected async removeAssetFromJob(assetId: string, assetName: string): Promise<void> {
+    if (
+      !this.canEdit() ||
+      !window.confirm(
+        `Remove ${assetName} from this job? Its unstarted inspection tasks will be deleted, but the asset will remain at the site.`,
+      )
+    )
+      return;
+    await this.run(async () => {
+      const result = await this.api.removeVisitAsset(this.organisationId, this.visitId, assetId);
+      await this.loadJob();
+      this.notice.set(
+        `${assetName} removed from the job (${result.deletedTaskCount} task${result.deletedTaskCount === 1 ? '' : 's'} removed).`,
+      );
+    });
+  }
+
   protected async archiveJob(): Promise<void> {
     if (!this.canEdit() || !window.confirm('Archive this job? This action cannot be undone.'))
       return;
@@ -321,8 +350,7 @@ export class JobOverviewComponent {
     if (!this.canAssign()) return;
     await this.run(async () => {
       const result = await this.api.createGuestLink(this.organisationId, this.visitId);
-      const url = `${location.origin}${result.guestUrl}`;
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(result.shareUrl);
       this.notice.set('Engineer Job link copied to the clipboard.');
     });
   }
@@ -515,8 +543,14 @@ export class JobOverviewComponent {
       typeof event.data['revisionNumber'] === 'number' ? event.data['revisionNumber'] : null;
     const issuedCount =
       typeof event.data['issuedCount'] === 'number' ? event.data['issuedCount'] : null;
+    const removedTaskCount =
+      event.eventType === 'VisitAssetRemoved' && typeof event.data['taskCount'] === 'number'
+        ? event.data['taskCount']
+        : null;
     if (issuedCount !== null)
       return `${issuedCount} certificate${issuedCount === 1 ? '' : 's'} issued`;
+    if (removedTaskCount !== null)
+      return `${removedTaskCount} inspection task${removedTaskCount === 1 ? '' : 's'} removed`;
     if (event.eventType.startsWith('Inspection'))
       return revision === null ? '' : `Revision ${revision}`;
     return '';

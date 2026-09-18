@@ -313,7 +313,17 @@
     </div>
 
     @if (!offlineMode()) {
-      <div class="visit-filters card">
+      <button
+        class="button secondary visit-filters-toggle"
+        type="button"
+        aria-controls="visit-filters"
+        [attr.aria-expanded]="visitFiltersExpanded()"
+        (click)="toggleVisitFilters()"
+      >
+        <span>{{ visitFiltersExpanded() ? 'Hide filters' : 'Show filters' }}</span>
+        <span aria-hidden="true">{{ visitFiltersExpanded() ? '−' : '+' }}</span>
+      </button>
+      <div id="visit-filters" class="visit-filters card" [class.expanded]="visitFiltersExpanded()">
         <label class="search-control visit-search">
           <span aria-hidden="true">⌕</span>
           <input

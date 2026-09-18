@@ -14,9 +14,10 @@ import { AccessService } from './identity/access.service';
 import { capabilities, type Capability } from './authorization/capabilities';
 import { EntitlementService } from './entitlements/entitlement.service';
 import { OnboardingService } from './onboarding/onboarding.service';
-import { PortfolioService } from './portfolio/portfolio.service';
+import { PortfolioService, portfolioVisibleAssetStatuses } from './portfolio/portfolio.service';
 import { ScheduleService } from './scheduling/schedule.service';
 import { VisitService } from './visits/visit.service';
+import { guestLinkUrls } from './visits/guest-link';
 import { evRcdFailureReasons, InspectionService } from './inspections/inspection.service';
 import { EvService } from './modules/ev/ev.service';
 import { EmergencyLightingService } from './modules/emergency-lighting/emergency-lighting.service';
@@ -813,6 +814,9 @@ export const visitFindingsInput = z
       ),
   })
   .strict();
+export const visitFindingCaptionInput = z
+  .object({ caption: z.string().trim().min(1).max(500) })
+  .strict();
 export const inspectionStatusFilterInput = z
   .enum([
     'DRAFT',
@@ -1342,6 +1346,7 @@ async function uploadVisitFindingImage(
 interface ReportMediaImage {
   base64: string;
   mimeType: 'image/jpeg' | 'image/png' | 'image/webp';
+  caption?: string;
 }
 
 interface ReportEvPhoto extends ReportMediaImage {
@@ -1426,6 +1431,7 @@ async function mediaImageForReport(
     return {
       base64: btoa(binary),
       mimeType: media.mimeType as ReportMediaImage['mimeType'],
+      ...(media.caption?.trim() ? { caption: media.caption } : {}),
     };
   } catch (error: unknown) {
     console.warn(
@@ -3176,7 +3182,11 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         },
         include: {
           customer: { select: { id: true, name: true } },
-          _count: { select: { assets: true } },
+          _count: {
+            select: {
+              assets: { where: { status: { in: [...portfolioVisibleAssetStatuses] } } },
+            },
+          },
         },
         orderBy: { name: 'asc' },
         take: query === '' ? 30 : 50,
@@ -3430,6 +3440,26 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       201,
     );
   });
+  app.delete('/api/v1/visits/:visitId/assets/:assetId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    const assetId = z.uuid().parse(context.req.param('assetId'));
+    const { user } = await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'visits.create',
+    );
+    return context.json(
+      await new VisitService(prismaFor(environment)).removeAssetTasks(
+        organisationId,
+        visitId,
+        assetId,
+        user.id,
+        context.get('correlationId'),
+      ),
+    );
+  });
   app.delete('/api/v1/visits/:visitId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
@@ -3457,11 +3487,11 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       ['inspections.perform', 'inspections.review', 'inspections.approve'],
     );
+    const service = new VisitService(prismaFor(environment));
+    const findings = await service.listFindings(organisationId, visitId);
     return context.json({
-      findings: await new VisitService(prismaFor(environment)).listFindings(
-        organisationId,
-        visitId,
-      ),
+      findings,
+      media: await service.listFindingMedia(organisationId, visitId, findings),
     });
   });
   app.put('/api/v1/visits/:visitId/findings', async (context) => {
@@ -3474,22 +3504,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ['inspections.perform', 'inspections.review', 'inspections.approve'],
     );
     const input = visitFindingsInput.parse(await context.req.json());
+    const service = new VisitService(prismaFor(environment));
+    const findings = await service.upsertFindings(organisationId, visitId, input.findings);
     return context.json({
-      findings: await new VisitService(prismaFor(environment)).upsertFindings(
-        organisationId,
-        visitId,
-        input.findings,
-      ),
+      findings,
+      media: await service.listFindingMedia(organisationId, visitId, findings),
     });
   });
   app.post('/api/v1/visits/:visitId/findings/:findingId/images', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
     const visitId = z.uuid().parse(context.req.param('visitId'));
-    const { user } = await identityService(environment, options).requireMembership(
+    const { user } = await identityService(environment, options).requireAnyCapability(
       context.get('actor'),
       organisationId,
-      'inspections.perform',
+      ['inspections.perform', 'inspections.review', 'inspections.approve'],
     );
     const prisma = prismaFor(environment);
     await new VisitService(prisma).listFindings(organisationId, visitId);
@@ -3499,10 +3528,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const organisationId = z.uuid().parse(context.req.query('organisationId'));
     const visitId = z.uuid().parse(context.req.param('visitId'));
-    await identityService(environment, options).requireMembership(
+    await identityService(environment, options).requireAnyCapability(
       context.get('actor'),
       organisationId,
-      'inspections.perform',
+      ['inspections.perform', 'inspections.review', 'inspections.approve'],
     );
     const media = await new VisitService(prismaFor(environment)).deleteFindingMedia(
       organisationId,
@@ -3513,6 +3542,26 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     if (environment.MEDIA_BUCKET !== undefined)
       await environment.MEDIA_BUCKET.delete(media.storageKey);
     return context.json({ deleted: true });
+  });
+  app.patch('/api/v1/visits/:visitId/findings/:findingId/images/:mediaId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = z.uuid().parse(context.req.query('organisationId'));
+    const visitId = z.uuid().parse(context.req.param('visitId'));
+    await identityService(environment, options).requireAnyCapability(
+      context.get('actor'),
+      organisationId,
+      ['inspections.perform', 'inspections.review', 'inspections.approve'],
+    );
+    const input = visitFindingCaptionInput.parse(await context.req.json());
+    return context.json({
+      media: await new VisitService(prismaFor(environment)).updateFindingMediaCaption(
+        organisationId,
+        visitId,
+        z.uuid().parse(context.req.param('findingId')),
+        z.uuid().parse(context.req.param('mediaId')),
+        input.caption,
+      ),
+    });
   });
   app.get('/api/v1/visits/:visitId/rams', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -4199,7 +4248,10 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       context.req.param('visitId'),
       input.validDays,
     );
-    return context.json({ ...result, guestUrl: `/guest/job/${result.token}` }, 201);
+    return context.json(
+      { ...result, ...guestLinkUrls(environment.PUBLIC_WEB_ORIGIN, result.token) },
+      201,
+    );
   });
   app.post('/api/v1/inspections/:inspectionId/asset-media', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -4601,8 +4653,11 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const environment = parseEnvironment(context.env);
     const prisma = prismaFor(environment);
     const visit = await new VisitService(prisma).guestVisitScope(context.req.param('token'));
+    const service = new VisitService(prisma);
+    const findings = await service.listFindings(visit.organisationId, visit.id);
     return context.json({
-      findings: await new VisitService(prisma).listFindings(visit.organisationId, visit.id),
+      findings,
+      media: await service.listFindingMedia(visit.organisationId, visit.id, findings),
     });
   });
   app.put('/api/v1/guest/visits/:token/findings', async (context) => {
@@ -4610,12 +4665,11 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const prisma = prismaFor(environment);
     const visit = await new VisitService(prisma).guestVisitScope(context.req.param('token'));
     const input = visitFindingsInput.parse(await context.req.json());
+    const service = new VisitService(prisma);
+    const findings = await service.upsertFindings(visit.organisationId, visit.id, input.findings);
     return context.json({
-      findings: await new VisitService(prisma).upsertFindings(
-        visit.organisationId,
-        visit.id,
-        input.findings,
-      ),
+      findings,
+      media: await service.listFindingMedia(visit.organisationId, visit.id, findings),
     });
   });
   app.post('/api/v1/guest/visits/:token/findings/:findingId/images', async (context) => {

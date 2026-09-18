@@ -53,6 +53,7 @@ export class VisitsComponent {
   protected readonly visitTo = signal('');
   protected readonly visitSort = signal('scheduled-desc');
   protected readonly visitPageSize = signal(20);
+  protected readonly visitFiltersExpanded = signal(false);
   protected readonly visitPagination = signal({ page: 1, pageSize: 20, total: 0, pageCount: 1 });
   protected readonly listBusy = signal(false);
   protected readonly jobSheetDownload = signal<
@@ -281,9 +282,8 @@ export class VisitsComponent {
     if (!this.canAssign()) return;
     await this.run(async () => {
       const result = await this.api.createGuestLink(this.organisationId, visitId);
-      const url = `${location.origin}${result.guestUrl}`;
-      this.guestLink.set(url);
-      await navigator.clipboard.writeText(url);
+      this.guestLink.set(result.shareUrl);
+      await navigator.clipboard.writeText(result.shareUrl);
     });
   }
 
@@ -377,6 +377,10 @@ export class VisitsComponent {
     this.visitTo.set('');
     this.visitSort.set('scheduled-desc');
     void this.loadVisits(1);
+  }
+
+  protected toggleVisitFilters(): void {
+    this.visitFiltersExpanded.update((expanded) => !expanded);
   }
 
   protected goToVisitPage(page: number): void {

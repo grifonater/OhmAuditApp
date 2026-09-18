@@ -397,11 +397,14 @@ dd {
 }
 .asset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
   gap: 0.7rem;
 }
 .asset-card {
   display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.6rem;
   align-content: start;
 }

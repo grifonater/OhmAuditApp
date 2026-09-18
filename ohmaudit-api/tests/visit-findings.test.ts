@@ -3,6 +3,7 @@ import {
   createApp,
   defectSubmissionInput,
   inspectionStatusFilterInput,
+  visitFindingCaptionInput,
   visitFindingsInput,
 } from '../src/app';
 import type { PrismaClient } from '../src/generated/prisma/client';
@@ -19,6 +20,7 @@ const environment = {
   APP_VERSION: '0.2.0',
   SUPABASE_URL: 'https://example.supabase.co',
   SUPABASE_JWT_AUDIENCE: 'authenticated',
+  PUBLIC_WEB_ORIGIN: 'http://localhost:4200',
   ALLOWED_ORIGINS: 'http://localhost:4200',
 };
 
@@ -94,6 +96,10 @@ describe('visit finding validation', () => {
       'DELETE',
       `/api/v1/visits/${visitId}/findings/${firstFindingId}/images/${mediaId}?organisationId=${organisationId}`,
     ],
+    [
+      'PATCH',
+      `/api/v1/visits/${visitId}/findings/${firstFindingId}/images/${mediaId}?organisationId=${organisationId}`,
+    ],
   ])('protects the authenticated %s endpoint', async (method, path) => {
     const response = await createApp().request(path, { method }, environment);
     expect(response.status).toBe(401);
@@ -111,6 +117,17 @@ describe('visit finding validation', () => {
       visitFindingsInput.safeParse({ findings: Array.from({ length: 101 }, () => finding()) })
         .success,
     ).toBe(false);
+  });
+
+  it('requires a strict caption between 1 and 500 trimmed characters', () => {
+    expect(visitFindingCaptionInput.parse({ caption: '  Distribution board  ' })).toEqual({
+      caption: 'Distribution board',
+    });
+    expect(visitFindingCaptionInput.safeParse({ caption: '   ' }).success).toBe(false);
+    expect(visitFindingCaptionInput.safeParse({ caption: 'x'.repeat(501) }).success).toBe(false);
+    expect(visitFindingCaptionInput.safeParse({ caption: 'Valid', extra: true }).success).toBe(
+      false,
+    );
   });
 
   it('validates the semantic awaiting-review status', () => {
@@ -139,6 +156,96 @@ describe('visit finding validation', () => {
 });
 
 describe('authoritative visit finding upsert', () => {
+  it('returns only referenced, available same-visit media with the expected finding tag', async () => {
+    const referenced = {
+      id: mediaId,
+      category: 'visit-finding',
+      caption: 'Damaged enclosure',
+      originalFilename: null,
+      tags: ['finding-evidence', `finding:${firstFindingId}`],
+      sortOrder: 0,
+      isPrimary: false,
+      mimeType: 'image/jpeg',
+      createdAt: new Date('2026-09-15T12:00:00Z'),
+    };
+    const wrongTag = {
+      ...referenced,
+      id: '20000000-0000-4000-8000-000000000002',
+      tags: [`finding:${secondFindingId}`],
+    };
+    const findMany = vi.fn().mockResolvedValue([referenced, wrongTag]);
+    const prisma = { media: { findMany } } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).listFindingMedia(organisationId, visitId, [finding()]),
+    ).resolves.toEqual([referenced]);
+    const mediaQuery: unknown = findMany.mock.calls[0]?.[0];
+    expect(mediaQuery).toMatchObject({
+      where: {
+        id: { in: [mediaId] },
+        organisationId,
+        entityType: 'Visit',
+        entityId: visitId,
+        status: 'AVAILABLE',
+      },
+      select: {
+        id: true,
+        category: true,
+        caption: true,
+        originalFilename: true,
+        tags: true,
+        sortOrder: true,
+        isPrimary: true,
+        mimeType: true,
+        createdAt: true,
+      },
+    });
+  });
+
+  it('updates captions only for available Visit media carrying exactly the finding tag', async () => {
+    const scopedMedia = {
+      id: mediaId,
+      organisationId,
+      entityType: 'Visit',
+      entityId: visitId,
+      status: 'AVAILABLE',
+      mimeType: 'image/jpeg',
+      tags: [`finding:${firstFindingId}`],
+    };
+    const update = vi.fn().mockResolvedValue({ ...scopedMedia, caption: 'Updated caption' });
+    const prisma = {
+      visit: { findFirst: vi.fn().mockResolvedValue({ id: visitId }) },
+      media: { findFirst: vi.fn().mockResolvedValue(scopedMedia), update },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).updateFindingMediaCaption(
+        organisationId,
+        visitId,
+        firstFindingId,
+        mediaId,
+        'Updated caption',
+      ),
+    ).resolves.toMatchObject({ caption: 'Updated caption' });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: mediaId },
+      data: { caption: 'Updated caption' },
+    });
+
+    prisma.media.findFirst = vi
+      .fn()
+      .mockResolvedValue({ ...scopedMedia, tags: [`finding:${secondFindingId}`] });
+    await expect(
+      new VisitService(prisma).updateFindingMediaCaption(
+        organisationId,
+        visitId,
+        firstFindingId,
+        mediaId,
+        'Not allowed',
+      ),
+    ).rejects.toMatchObject({ code: 'VISIT_FINDING_MEDIA_NOT_FOUND', status: 404 });
+  });
+
   it('requests findings in normal and guest visit payloads', async () => {
     const visitFindFirst = vi
       .fn()

@@ -721,6 +721,21 @@
                   [routerLink]="['/app/org', organisationId, 'visits', visitId]"
                   >Open in workspace</a
                 >
+                @if (canEdit()) {
+                  <button
+                    class="button danger compact"
+                    type="button"
+                    [disabled]="busy() || !entry.removable"
+                    [title]="
+                      entry.removable
+                        ? 'Remove this asset and its unstarted tasks from the job'
+                        : 'This asset cannot be removed because an inspection has started'
+                    "
+                    (click)="removeAssetFromJob(entry.asset.id, entry.asset.displayName)"
+                  >
+                    Remove from job
+                  </button>
+                }
               </article>
             }
           </div>

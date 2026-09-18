@@ -2173,12 +2173,12 @@ export class ApiService {
     );
   }
   listVisitFindings(organisationId: string, visitId: string) {
-    return this.request<{ findings: VisitFinding[] }>(
+    return this.request<{ findings: VisitFinding[]; media: AssetMedia[] }>(
       `/visits/${encodeURIComponent(visitId)}/findings?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
   upsertVisitFindings(organisationId: string, visitId: string, findings: VisitFindingInput[]) {
-    return this.request<{ findings: VisitFinding[] }>(
+    return this.request<{ findings: VisitFinding[]; media: AssetMedia[] }>(
       `/visits/${encodeURIComponent(visitId)}/findings?organisationId=${encodeURIComponent(organisationId)}`,
       { method: 'PUT', body: JSON.stringify({ findings }) },
     );
@@ -2211,10 +2211,28 @@ export class ApiService {
       { method: 'DELETE' },
     );
   }
+  updateVisitFindingImageCaption(
+    organisationId: string,
+    visitId: string,
+    findingId: string,
+    mediaId: string,
+    caption: string,
+  ) {
+    return this.request<{ media: AssetMedia }>(
+      `/visits/${encodeURIComponent(visitId)}/findings/${encodeURIComponent(findingId)}/images/${encodeURIComponent(mediaId)}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PATCH', body: JSON.stringify({ caption }) },
+    );
+  }
   addVisitTasks(organisationId: string, visitId: string, tasks: VisitTaskInput[]) {
     return this.request<{ tasks: VisitTask[] }>(
       `/visits/${visitId}/tasks?organisationId=${encodeURIComponent(organisationId)}`,
       { method: 'POST', body: JSON.stringify({ tasks }) },
+    );
+  }
+  removeVisitAsset(organisationId: string, visitId: string, assetId: string) {
+    return this.request<{ deletedTaskCount: number }>(
+      `/visits/${encodeURIComponent(visitId)}/assets/${encodeURIComponent(assetId)}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
     );
   }
   archiveVisit(organisationId: string, visitId: string) {
@@ -2320,7 +2338,7 @@ export class ApiService {
     );
   }
   createGuestLink(organisationId: string, visitId: string, validDays = 7) {
-    return this.request<{ token: string; expiresAt: string; guestUrl: string }>(
+    return this.request<{ token: string; expiresAt: string; guestUrl: string; shareUrl: string }>(
       `/visits/${visitId}/guest-link?organisationId=${encodeURIComponent(organisationId)}`,
       { method: 'POST', body: JSON.stringify({ validDays }) },
     );
@@ -2331,12 +2349,12 @@ export class ApiService {
     );
   }
   listGuestVisitFindings(token: string) {
-    return this.publicRequest<{ findings: VisitFinding[] }>(
+    return this.publicRequest<{ findings: VisitFinding[]; media: AssetMedia[] }>(
       `/guest/visits/${encodeURIComponent(token)}/findings`,
     );
   }
   upsertGuestVisitFindings(token: string, findings: VisitFindingInput[]) {
-    return this.publicRequest<{ findings: VisitFinding[] }>(
+    return this.publicRequest<{ findings: VisitFinding[]; media: AssetMedia[] }>(
       `/guest/visits/${encodeURIComponent(token)}/findings`,
       { method: 'PUT', body: JSON.stringify({ findings }) },
     );

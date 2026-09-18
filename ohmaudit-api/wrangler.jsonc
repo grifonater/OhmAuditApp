@@ -12,6 +12,7 @@
     "SUPABASE_JWT_AUDIENCE": "authenticated",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ggas-APHHgjEHk15bEXFdg_tcVMHm7S",
     "WEB_APP_URL": "http://localhost:4200",
+    "PUBLIC_WEB_ORIGIN": "http://localhost:4200",
     "ALLOWED_ORIGINS": "http://localhost:4200",
   },
   "observability": {
@@ -42,7 +43,8 @@
         "SUPABASE_URL": "https://cgynntzcxptnvsqrttsz.supabase.co",
         "SUPABASE_JWT_AUDIENCE": "authenticated",
         "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_ggas-APHHgjEHk15bEXFdg_tcVMHm7S",
-        "WEB_APP_URL": "https://ohmaudit-web.ohmaudit.workers.dev",
+        "WEB_APP_URL": "https://ohmaudit.com",
+        "PUBLIC_WEB_ORIGIN": "https://ohmaudit.com",
         "ALLOWED_ORIGINS": "https://ohmaudit-web.ohmaudit.workers.dev,https://ohmaudit.com",
       },
       "hyperdrive": [

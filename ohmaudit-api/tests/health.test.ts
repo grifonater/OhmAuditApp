@@ -11,6 +11,7 @@ describe('API foundation', () => {
         APP_VERSION: '0.2.0',
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_JWT_AUDIENCE: 'authenticated',
+        PUBLIC_WEB_ORIGIN: 'http://localhost:4200',
         ALLOWED_ORIGINS: 'http://localhost:4200',
       },
     );
@@ -32,6 +33,7 @@ describe('API foundation', () => {
         APP_VERSION: '0.2.0',
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_JWT_AUDIENCE: 'authenticated',
+        PUBLIC_WEB_ORIGIN: 'http://localhost:4200',
         ALLOWED_ORIGINS: 'http://localhost:4200',
       },
     );
@@ -49,6 +51,7 @@ describe('API foundation', () => {
         APP_VERSION: '0.2.0',
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_JWT_AUDIENCE: 'authenticated',
+        PUBLIC_WEB_ORIGIN: 'http://localhost:4200',
         ALLOWED_ORIGINS: 'http://localhost:4200',
       },
     );
@@ -68,6 +71,7 @@ describe('API foundation', () => {
           APP_VERSION: '0.2.0',
           SUPABASE_URL: 'https://example.supabase.co',
           SUPABASE_JWT_AUDIENCE: 'authenticated',
+          PUBLIC_WEB_ORIGIN: 'http://localhost:4200',
           ALLOWED_ORIGINS: 'http://localhost:4200',
         },
       );

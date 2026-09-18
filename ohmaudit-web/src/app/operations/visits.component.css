@@ -10,6 +10,10 @@
   margin-bottom: 0.75rem;
 }
 
+.visit-filters-toggle {
+  display: none;
+}
+
 .visit-filters {
   display: grid;
   grid-template-columns: minmax(15rem, 2fr) repeat(2, minmax(8.5rem, 0.75fr)) repeat(
@@ -307,6 +311,18 @@
 }
 
 @media (max-width: 38rem) {
+  .visit-filters-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.8rem;
+  }
+
+  .visit-filters:not(.expanded) {
+    display: none;
+  }
+
   .visit-filters {
     grid-template-columns: 1fr;
   }

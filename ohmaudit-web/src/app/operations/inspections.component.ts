@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, type InspectionSummary } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
-import { VisitFindingsEditorComponent } from '../shared/visit-findings-editor.component';
 
 interface ChangeRow {
   label: string;
@@ -31,7 +30,7 @@ interface InspectionSession {
 
 @Component({
   selector: 'oa-inspections',
-  imports: [VisitFindingsEditorComponent],
+  imports: [],
   templateUrl: './inspections.component.html',
   styleUrls: ['./operations.css', './inspections.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
