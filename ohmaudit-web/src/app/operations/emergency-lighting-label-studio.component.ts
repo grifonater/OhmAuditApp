@@ -10,8 +10,6 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import JsBarcode from 'jsbarcode';
-import QRCode from 'qrcode';
 import {
   ApiService,
   type EmergencyLightingLabelFitting,
@@ -270,7 +268,7 @@ export class EmergencyLightingLabelStudioComponent {
     });
     effect(() => {
       this.pages();
-      if (this.settings().showBarcode) setTimeout(() => this.renderBarcodes());
+      if (this.settings().showBarcode) setTimeout(() => void this.renderBarcodes());
     });
     void this.load();
   }
@@ -363,9 +361,9 @@ export class EmergencyLightingLabelStudioComponent {
     }
   }
 
-  protected print(): void {
-    this.renderBarcodes();
-    setTimeout(() => window.print());
+  protected async print(): Promise<void> {
+    await this.renderBarcodes();
+    window.print();
   }
 
   private async load(): Promise<void> {
@@ -384,19 +382,22 @@ export class EmergencyLightingLabelStudioComponent {
           ? [this.initialFittingId]
           : studio.fittings.map(({ id }) => id);
       this.selectedIds.set(new Set(initial));
-      const qrEntries = await Promise.all(
-        studio.fittings.map(
-          async (fitting) =>
-            [
-              fitting.id,
-              await QRCode.toDataURL(
-                `${window.location.origin}${this.fittingPath(fitting).join('/')}`,
-                { margin: 0, width: 180 },
-              ),
-            ] as const,
-        ),
-      );
-      this.qrCodes.set(Object.fromEntries(qrEntries));
+      if (settings.showQrCode) {
+        const { default: QRCode } = await import('qrcode');
+        const qrEntries = await Promise.all(
+          studio.fittings.map(
+            async (fitting) =>
+              [
+                fitting.id,
+                await QRCode.toDataURL(
+                  `${window.location.origin}${this.fittingPath(fitting).join('/')}`,
+                  { margin: 0, width: 180 },
+                ),
+              ] as const,
+          ),
+        );
+        this.qrCodes.set(Object.fromEntries(qrEntries));
+      }
     } catch (error) {
       this.error.set(error instanceof Error ? error.message : 'Could not load Label Studio.');
     } finally {
@@ -404,7 +405,8 @@ export class EmergencyLightingLabelStudioComponent {
     }
   }
 
-  private renderBarcodes(): void {
+  private async renderBarcodes(): Promise<void> {
+    const { default: JsBarcode } = await import('jsbarcode');
     document.querySelectorAll<SVGSVGElement>('[data-label-barcode]').forEach((element) => {
       try {
         JsBarcode(element, element.dataset['labelBarcode'] ?? '', {

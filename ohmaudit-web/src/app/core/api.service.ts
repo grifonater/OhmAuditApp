@@ -1092,6 +1092,19 @@ export interface ChargerDataPlateDebug {
 export class ApiService {
   private readonly config = inject(AppConfigService);
   private readonly auth = inject(AuthService);
+  private currentUserCache:
+    | {
+        context: string;
+        value: CurrentUserResponse;
+        expiresAt: number;
+      }
+    | undefined;
+  private currentUserInFlight:
+    | {
+        context: string;
+        promise: Promise<CurrentUserResponse>;
+      }
+    | undefined;
 
   private async request<T>(
     path: string,
@@ -1150,12 +1163,52 @@ export class ApiService {
     return headers;
   }
 
+  invalidateCurrentUser(): void {
+    this.currentUserCache = undefined;
+    this.currentUserInFlight = undefined;
+  }
+
   currentUser(): Promise<CurrentUserResponse> {
-    return this.request('/me');
+    const context = `${this.auth.session()?.access_token ?? ''}\u0000${sessionStorage.getItem('ohmaudit.supportSession') ?? ''}`;
+    const cached = this.currentUserCache;
+    if (cached?.context === context && cached.expiresAt > Date.now()) {
+      return Promise.resolve(cached.value);
+    }
+    const inFlight = this.currentUserInFlight;
+    if (inFlight?.context === context) return inFlight.promise;
+
+    const entry = { context, promise: this.request<CurrentUserResponse>('/me') };
+    this.currentUserInFlight = entry;
+    void entry.promise.then(
+      (value) => {
+        if (this.currentUserInFlight !== entry) return;
+        const supportExpiry = value.supportSession
+          ? Date.parse(value.supportSession.expiresAt)
+          : Number.POSITIVE_INFINITY;
+        this.currentUserCache = {
+          context,
+          value,
+          expiresAt: Math.min(Date.now() + 5_000, supportExpiry),
+        };
+        this.currentUserInFlight = undefined;
+      },
+      () => {
+        if (this.currentUserInFlight === entry) this.currentUserInFlight = undefined;
+      },
+    );
+    return entry.promise;
+  }
+
+  private async accountMutation<T>(request: Promise<T>): Promise<T> {
+    const result = await request;
+    this.invalidateCurrentUser();
+    return result;
   }
 
   createOrganisation(name: string): Promise<{ organisation: { id: string; name: string } }> {
-    return this.request('/organisations', { method: 'POST', body: JSON.stringify({ name }) });
+    return this.accountMutation(
+      this.request('/organisations', { method: 'POST', body: JSON.stringify({ name }) }),
+    );
   }
 
   listMembers(organisationId: string): Promise<{ members: OrganisationMember[] }> {
@@ -1181,10 +1234,12 @@ export class ApiService {
     roleId: string,
     input: { name: string; description?: string | undefined; capabilityKeys: string[] },
   ) {
-    return this.request(`/organisations/${organisationId}/roles/${roleId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    });
+    return this.accountMutation(
+      this.request(`/organisations/${organisationId}/roles/${roleId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    );
   }
 
   deleteRole(organisationId: string, roleId: string) {
@@ -1192,24 +1247,30 @@ export class ApiService {
   }
 
   setMemberRole(organisationId: string, membershipId: string, roleId: string) {
-    return this.request(`/organisations/${organisationId}/members/${membershipId}/role`, {
-      method: 'PATCH',
-      body: JSON.stringify({ roleId }),
-    });
+    return this.accountMutation(
+      this.request(`/organisations/${organisationId}/members/${membershipId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ roleId }),
+      }),
+    );
   }
 
   setMemberStatus(organisationId: string, membershipId: string, status: 'ACTIVE' | 'INACTIVE') {
-    return this.request(`/organisations/${organisationId}/members/${membershipId}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
+    return this.accountMutation(
+      this.request(`/organisations/${organisationId}/members/${membershipId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      }),
+    );
   }
 
   setMfaPolicy(organisationId: string, required: boolean): Promise<void> {
-    return this.request(`/organisations/${organisationId}/mfa-policy`, {
-      method: 'PATCH',
-      body: JSON.stringify({ requireMfaForPrivilegedRoles: required }),
-    });
+    return this.accountMutation(
+      this.request(`/organisations/${organisationId}/mfa-policy`, {
+        method: 'PATCH',
+        body: JSON.stringify({ requireMfaForPrivilegedRoles: required }),
+      }),
+    );
   }
 
   entitlements(organisationId: string): Promise<{ entitlements: Entitlement[] }> {
@@ -1260,16 +1321,20 @@ export class ApiService {
   }
 
   saveBrandProfile(organisationId: string, profile: Record<string, string>): Promise<void> {
-    return this.request(`/organisations/${organisationId}/brand-profile`, {
-      method: 'PUT',
-      body: JSON.stringify(profile),
-    });
+    return this.accountMutation(
+      this.request(`/organisations/${organisationId}/brand-profile`, {
+        method: 'PUT',
+        body: JSON.stringify(profile),
+      }),
+    );
   }
   setBrandLogo(organisationId: string, mediaId: string): Promise<void> {
-    return this.request(`/organisations/${organisationId}/brand-profile/logo`, {
-      method: 'PATCH',
-      body: JSON.stringify({ mediaId }),
-    });
+    return this.accountMutation(
+      this.request(`/organisations/${organisationId}/brand-profile/logo`, {
+        method: 'PATCH',
+        body: JSON.stringify({ mediaId }),
+      }),
+    );
   }
 
   addAccreditation(organisationId: string, input: { scheme: string; registrationNumber: string }) {
@@ -1293,10 +1358,12 @@ export class ApiService {
   }
 
   acceptInvitation(token: string) {
-    return this.request<{ organisation: { id: string; name: string } }>('/invitations/accept', {
-      method: 'POST',
-      body: JSON.stringify({ token }),
-    });
+    return this.accountMutation(
+      this.request<{ organisation: { id: string; name: string } }>('/invitations/accept', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+    );
   }
 
   listCustomers(
@@ -1521,10 +1588,12 @@ export class ApiService {
     }>('/platform/status');
   }
   bootstrapSuperadmin(token: string) {
-    return this.request('/platform/bootstrap', {
-      method: 'POST',
-      body: JSON.stringify({ token }),
-    });
+    return this.accountMutation(
+      this.request('/platform/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }),
+    );
   }
   listPlatformUsers(query = '') {
     return this.request<{ users: PlatformUser[] }>(
@@ -1532,10 +1601,12 @@ export class ApiService {
     );
   }
   setPlatformRole(userId: string, platformRole: 'USER' | 'PLATFORM_ADMIN') {
-    return this.request(`/platform/users/${userId}/role`, {
-      method: 'PATCH',
-      body: JSON.stringify({ platformRole }),
-    });
+    return this.accountMutation(
+      this.request(`/platform/users/${userId}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ platformRole }),
+      }),
+    );
   }
   listPlatformOrganisations(query = '') {
     return this.request<{ organisations: PlatformOrganisationSummary[] }>(
@@ -1563,10 +1634,12 @@ export class ApiService {
     membershipId: string,
     input: { roleId?: string; status?: 'ACTIVE' | 'INACTIVE' },
   ) {
-    return this.request(`/platform/organisations/${organisationId}/members/${membershipId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    });
+    return this.accountMutation(
+      this.request(`/platform/organisations/${organisationId}/members/${membershipId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(input),
+      }),
+    );
   }
   requestPlatformPasswordReset(organisationId: string, userId: string) {
     return this.request<{ reset: { email: string } }>(

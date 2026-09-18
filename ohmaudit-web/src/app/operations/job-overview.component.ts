@@ -584,11 +584,12 @@ export class JobOverviewComponent {
 
   private async load(): Promise<void> {
     await this.run(async () => {
-      const [account, categories, rams, entitlements] = await Promise.all([
+      const [account, categories, rams, entitlements, visitResult] = await Promise.all([
         this.api.currentUser(),
         this.api.listJobCategories(this.organisationId),
         this.api.listVisitRams(this.organisationId, this.visitId),
         this.api.entitlements(this.organisationId),
+        this.api.getVisit(this.organisationId, this.visitId),
       ]);
       this.capabilities.set(
         account.memberships.find((item) => item.organisation.id === this.organisationId)?.role
@@ -599,12 +600,17 @@ export class JobOverviewComponent {
       this.entitlements.set(entitlements.entitlements);
       const firstModule = this.taskModules()[0];
       if (firstModule) this.taskModule.set(firstModule.key);
-      await this.loadJob();
+      await this.loadJobDetails(visitResult.visit);
     });
   }
 
   private async loadJob(): Promise<void> {
-    const visit = (await this.api.getVisit(this.organisationId, this.visitId)).visit;
+    await this.loadJobDetails((await this.api.getVisit(this.organisationId, this.visitId)).visit);
+  }
+
+  private async loadJobDetails(
+    visit: Awaited<ReturnType<ApiService['getVisit']>>['visit'],
+  ): Promise<void> {
     this.job.set(visit);
     const site = (await this.api.getSite(this.organisationId, visit.site.id)).site;
     this.siteAssets.set(site.assets);

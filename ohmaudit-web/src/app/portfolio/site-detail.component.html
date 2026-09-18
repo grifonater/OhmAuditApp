@@ -10,7 +10,16 @@
     <header class="site-hero card">
       @if (heroImage(); as heroImg) {
         @if (siteImageUrls()[heroImg.id]; as heroUrl) {
-          <img class="site-mark site-hero-image" [src]="heroUrl" [alt]="currentSite.name" />
+          <img
+            class="site-mark site-hero-image"
+            [src]="heroUrl"
+            [alt]="currentSite.name"
+            loading="eager"
+            decoding="async"
+            fetchpriority="high"
+            width="54"
+            height="54"
+          />
         } @else {
           <span class="site-mark">⌖</span>
         }
@@ -154,9 +163,20 @@
         </div>
         <div class="site-gallery">
           @for (image of currentSite.media || []; track image.id) {
-            <figure [class.main-photo]="image.isPrimary">
+            <figure
+              [class.main-photo]="image.isPrimary"
+              oaDeferredLoad
+              (oaDeferredLoad)="loadSiteImage(image.id)"
+            >
               @if (siteImageUrls()[image.id]; as imageUrl) {
-                <img [src]="imageUrl" [alt]="image.caption || currentSite.name" />
+                <img
+                  [src]="imageUrl"
+                  [alt]="image.caption || currentSite.name"
+                  loading="lazy"
+                  decoding="async"
+                  width="320"
+                  height="160"
+                />
               } @else {
                 <div class="site-image-unavailable">Image unavailable</div>
               }

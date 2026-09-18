@@ -1,156 +1,244 @@
 <main class="page reports-page">
-  <header class="reports-header">
+  <header class="page-header reports-heading">
     <div>
-      <p class="eyebrow">Organisation intelligence</p>
-      <h1>Report builder</h1>
-      <p>Shape live organisation data into a clear, reusable report.</p>
+      <p class="eyebrow">Reporting</p>
+      <h1>Reports</h1>
+      <p>Create, customise and export organisation reports.</p>
     </div>
     <div class="header-actions">
-      <span class="prototype-badge">Design preview</span>
-      <button class="button primary" type="button" disabled>Generate report</button>
+      <button class="button secondary" type="button">Import template</button>
+      <button class="button primary" type="button">
+        Create report <span aria-hidden="true">+</span>
+      </button>
     </div>
   </header>
 
-  <section class="builder-shell">
-    <aside class="builder-rail" aria-label="Report configuration">
-      <div class="rail-heading">
-        <span>01</span>
-        <div><b>Choose a dataset</b><small>Start with an organisation-wide view.</small></div>
+  <section class="report-metrics" aria-label="Report summary">
+    <article>
+      <span class="metric-symbol reports" aria-hidden="true">▤</span>
+      <div><small>Total reports</small><strong>24</strong><span>Saved reports</span></div>
+    </article>
+    <article>
+      <span class="metric-symbol schedules" aria-hidden="true">□</span>
+      <div><small>Scheduled exports</small><strong>5</strong><span>Active schedules</span></div>
+    </article>
+    <article>
+      <span class="metric-symbol runs" aria-hidden="true">▶</span>
+      <div><small>Recent runs</small><strong>18</strong><span>In the last 30 days</span></div>
+    </article>
+    <article>
+      <span class="metric-symbol templates" aria-hidden="true">♙</span>
+      <div>
+        <small>Shared templates</small><strong>6</strong><span>Organisation templates</span>
       </div>
-      <div class="report-types">
-        @for (type of reportTypes; track type.key) {
-          <button
-            type="button"
-            [class.selected]="selectedType() === type.key"
-            (click)="selectType(type.key)"
-          >
-            <span class="type-mark">{{ type.label.charAt(0) }}</span>
-            <span
-              ><b>{{ type.label }}</b
-              ><small>{{ type.detail }}</small></span
-            >
-            <i aria-hidden="true">›</i>
-          </button>
-        }
-      </div>
-
-      <div class="rail-heading second">
-        <span>02</span>
-        <div><b>Organise</b><small>Set the report structure.</small></div>
-      </div>
-      <label class="field compact-field">
-        Group rows by
-        <select [value]="groupBy()" (change)="setGroupBy($event)">
-          <option>Client</option>
-          <option>Site</option>
-          <option>Asset type</option>
-          <option>Status</option>
-          <option>No grouping</option>
-        </select>
-      </label>
-      <label class="field compact-field">
-        Date range
-        <select>
-          <option>All records</option>
-          <option>Last 12 months</option>
-          <option>This calendar year</option>
-          <option>Custom range</option>
-        </select>
-      </label>
-    </aside>
-
-    <section class="builder-workspace">
-      <div class="workspace-toolbar">
-        <div>
-          <p class="eyebrow">Working report</p>
-          <h2>{{ selectedTypeLabel() }}</h2>
-        </div>
-        <div class="format-switch" aria-label="Report format">
-          <button class="active" type="button">Table</button>
-          <button type="button">Summary</button>
-          <button type="button">Cards</button>
-        </div>
-      </div>
-
-      <div class="filter-strip">
-        <label
-          ><span>Client</span
-          ><select>
-            <option>All clients</option>
-          </select></label
-        >
-        <label
-          ><span>Site</span
-          ><select>
-            <option>All sites</option>
-          </select></label
-        >
-        <label
-          ><span>Status</span
-          ><select>
-            <option>All statuses</option>
-          </select></label
-        >
-        <button type="button">+ Add filter</button>
-      </div>
-
-      <section class="columns-panel">
-        <div class="section-title">
-          <div>
-            <span>03</span>
-            <h3>Visible columns</h3>
-          </div>
-          <small>{{ visibleColumns().length }} of {{ columns().length }} selected</small>
-        </div>
-        <div class="column-chips">
-          @for (column of columns(); track column.key) {
-            <button
-              type="button"
-              [class.selected]="selectedColumns().has(column.key)"
-              (click)="toggleColumn(column.key)"
-            >
-              <span>{{ selectedColumns().has(column.key) ? '✓' : '+' }}</span
-              >{{ column.label }}
-            </button>
-          }
-        </div>
-      </section>
-
-      <section class="preview-panel">
-        <div class="preview-heading">
-          <div>
-            <span class="live-dot"></span>
-            <div><b>Live preview</b><small>Sample organisation data</small></div>
-          </div>
-          <span>Grouped by {{ groupBy() }}</span>
-        </div>
-        <div class="preview-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                @for (column of visibleColumns(); track column.key) {
-                  <th>{{ column.label }}</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of previewRows(); track $index) {
-                <tr>
-                  @for (column of visibleColumns(); track column.key) {
-                    <td [class.status-cell]="column.key === 'status'">
-                      {{ previewValue(row, column.key) }}
-                    </td>
-                  }
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        <footer>
-          <span>Showing {{ previewRows().length }} sample rows</span
-          ><span>Final report will include all matching records</span>
-        </footer>
-      </section>
-    </section>
+    </article>
   </section>
+
+  <section class="report-directory card">
+    <div class="report-filters">
+      <label class="report-search">
+        <span class="search-icon" aria-hidden="true"></span>
+        <span class="sr-only">Search reports</span>
+        <input
+          type="search"
+          [value]="search()"
+          (input)="updateSearch($event)"
+          placeholder="Search reports by name, module or owner..."
+        />
+      </label>
+      <label>
+        <span class="sr-only">Filter by module</span>
+        <select [value]="moduleFilter()" (change)="updateModule($event)">
+          <option>All modules</option>
+          <option>Inspections</option>
+          <option>Assets</option>
+          <option>RAMS</option>
+          <option>Jobs</option>
+        </select>
+      </label>
+      <label>
+        <span class="sr-only">Filter by status</span>
+        <select [value]="statusFilter()" (change)="updateStatus($event)">
+          <option>All statuses</option>
+          <option>Published</option>
+          <option>Template</option>
+          <option>Draft</option>
+        </select>
+      </label>
+      <label>
+        <span class="sr-only">Sort reports</span>
+        <select class="sort-select" [value]="sortOrder()" (change)="updateSort($event)">
+          <option value="newest">Sort: Last run (newest)</option>
+          <option value="oldest">Sort: Last run (oldest)</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="report-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Report name</th>
+            <th>Module</th>
+            <th>Last run</th>
+            <th>Output</th>
+            <th>Status</th>
+            <th>Owner</th>
+            <th><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (report of filteredReports(); track report.id) {
+            <tr>
+              <td class="report-name-cell">
+                <span
+                  class="file-symbol"
+                  [class.sheet]="report.format === 'Excel'"
+                  aria-hidden="true"
+                >
+                  {{ report.format === 'Excel' ? '▥' : '▤' }}
+                </span>
+                <span
+                  ><strong>{{ report.name }}</strong
+                  ><small>{{ report.description }}</small></span
+                >
+              </td>
+              <td>
+                <span class="module-pill">{{ report.module }}</span>
+              </td>
+              <td>{{ report.lastRun }}</td>
+              <td>{{ report.format }}</td>
+              <td>
+                <span class="status-pill" [class]="report.status.toLowerCase()">{{
+                  report.status
+                }}</span>
+              </td>
+              <td>
+                <span class="owner"
+                  ><span class="owner-avatar">{{ report.initials }}</span
+                  >{{ report.owner }}</span
+                >
+              </td>
+              <td class="actions-cell">
+                <button
+                  class="row-menu-button"
+                  type="button"
+                  (click)="toggleMenu(report.id)"
+                  [attr.aria-expanded]="openMenu() === report.id"
+                  [attr.aria-label]="'Actions for ' + report.name"
+                >
+                  •••
+                </button>
+                @if (openMenu() === report.id) {
+                  <div class="row-menu">
+                    <button type="button">Run report</button>
+                    <button type="button">Edit report</button>
+                    <button type="button">Duplicate</button>
+                  </div>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td class="no-results" colspan="7">No reports match the selected filters.</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <footer class="directory-footer">
+      <span>Showing {{ filteredReports().length }} of 24 reports</span>
+      <nav class="pagination" aria-label="Report pages">
+        <button type="button" aria-label="Previous page" disabled>‹</button>
+        <button class="active" type="button" aria-current="page">1</button>
+        <button type="button">2</button>
+        <button type="button">3</button>
+        <button type="button">4</button>
+        <button type="button">5</button>
+        <button type="button" aria-label="Next page">›</button>
+      </nav>
+    </footer>
+  </section>
+
+  <div class="lower-grid">
+    <section class="card activity-card">
+      <header>
+        <div>
+          <h2>Recent activity</h2>
+          <p>Latest report runs across your organisation.</p>
+        </div>
+        <button type="button">View all activity</button>
+      </header>
+      <div class="compact-list">
+        <article>
+          <span class="activity-state success" aria-hidden="true">✓</span>
+          <div>
+            <strong>EV inspection compliance summary</strong
+            ><small>Report generated successfully</small>
+          </div>
+          <time>1 Sept 2026, 10:24<small>by Ryan Griffin</small></time>
+        </article>
+        <article>
+          <span class="activity-state success" aria-hidden="true">✓</span>
+          <div>
+            <strong>Asset service due report</strong><small>Report generated successfully</small>
+          </div>
+          <time>31 Aug 2026, 16:02<small>by Ryan Griffin</small></time>
+        </article>
+        <article>
+          <span class="activity-state failed" aria-hidden="true">!</span>
+          <div>
+            <strong>Client inspection trends</strong
+            ><small>Report failed - no data available</small>
+          </div>
+          <time>30 Aug 2026, 12:11<small>by James White</small></time>
+        </article>
+      </div>
+    </section>
+
+    <section class="card schedule-card">
+      <header>
+        <div>
+          <h2>Scheduled exports</h2>
+          <p>Upcoming automated report exports.</p>
+        </div>
+        <button type="button">View all schedules</button>
+      </header>
+      <div class="compact-list schedule-list">
+        <article>
+          <span class="calendar-symbol" aria-hidden="true">□</span>
+          <div>
+            <strong>Weekly inspection summary</strong
+            ><small>Every Monday at 08:00 · PDF · Email to 3 recipients</small>
+          </div>
+          <span class="active-pill">Active</span
+          ><button class="row-menu-button" type="button" aria-label="Weekly schedule actions">
+            •••
+          </button>
+        </article>
+        <article>
+          <span class="calendar-symbol" aria-hidden="true">□</span>
+          <div>
+            <strong>Monthly asset service report</strong
+            ><small>1st of month at 09:00 · Excel · Email to 5 recipients</small>
+          </div>
+          <span class="active-pill">Active</span
+          ><button class="row-menu-button" type="button" aria-label="Monthly schedule actions">
+            •••
+          </button>
+        </article>
+        <article>
+          <span class="calendar-symbol" aria-hidden="true">□</span>
+          <div>
+            <strong>Quarterly client compliance</strong
+            ><small>1st of quarter at 09:00 · PDF · Email to 4 recipients</small>
+          </div>
+          <span class="active-pill">Active</span
+          ><button class="row-menu-button" type="button" aria-label="Quarterly schedule actions">
+            •••
+          </button>
+        </article>
+      </div>
+    </section>
+  </div>
 </main>

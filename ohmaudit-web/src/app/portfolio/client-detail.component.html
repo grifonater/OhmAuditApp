@@ -10,7 +10,15 @@
       <div class="client-logo-area">
         <div class="client-logo-frame">
           @if (logoUrl()) {
-            <img [src]="logoUrl()" [alt]="client.name + ' logo'" />
+            <img
+              [src]="logoUrl()"
+              [alt]="client.name + ' logo'"
+              loading="eager"
+              decoding="async"
+              fetchpriority="high"
+              width="112"
+              height="112"
+            />
           } @else {
             <span>{{ client.name.slice(0, 2) }}</span>
           }
@@ -234,7 +242,15 @@
                     <td data-label="Site">
                       <a class="site-name" [routerLink]="['sites', site.id]">
                         @if (sitePhotoUrls()[site.id]; as photoUrl) {
-                          <img class="site-thumb" [src]="photoUrl" [alt]="site.name" />
+                          <img
+                            class="site-thumb"
+                            [src]="photoUrl"
+                            [alt]="site.name"
+                            loading="lazy"
+                            decoding="async"
+                            width="30"
+                            height="30"
+                          />
                         } @else {
                           <span>▦</span>
                         }

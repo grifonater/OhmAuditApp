@@ -19,10 +19,11 @@ import {
 } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
+import { DeferredLoadDirective } from '../shared/deferred-load.directive';
 
 @Component({
   selector: 'oa-portfolio',
-  imports: [AsyncButtonDirective, ReactiveFormsModule, RouterLink],
+  imports: [AsyncButtonDirective, DeferredLoadDirective, ReactiveFormsModule, RouterLink],
   templateUrl: './portfolio.component.html',
   styleUrl: './portfolio.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -34,6 +35,7 @@ export class PortfolioComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private requestNumber = 0;
+  private readonly pendingLogos = new Set<string>();
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly customers = signal<CustomerSummary[]>([]);
   protected readonly totalCustomers = signal(0);
@@ -127,7 +129,7 @@ export class PortfolioComponent {
       if (!customers.items.some(({ id }) => id === this.expandedCustomerId())) {
         this.expandedCustomerId.set('');
       }
-      await this.loadLogos(customers.items);
+      this.removeUnusedLogos(customers.items);
       this.matchedSites.set(results?.sites ?? []);
     } catch (error: unknown) {
       if (requestNumber === this.requestNumber)
@@ -137,24 +139,36 @@ export class PortfolioComponent {
     }
   }
 
-  private async loadLogos(customers: CustomerSummary[]): Promise<void> {
-    this.revokeLogos();
-    const downloads = await Promise.all(
-      customers.flatMap((customer) =>
-        customer.logoMedia?.id
-          ? [
-              this.api
-                .downloadMedia(this.organisationId, customer.logoMedia.id)
-                .then((blob) => [customer.id, URL.createObjectURL(blob)] as const)
-                .catch(() => undefined),
-            ]
-          : [],
-      ),
-    );
-    const entries = downloads.filter(
-      (entry): entry is readonly [string, string] => entry !== undefined,
-    );
-    this.logoUrls.set(Object.fromEntries(entries));
+  protected async loadLogo(customer: CustomerSummary): Promise<void> {
+    const mediaId = customer.logoMedia?.id;
+    if (!mediaId || this.logoUrls()[customer.id] || this.pendingLogos.has(customer.id)) return;
+    this.pendingLogos.add(customer.id);
+    try {
+      const blob = await this.api.downloadMedia(this.organisationId, mediaId);
+      if (
+        this.destroyRef.destroyed ||
+        !this.customers().some(
+          (current) => current.id === customer.id && current.logoMedia?.id === mediaId,
+        )
+      )
+        return;
+      const url = URL.createObjectURL(blob);
+      this.logoUrls.update((urls) => ({ ...urls, [customer.id]: url }));
+    } catch {
+      // The initials fallback remains visible when a logo is unavailable.
+    } finally {
+      this.pendingLogos.delete(customer.id);
+    }
+  }
+
+  private removeUnusedLogos(customers: CustomerSummary[]): void {
+    const retainedIds = new Set(customers.map((customer) => customer.id));
+    const retained: Record<string, string> = {};
+    for (const [customerId, url] of Object.entries(this.logoUrls())) {
+      if (retainedIds.has(customerId)) retained[customerId] = url;
+      else URL.revokeObjectURL(url);
+    }
+    this.logoUrls.set(retained);
   }
 
   private revokeLogos(): void {
@@ -196,7 +210,7 @@ export class PortfolioComponent {
     try {
       const { customer } = await this.api.getCustomer(this.organisationId, customerId);
       this.clientPreviews.update((previews) => ({ ...previews, [customerId]: customer }));
-      await this.loadSitePhotos(customer.sites ?? []);
+      await this.loadSitePhotos((customer.sites ?? []).slice(0, 3));
     } catch (error: unknown) {
       this.previewErrors.update((errors) => ({
         ...errors,

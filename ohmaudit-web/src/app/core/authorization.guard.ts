@@ -4,15 +4,8 @@ import { Router } from '@angular/router';
 import { AppConfigService } from './app-config.service';
 import { AuthService } from './auth.service';
 import { authorizationUrl } from './authorization-url';
+import { ApiService } from './api.service';
 import { OfflineVisitService } from './offline-visit.service';
-
-interface AuthorizationAccount {
-  user: { platformRole: 'USER' | 'PLATFORM_ADMIN' };
-  memberships: Array<{
-    organisation: { id: string };
-    role: { capabilities: string[] };
-  }>;
-}
 
 async function getJson<T>(path: string, auth: AuthService, config: AppConfigService): Promise<T> {
   const token = auth.session()?.access_token;
@@ -29,10 +22,11 @@ async function getJson<T>(path: string, auth: AuthService, config: AppConfigServ
 export const authorizationGuard: CanActivateFn = async (route) => {
   const auth = inject(AuthService);
   const config = inject(AppConfigService);
+  const api = inject(ApiService);
   const router = inject(Router);
   const offline = inject(OfflineVisitService);
   try {
-    const account = await getJson<AuthorizationAccount>('/me', auth, config);
+    const account = await api.currentUser();
     if (route.data['platformAdmin'] === true && account.user.platformRole !== 'PLATFORM_ADMIN')
       return router.createUrlTree(['/app']);
 

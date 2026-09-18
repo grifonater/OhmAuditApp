@@ -370,6 +370,7 @@ export class AppShellComponent {
   protected async signOut(): Promise<void> {
     this.accountMenuOpen.set(false);
     sessionStorage.removeItem('ohmaudit.supportSession');
+    this.api.invalidateCurrentUser();
     this.context.clear();
     await this.auth.signOut();
     await this.router.navigateByUrl('/login');
@@ -381,6 +382,7 @@ export class AppShellComponent {
       if (sessionId) await this.api.endPlatformSupportSession(sessionId);
     } finally {
       sessionStorage.removeItem('ohmaudit.supportSession');
+      this.api.invalidateCurrentUser();
       location.assign('/app/platform');
     }
   }

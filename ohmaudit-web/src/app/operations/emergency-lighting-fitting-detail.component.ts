@@ -12,8 +12,6 @@ import {
 } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import JsBarcode from 'jsbarcode';
-import QRCode from 'qrcode';
 import {
   ApiService,
   type AssetMedia,
@@ -160,13 +158,15 @@ export class EmergencyLightingFittingDetailComponent {
       const fitting = this.detail()?.fitting;
       const element = this.barcodeElement()?.nativeElement;
       if (fitting === undefined || element === undefined) return;
-      JsBarcode(element, fitting.serialNumber || fitting.reference, {
-        format: 'CODE128',
-        displayValue: true,
-        height: 40,
-        margin: 0,
-        fontSize: 11,
-        lineColor: '#10203d',
+      void import('jsbarcode').then(({ default: JsBarcode }) => {
+        JsBarcode(element, fitting.serialNumber || fitting.reference, {
+          format: 'CODE128',
+          displayValue: true,
+          height: 40,
+          margin: 0,
+          fontSize: 11,
+          lineColor: '#10203d',
+        });
       });
     });
     this.destroyRef.onDestroy(() => this.revokeImages());
@@ -335,6 +335,7 @@ export class EmergencyLightingFittingDetailComponent {
         status: this.recordStatus(detail.fitting.status),
         notes: detail.fitting.notes ?? '',
       });
+      const { default: QRCode } = await import('qrcode');
       this.qrCodeUrl.set(
         await QRCode.toDataURL(window.location.href, {
           width: 180,

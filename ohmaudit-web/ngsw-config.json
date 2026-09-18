@@ -6,14 +6,15 @@
       "name": "app",
       "installMode": "prefetch",
       "resources": {
-        "files": [
-          "/config.json",
-          "/favicon.svg",
-          "/index.html",
-          "/manifest.webmanifest",
-          "/*.css",
-          "/*.js"
-        ]
+        "files": ["/config.json", "/favicon.svg", "/index.html", "/manifest.webmanifest", "/*.css"]
+      }
+    },
+    {
+      "name": "scripts",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": ["/*.js"]
       }
     },
     {

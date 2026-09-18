@@ -1,16 +1,19 @@
 import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
 
-interface ReportColumn {
-  key: string;
-  label: string;
-}
+type ReportStatus = 'Published' | 'Template' | 'Draft';
+type ReportFormat = 'PDF' | 'Excel';
 
-interface ReportDefinition {
-  key: string;
-  label: string;
-  detail: string;
-  columns: ReportColumn[];
-  rows: Array<Record<string, string>>;
+interface ReportItem {
+  id: number;
+  name: string;
+  description: string;
+  module: 'Inspections' | 'Assets' | 'RAMS' | 'Jobs';
+  lastRun: string;
+  timestamp: number;
+  format: ReportFormat;
+  status: ReportStatus;
+  owner: string;
+  initials: string;
 }
 
 @Component({
@@ -20,175 +23,127 @@ interface ReportDefinition {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ReportBuilderComponent {
-  protected readonly reportTypes: ReportDefinition[] = [
+  protected readonly search = signal('');
+  protected readonly moduleFilter = signal('All modules');
+  protected readonly statusFilter = signal('All statuses');
+  protected readonly sortOrder = signal('newest');
+  protected readonly currentPage = signal(1);
+  protected readonly openMenu = signal<number | null>(null);
+
+  protected readonly reports: ReportItem[] = [
     {
-      key: 'assets',
-      label: 'Asset register',
-      detail: 'Every asset across the organisation',
-      columns: [
-        { key: 'reference', label: 'Reference' },
-        { key: 'name', label: 'Asset name' },
-        { key: 'type', label: 'Asset type' },
-        { key: 'location', label: 'Client / site' },
-        { key: 'status', label: 'Status' },
-        { key: 'lastInspection', label: 'Last inspection' },
-      ],
-      rows: [
-        {
-          reference: 'EV-018',
-          name: 'Visitor car park charger 01',
-          type: 'EV Charger',
-          location: 'Northstar Retail / Leeds',
-          status: 'Active',
-          lastInspection: '12 Sep 2026',
-        },
-        {
-          reference: 'DB-L2-04',
-          name: 'Second floor distribution board',
-          type: 'Distribution Board',
-          location: 'Aperture House / Manchester',
-          status: 'Active',
-          lastInspection: '04 Aug 2026',
-        },
-        {
-          reference: 'EL-Z3',
-          name: 'Emergency lighting zone 3',
-          type: 'Emergency Lighting',
-          location: 'Northstar Retail / York',
-          status: 'Review due',
-          lastInspection: '19 Jun 2026',
-        },
-      ],
+      id: 1,
+      name: 'EV inspection compliance summary',
+      description: 'Summary of EV inspections, pass rates and outstanding items.',
+      module: 'Inspections',
+      lastRun: '1 Sept 2026, 10:24',
+      timestamp: 1788258240,
+      format: 'PDF',
+      status: 'Published',
+      owner: 'Ryan Griffin',
+      initials: 'RG',
     },
     {
-      key: 'ev',
-      label: 'EV charge points',
-      detail: 'Chargers, ratings and inspection status',
-      columns: [
-        { key: 'reference', label: 'Charger ID' },
-        { key: 'name', label: 'Charge point' },
-        { key: 'location', label: 'Client / site' },
-        { key: 'power', label: 'Maximum power' },
-        { key: 'connectors', label: 'Connectors' },
-        { key: 'status', label: 'Inspection status' },
-      ],
-      rows: [
-        {
-          reference: 'EV-018',
-          name: 'Visitor car park charger 01',
-          location: 'Northstar Retail / Leeds',
-          power: '22 kW',
-          connectors: '2 x Type 2',
-          status: 'Pass',
-        },
-        {
-          reference: 'EV-044',
-          name: 'Fleet bay rapid charger',
-          location: 'Form Works / Sheffield',
-          power: '50 kW',
-          connectors: 'CCS / CHAdeMO',
-          status: 'Review due',
-        },
-      ],
+      id: 2,
+      name: 'Asset service due report',
+      description: 'Assets due for service in the next 30 days.',
+      module: 'Assets',
+      lastRun: '31 Aug 2026, 16:02',
+      timestamp: 1788192120,
+      format: 'Excel',
+      status: 'Published',
+      owner: 'Ryan Griffin',
+      initials: 'RG',
     },
     {
-      key: 'sites',
-      label: 'Site directory',
-      detail: 'Sites, clients and contact details',
-      columns: [
-        { key: 'reference', label: 'Site reference' },
-        { key: 'name', label: 'Site' },
-        { key: 'client', label: 'Client' },
-        { key: 'postcode', label: 'Postcode' },
-        { key: 'assets', label: 'Assets' },
-        { key: 'status', label: 'Open reminders' },
-      ],
-      rows: [
-        {
-          reference: 'NRT-LDS',
-          name: 'Leeds retail park',
-          client: 'Northstar Retail',
-          postcode: 'LS10 1AB',
-          assets: '38',
-          status: '3 reminders',
-        },
-        {
-          reference: 'APH-MCR',
-          name: 'Aperture House',
-          client: 'Aperture Group',
-          postcode: 'M1 4ET',
-          assets: '21',
-          status: 'Up to date',
-        },
-      ],
+      id: 3,
+      name: 'RAMS issue register',
+      description: 'Open and closed RAMS issues across all sites.',
+      module: 'RAMS',
+      lastRun: '30 Aug 2026, 09:15',
+      timestamp: 1788081300,
+      format: 'PDF',
+      status: 'Template',
+      owner: 'James White',
+      initials: 'JW',
     },
     {
-      key: 'inspections',
-      label: 'Inspection history',
-      detail: 'Outcomes, dates and engineers',
-      columns: [
-        { key: 'reference', label: 'Report reference' },
-        { key: 'name', label: 'Inspection' },
-        { key: 'location', label: 'Site / asset' },
-        { key: 'engineer', label: 'Engineer' },
-        { key: 'date', label: 'Effective date' },
-        { key: 'status', label: 'Outcome' },
-      ],
-      rows: [
-        {
-          reference: '101-1',
-          name: 'EV charge point inspection',
-          location: 'Leeds / EV-018',
-          engineer: 'Alex Morgan',
-          date: '12 Sep 2026',
-          status: 'Pass',
-        },
-        {
-          reference: '098-3',
-          name: 'Thermal imaging survey',
-          location: 'Manchester / DB-L2-04',
-          engineer: 'Sam Taylor',
-          date: '04 Aug 2026',
-          status: 'Advisory',
-        },
-      ],
+      id: 4,
+      name: 'Multi-site inspection performance',
+      description: 'Inspection completion rates by site and engineer.',
+      module: 'Inspections',
+      lastRun: '28 Aug 2026, 14:33',
+      timestamp: 1787927580,
+      format: 'Excel',
+      status: 'Published',
+      owner: 'Ryan Griffin',
+      initials: 'RG',
+    },
+    {
+      id: 5,
+      name: 'Open remedials by client',
+      description: 'All open remedial actions grouped by client.',
+      module: 'Jobs',
+      lastRun: '25 Aug 2026, 11:20',
+      timestamp: 1787653200,
+      format: 'PDF',
+      status: 'Draft',
+      owner: 'James White',
+      initials: 'JW',
+    },
+    {
+      id: 6,
+      name: 'Quarterly asset condition review',
+      description: 'Condition trends and asset risk across the portfolio.',
+      module: 'Assets',
+      lastRun: '18 Aug 2026, 09:40',
+      timestamp: 1787042400,
+      format: 'PDF',
+      status: 'Published',
+      owner: 'Ryan Griffin',
+      initials: 'RG',
     },
   ];
-  protected readonly selectedType = signal('assets');
-  protected readonly selectedColumns = signal(
-    new Set(this.reportTypes[0]!.columns.map(({ key }) => key)),
-  );
-  protected readonly groupBy = signal('Client');
-  private readonly selectedDefinition = computed(
-    () => this.reportTypes.find(({ key }) => key === this.selectedType()) ?? this.reportTypes[0]!,
-  );
-  protected readonly selectedTypeLabel = computed(() => this.selectedDefinition().label);
-  protected readonly columns = computed(() => this.selectedDefinition().columns);
-  protected readonly visibleColumns = computed(() =>
-    this.columns().filter(({ key }) => this.selectedColumns().has(key)),
-  );
-  protected readonly previewRows = computed(() => this.selectedDefinition().rows);
 
-  protected selectType(key: string): void {
-    this.selectedType.set(key);
-    const definition = this.reportTypes.find((type) => type.key === key);
-    if (definition) this.selectedColumns.set(new Set(definition.columns.map(({ key }) => key)));
+  protected readonly filteredReports = computed(() => {
+    const query = this.search().trim().toLowerCase();
+    const moduleName = this.moduleFilter();
+    const status = this.statusFilter();
+    const direction = this.sortOrder() === 'oldest' ? 1 : -1;
+
+    return this.reports
+      .filter(
+        (report) =>
+          (!query ||
+            `${report.name} ${report.description} ${report.module} ${report.owner}`
+              .toLowerCase()
+              .includes(query)) &&
+          (moduleName === 'All modules' || report.module === moduleName) &&
+          (status === 'All statuses' || report.status === status),
+      )
+      .sort((first, second) => (first.timestamp - second.timestamp) * direction);
+  });
+
+  protected updateSearch(event: Event): void {
+    this.search.set((event.target as HTMLInputElement).value);
+    this.currentPage.set(1);
   }
 
-  protected toggleColumn(key: string): void {
-    this.selectedColumns.update((selected) => {
-      const next = new Set(selected);
-      if (next.has(key) && next.size > 1) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  protected updateModule(event: Event): void {
+    this.moduleFilter.set((event.target as HTMLSelectElement).value);
+    this.currentPage.set(1);
   }
 
-  protected setGroupBy(event: Event): void {
-    this.groupBy.set((event.target as HTMLSelectElement).value);
+  protected updateStatus(event: Event): void {
+    this.statusFilter.set((event.target as HTMLSelectElement).value);
+    this.currentPage.set(1);
   }
 
-  protected previewValue(row: Record<string, string>, key: string): string {
-    return row[key] ?? '';
+  protected updateSort(event: Event): void {
+    this.sortOrder.set((event.target as HTMLSelectElement).value);
+  }
+
+  protected toggleMenu(id: number): void {
+    this.openMenu.update((current) => (current === id ? null : id));
   }
 }

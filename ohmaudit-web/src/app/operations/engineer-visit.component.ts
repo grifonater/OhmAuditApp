@@ -167,6 +167,19 @@ export class EngineerVisitComponent {
   protected readonly photoCount = signal(0);
   protected readonly normalPhotoCount = signal(0);
   protected readonly photoPreviews = signal<PhotoPreview[]>([]);
+  private readonly photoPreviewsByFinding = computed(() => {
+    const grouped = new Map<string, PhotoPreview[]>();
+    for (const photo of this.photoPreviews()) {
+      if (!photo.findingId) continue;
+      const photos = grouped.get(photo.findingId) ?? [];
+      photos.push(photo);
+      grouped.set(photo.findingId, photos);
+    }
+    return grouped;
+  });
+  protected readonly normalPhotos = computed(() =>
+    this.photoPreviews().filter((photo) => photo.kind === 'normal-state'),
+  );
   protected readonly viewedPhoto = signal<PhotoPreview | undefined>(undefined);
   protected readonly submitted = signal(false);
   protected readonly submissionResult = signal<'confirmed' | 'pending' | 'failed'>('confirmed');
@@ -925,15 +938,14 @@ export class EngineerVisitComponent {
   }
 
   protected photosForFinding(findingId: string): PhotoPreview[] {
-    return this.photoPreviews().filter(
-      (photo) =>
-        photo.findingId === findingId ||
-        (this.findings.length === 1 && photo.kind === 'fault' && photo.findingId === undefined),
-    );
-  }
-
-  protected normalPhotos(): PhotoPreview[] {
-    return this.photoPreviews().filter((photo) => photo.kind === 'normal-state');
+    const assigned = this.photoPreviewsByFinding().get(findingId) ?? [];
+    if (this.findings.length !== 1) return assigned;
+    return [
+      ...assigned,
+      ...this.photoPreviews().filter(
+        (photo) => photo.kind === 'fault' && photo.findingId === undefined,
+      ),
+    ];
   }
 
   protected addSupply(): void {

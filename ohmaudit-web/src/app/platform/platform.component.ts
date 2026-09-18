@@ -174,6 +174,7 @@ export class PlatformComponent {
         this.supportReason.value,
       );
       sessionStorage.setItem('ohmaudit.supportSession', result.supportSession.token);
+      this.api.invalidateCurrentUser();
       location.assign(`/app/org/${organisation.id}`);
     });
   }

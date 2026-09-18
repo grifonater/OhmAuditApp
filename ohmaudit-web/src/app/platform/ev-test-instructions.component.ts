@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   ApiService,
@@ -8,6 +9,7 @@ import {
   type EvTestStep,
 } from '../core/api.service';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
+import { catchError, debounceTime, distinctUntilChanged, EMPTY, from, switchMap } from 'rxjs';
 
 const EV_STEP_LABELS: Record<EvTestStep, string> = {
   unit: 'Confirm the unit',
@@ -37,6 +39,7 @@ const MAX_VIDEO_BYTES = 50_000_000;
 })
 export class EvTestInstructionsComponent {
   private readonly api = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly Math = Math;
 
@@ -73,7 +76,23 @@ export class EvTestInstructionsComponent {
 
   constructor() {
     void this.load();
-    this.search.valueChanges.subscribe(() => void this.loadCoverage());
+    this.search.valueChanges
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        switchMap((query) =>
+          from(this.api.evTestInstructionCoverage(query.trim())).pipe(
+            catchError((error: unknown) => {
+              this.error.set(
+                error instanceof Error ? error.message : 'Unable to search instruction coverage.',
+              );
+              return EMPTY;
+            }),
+          ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((coverage) => this.coverage.set(coverage));
   }
 
   protected stepLabel(step: EvTestStep): string {

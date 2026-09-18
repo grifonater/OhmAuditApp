@@ -26,6 +26,7 @@ import { compressPhoto } from '../core/image-compression';
 import { AssetIconComponent } from '../shared/asset-icon.component';
 import { assetIconOptions, defaultAssetIconKey, resolvedAssetIconKey } from '../shared/asset-icons';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
+import { DeferredLoadDirective } from '../shared/deferred-load.directive';
 import {
   createSchedulesForGroup,
   groupScheduleSuggestions,
@@ -36,7 +37,13 @@ import {
 type SiteTab = 'overview' | 'assets' | 'reports' | 'reminders';
 @Component({
   selector: 'oa-site-detail',
-  imports: [AssetIconComponent, AsyncButtonDirective, ReactiveFormsModule, RouterLink],
+  imports: [
+    AssetIconComponent,
+    AsyncButtonDirective,
+    DeferredLoadDirective,
+    ReactiveFormsModule,
+    RouterLink,
+  ],
   templateUrl: './site-detail.component.html',
   styleUrl: './site-detail.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -47,6 +54,7 @@ export class SiteDetailComponent {
   private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly pendingSiteImages = new Set<string>();
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
   protected readonly customerId = this.route.snapshot.paramMap.get('customerId') ?? '';
   protected readonly siteId = this.route.snapshot.paramMap.get('siteId') ?? '';
@@ -441,35 +449,40 @@ export class SiteDetailComponent {
   }
   private async load(): Promise<void> {
     await this.run(async () => {
-      const account = await this.api.currentUser();
+      const [account, siteResult, entitlementResult] = await Promise.all([
+        this.api.currentUser(),
+        this.api.getSite(this.organisationId, this.siteId),
+        this.api.entitlements(this.organisationId),
+        this.loadScheduleContext(),
+      ]);
       const membership = account.memberships.find(
         (item) => item.organisation.id === this.organisationId,
       );
       this.capabilities.set(membership?.role.capabilities ?? []);
-      const [siteResult, entitlementResult] = await Promise.all([
-        this.api.getSite(this.organisationId, this.siteId),
-        this.api.entitlements(this.organisationId),
-      ]);
       const site = siteResult.site;
       this.entitlements.set(entitlementResult.entitlements);
       if (!this.evEnabled() && this.assetForm.controls.assetType.value === 'EV Charger')
         this.assetForm.controls.assetType.setValue('General Asset');
       this.site.set(site);
-      await this.loadScheduleContext();
       this.revokeSiteImages();
-      const downloads = await Promise.all(
-        (site.media ?? []).map((media) =>
-          this.api
-            .downloadMedia(this.organisationId, media.id)
-            .then((blob) => [media.id, URL.createObjectURL(blob)] as const)
-            .catch(() => undefined),
-        ),
-      );
-      const imageEntries = downloads.filter(
-        (entry): entry is readonly [string, string] => entry !== undefined,
-      );
-      this.siteImageUrls.set(Object.fromEntries(imageEntries));
+      const hero = (site.media ?? []).find((media) => media.isPrimary) ?? site.media?.[0];
+      if (hero) void this.loadSiteImage(hero.id);
     });
+  }
+  protected async loadSiteImage(mediaId: string): Promise<void> {
+    if (this.siteImageUrls()[mediaId] || this.pendingSiteImages.has(mediaId)) return;
+    this.pendingSiteImages.add(mediaId);
+    try {
+      const blob = await this.api.downloadMedia(this.organisationId, mediaId);
+      if (this.destroyRef.destroyed || !this.site()?.media?.some((media) => media.id === mediaId))
+        return;
+      const url = URL.createObjectURL(blob);
+      this.siteImageUrls.update((urls) => ({ ...urls, [mediaId]: url }));
+    } catch {
+      // Keep the unavailable-image fallback when media cannot be downloaded.
+    } finally {
+      this.pendingSiteImages.delete(mediaId);
+    }
   }
   private async loadScheduleContext(): Promise<void> {
     const from = new Date();

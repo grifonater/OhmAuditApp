@@ -121,7 +121,7 @@
         >
           <span class="organisation-avatar">
             @if (organisationLogoUrl(activeMembership()?.organisation?.id); as logoUrl) {
-              <img [src]="logoUrl" alt="" />
+              <img [src]="logoUrl" alt="" loading="eager" decoding="async" width="34" height="34" />
             } @else {
               {{ activeMembership()?.organisation?.name?.charAt(0) || '+' }}
             }
@@ -153,7 +153,14 @@
                 >
                   <span class="organisation-avatar small">
                     @if (organisationLogoUrl(membership.organisation.id); as logoUrl) {
-                      <img [src]="logoUrl" alt="" />
+                      <img
+                        [src]="logoUrl"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        width="32"
+                        height="32"
+                      />
                     } @else {
                       {{ membership.organisation.name.charAt(0) }}
                     }
@@ -294,7 +301,7 @@
       </div>
       <span class="toolbar-context">
         @if (organisationLogoUrl(activeMembership()?.organisation?.id); as logoUrl) {
-          <img [src]="logoUrl" alt="" />
+          <img [src]="logoUrl" alt="" loading="eager" decoding="async" width="29" height="29" />
         }
         <span>{{ activeMembership()?.organisation?.name || 'Workspace' }}</span>
       </span>

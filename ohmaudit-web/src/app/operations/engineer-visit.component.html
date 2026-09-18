@@ -721,7 +721,14 @@
                             class="photo-thumb"
                             (click)="viewedVisitFindingPhoto.set(photo)"
                           >
-                            <img [src]="photo.url" [alt]="photo.description" />
+                            <img
+                              [src]="photo.url"
+                              [alt]="photo.description"
+                              loading="lazy"
+                              decoding="async"
+                              width="160"
+                              height="160"
+                            />
                           </button>
                           <button
                             type="button"
@@ -1069,7 +1076,14 @@
                             class="photo-thumb"
                             (click)="viewedPhoto.set(photo)"
                           >
-                            <img [src]="photo.url" [alt]="photo.description" />
+                            <img
+                              [src]="photo.url"
+                              [alt]="photo.description"
+                              loading="lazy"
+                              decoding="async"
+                              width="160"
+                              height="160"
+                            />
                           </button>
                           <button type="button" class="photo-remove" (click)="deletePhoto(photo)">
                             Remove
@@ -1568,7 +1582,14 @@
                               class="photo-thumb"
                               (click)="viewedPhoto.set(photo)"
                             >
-                              <img [src]="photo.url" [alt]="photo.description" />
+                              <img
+                                [src]="photo.url"
+                                [alt]="photo.description"
+                                loading="lazy"
+                                decoding="async"
+                                width="160"
+                                height="160"
+                              />
                             </button>
                             <button type="button" class="photo-remove" (click)="deletePhoto(photo)">
                               Remove
