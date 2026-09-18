@@ -27,6 +27,7 @@ import {
   emergencyLightingLabelStudioPath,
 } from '../core/emergency-lighting-routes';
 import { compressPhoto } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 interface RenderedImage {
   id: string;
@@ -46,7 +47,7 @@ interface ActivityItem {
 
 @Component({
   selector: 'oa-emergency-lighting-fitting-detail',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, AsyncButtonDirective],
   templateUrl: './emergency-lighting-fitting-detail.component.html',
   styleUrls: ['./operations.css', './emergency-lighting-fitting-detail.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

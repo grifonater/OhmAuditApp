@@ -181,8 +181,11 @@
                           [value]="moduleExpiry(module)"
                       /></label>
                       <button
+                        oaAsyncButton
                         class="button primary compact"
                         type="button"
+                        [oaAsyncPending]="busy()"
+                        [oaAsyncError]="error()"
                         (click)="
                           saveModule(module.key, moduleStatus.value, moduleExpiryInput.value)
                         "
@@ -510,8 +513,11 @@
               ><span>JPEG, PNG or WebP · maximum 2 MB</span></label
             >
             <button
+              oaAsyncButton
               class="button primary full"
               type="submit"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
               [disabled]="
                 busy() ||
                 uploadForm.invalid ||

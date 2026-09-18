@@ -19,10 +19,13 @@
         <span class="saved-state">✓ {{ saved() }}</span>
       }
       <button
+        oaAsyncButton
+        [oaAsyncPending]="savingDraft()"
+        [oaAsyncError]="error()"
         class="button secondary"
         type="button"
         (click)="saveDraft('Draft saved')"
-        [disabled]="submitting() || previewing() || loading()"
+        [disabled]="savingDraft() || submitting() || previewing() || loading()"
       >
         Save draft
       </button>

@@ -12,10 +12,11 @@ import {
 } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { OfflineVisitService } from '../core/offline-visit.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-visits',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, AsyncButtonDirective],
   templateUrl: './visits.component.html',
   styleUrls: ['./operations.css', './visits.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

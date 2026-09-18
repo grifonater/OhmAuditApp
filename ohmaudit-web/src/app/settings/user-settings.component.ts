@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import type { AbstractControl, ValidationErrors } from '@angular/forms';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AuthService } from '../core/auth.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 function passwordsMatch(control: AbstractControl): ValidationErrors | null {
   return control.get('password')?.value === control.get('confirmation')?.value
@@ -11,7 +12,7 @@ function passwordsMatch(control: AbstractControl): ValidationErrors | null {
 
 @Component({
   selector: 'oa-user-settings',
-  imports: [ReactiveFormsModule],
+  imports: [AsyncButtonDirective, ReactiveFormsModule],
   templateUrl: './user-settings.component.html',
   styleUrl: './user-settings.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

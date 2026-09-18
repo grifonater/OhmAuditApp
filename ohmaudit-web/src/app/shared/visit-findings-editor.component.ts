@@ -16,9 +16,11 @@ import {
   type VisitFindingSeverity,
 } from '../core/api.service';
 import { compressPhoto } from '../core/image-compression';
+import { AsyncButtonDirective } from './async-button.directive';
 
 @Component({
   selector: 'oa-visit-findings-editor',
+  imports: [AsyncButtonDirective],
   template: `
     <section class="visit-findings" aria-labelledby="visit-findings-title">
       <div class="findings-heading">
@@ -169,8 +171,11 @@ import { compressPhoto } from '../core/image-compression';
                       </label>
                       <div class="image-actions">
                         <button
+                          oaAsyncButton
                           class="button secondary compact"
                           type="button"
+                          [oaAsyncPending]="mediaBusy().has(image.id)"
+                          [oaAsyncError]="error()"
                           [disabled]="
                             mediaBusy().has(image.id) || !captionDrafts()[image.id]?.trim()
                           "
@@ -209,8 +214,11 @@ import { compressPhoto } from '../core/image-compression';
         @if (findings().length) {
           <div class="findings-footer">
             <button
+              oaAsyncButton
               class="button primary"
               type="button"
+              [oaAsyncPending]="saving()"
+              [oaAsyncError]="error()"
               [disabled]="saving() || mediaBusy().size > 0"
               (click)="save()"
             >

@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, type OrganisationEquipment } from '../core/api.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 type EquipmentForm = {
   name: string;
@@ -25,7 +26,7 @@ const emptyForm = (): EquipmentForm => ({
 
 @Component({
   selector: 'oa-equipment',
-  imports: [FormsModule, RouterLink],
+  imports: [AsyncButtonDirective, FormsModule, RouterLink],
   templateUrl: './equipment.component.html',
   styleUrl: './equipment.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

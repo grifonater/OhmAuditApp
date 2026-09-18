@@ -182,6 +182,9 @@
                   <button
                     class="button primary compact"
                     type="submit"
+                    oaAsyncButton
+                    [oaAsyncPending]="creatingOrganisation()"
+                    [oaAsyncError]="error()"
                     [disabled]="organisationName.invalid || creatingOrganisation()"
                   >
                     {{ creatingOrganisation() ? 'Creating…' : 'Create' }}

@@ -106,8 +106,11 @@
           Cancel
         </button>
         <button
+          oaAsyncButton
           class="button primary compact"
           type="submit"
+          [oaAsyncPending]="busy()"
+          [oaAsyncError]="error()"
           [disabled]="busy() || draftForm.invalid"
         >
           {{ busy() && draftFile() ? 'Uploading video…' : busy() ? 'Saving…' : 'Save set' }}

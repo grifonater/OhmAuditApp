@@ -135,7 +135,14 @@
           >Location notes<textarea formControlName="locationNotes"></textarea>
         </label>
         <div class="form-actions full">
-          <button class="button primary" type="submit" [disabled]="busy()">
+          <button
+            oaAsyncButton
+            class="button primary"
+            type="submit"
+            [oaAsyncPending]="busy()"
+            [oaAsyncError]="error()"
+            [disabled]="busy()"
+          >
             @if (busy()) {
               <span class="oa-spinner" aria-hidden="true"></span>
             }
@@ -368,8 +375,11 @@
             <footer class="form-actions full">
               <button class="button ghost" type="button" (click)="cancelSupplyEdit()">Cancel</button
               ><button
+                oaAsyncButton
                 class="button primary"
                 type="submit"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
                 [disabled]="busy() || supplyForm.invalid"
               >
                 @if (busy()) {
@@ -446,8 +456,11 @@
               <button class="button ghost" type="button" (click)="cancelConnectorEdit()">
                 Cancel</button
               ><button
+                oaAsyncButton
                 class="button primary"
                 type="submit"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
                 [disabled]="busy() || connectorForm.invalid"
               >
                 @if (busy()) {

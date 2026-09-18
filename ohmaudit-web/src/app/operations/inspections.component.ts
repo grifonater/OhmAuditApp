@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, type InspectionSummary } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 interface ChangeRow {
   label: string;
@@ -30,7 +31,7 @@ interface InspectionSession {
 
 @Component({
   selector: 'oa-inspections',
-  imports: [],
+  imports: [AsyncButtonDirective],
   templateUrl: './inspections.component.html',
   styleUrls: ['./operations.css', './inspections.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -109,8 +110,34 @@ export class InspectionsComponent {
     const item = this.selected();
     if (!item) return;
     await this.run(async () => {
-      await this.api.reviewInspection(this.organisationId, item.id, approved);
-      this.success.set(approved ? 'Inspection approved' : 'Inspection returned to engineer');
+      const result = await this.api.reviewInspection(this.organisationId, item.id, approved);
+      if (approved && result.inspection.completionEligible && item.visit?.id) {
+        if (
+          confirm(
+            'All inspections and assets on this job are complete. Would you like to mark the job as complete now?',
+          )
+        ) {
+          try {
+            await this.api.completeVisit(this.organisationId, item.visit.id);
+            this.success.set('Inspection approved and job marked complete');
+          } catch (error: unknown) {
+            this.success.set(
+              'Inspection approved. The job remains open and can be completed from the job page.',
+            );
+            this.error.set(
+              error instanceof Error
+                ? `The inspection was approved, but the job could not be completed: ${error.message}`
+                : 'The inspection was approved, but the job could not be completed.',
+            );
+          }
+        } else {
+          this.success.set(
+            'Inspection approved. The job is ready to be marked complete from the job page.',
+          );
+        }
+      } else {
+        this.success.set(approved ? 'Inspection approved' : 'Inspection returned to engineer');
+      }
       this.selected.set(undefined);
       await this.load();
     });

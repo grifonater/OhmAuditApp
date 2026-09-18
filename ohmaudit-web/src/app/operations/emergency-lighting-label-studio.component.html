@@ -11,8 +11,11 @@
     </div>
     <div class="header-actions">
       <button
+        oaAsyncButton
         class="button button-secondary"
         type="button"
+        [oaAsyncPending]="saving()"
+        [oaAsyncError]="error()"
         (click)="saveSettings()"
         [disabled]="saving() || settingsForm.invalid"
       >

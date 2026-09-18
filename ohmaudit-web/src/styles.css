@@ -337,6 +337,62 @@ oa-rams-workspace .notice {
     animation-duration: 1ms;
   }
 }
+
+.oa-async-button::before {
+  width: 0;
+  height: 1em;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  color: currentColor;
+  font-size: 0.95em;
+  font-weight: 900;
+  line-height: 1;
+  transition:
+    width 160ms ease,
+    margin-right 160ms ease;
+}
+
+.oa-async-button.oa-async-loading::before,
+.oa-async-button.oa-async-success::before,
+.oa-async-button.oa-async-error::before {
+  width: 1em;
+  margin-right: 0.38em;
+}
+
+.oa-async-button.oa-async-loading::before {
+  content: '';
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: oa-button-spin 650ms linear infinite;
+}
+
+.oa-async-button.oa-async-success::before {
+  content: '✓';
+}
+
+.oa-async-button.oa-async-error::before {
+  content: '×';
+}
+
+@keyframes oa-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oa-async-button::before {
+    transition: none;
+  }
+
+  .oa-async-button.oa-async-loading::before {
+    animation-duration: 1.4s;
+  }
+}
 oa-job-overview .job-page:not(:has(.job-hero)) > .floating-error,
 oa-rams-workspace .rams-page:not(:has(.rams-hero)) > .floating-error {
   animation: none;

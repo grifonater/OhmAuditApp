@@ -9,10 +9,11 @@ import {
   type EmergencyLightingInspectionContext,
 } from '../core/api.service';
 import { compressPhoto } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-emergency-lighting-inspection',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, AsyncButtonDirective],
   templateUrl: './emergency-lighting-inspection.component.html',
   styleUrls: ['./operations.css', './emergency-lighting.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

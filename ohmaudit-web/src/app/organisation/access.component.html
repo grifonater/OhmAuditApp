@@ -114,7 +114,14 @@
               }
             </select></label
           >
-          <button class="button primary" type="submit" [disabled]="inviteForm.invalid || saving()">
+          <button
+            class="button primary"
+            type="submit"
+            oaAsyncButton
+            [oaAsyncPending]="saving()"
+            [oaAsyncError]="error()"
+            [disabled]="inviteForm.invalid || saving()"
+          >
             {{ saving() ? 'Creating invitation…' : 'Create invitation' }}
           </button>
           @if (inviteUrl()) {
@@ -255,6 +262,9 @@
               ><button
                 class="button primary"
                 type="submit"
+                oaAsyncButton
+                [oaAsyncPending]="saving()"
+                [oaAsyncError]="error()"
                 [disabled]="roleForm.invalid || saving()"
               >
                 {{ saving() ? 'Saving…' : 'Save role' }}

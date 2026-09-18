@@ -18,10 +18,11 @@ import {
   type SiteSummary,
 } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-portfolio',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [AsyncButtonDirective, ReactiveFormsModule, RouterLink],
   templateUrl: './portfolio.component.html',
   styleUrl: './portfolio.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

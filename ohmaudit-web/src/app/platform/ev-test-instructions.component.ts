@@ -7,6 +7,7 @@ import {
   type EvTestInstructionSet,
   type EvTestStep,
 } from '../core/api.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 const EV_STEP_LABELS: Record<EvTestStep, string> = {
   unit: 'Confirm the unit',
@@ -29,7 +30,7 @@ const MAX_VIDEO_BYTES = 50_000_000;
 
 @Component({
   selector: 'oa-ev-test-instructions',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, AsyncButtonDirective],
   templateUrl: './ev-test-instructions.component.html',
   styleUrl: './ev-test-instructions.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

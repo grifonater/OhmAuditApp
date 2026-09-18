@@ -77,7 +77,14 @@
         <label class="field"
           >Internal notes<textarea formControlName="internalNotes"></textarea>
         </label>
-        <button class="button primary" type="submit" [disabled]="busy() || customerForm.invalid">
+        <button
+          class="button primary"
+          type="submit"
+          oaAsyncButton
+          [oaAsyncPending]="busy()"
+          [oaAsyncError]="error()"
+          [disabled]="busy() || customerForm.invalid"
+        >
           {{ busy() ? 'Creating…' : 'Create client' }}
         </button>
       </form>

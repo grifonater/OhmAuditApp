@@ -457,8 +457,11 @@
                   >
                   <div class="form-actions full">
                     <button
+                      oaAsyncButton
                       class="button primary touch-button"
                       type="submit"
+                      [oaAsyncPending]="busy()"
+                      [oaAsyncError]="error()"
                       [disabled]="busy() || newChargerForm.invalid"
                     >
                       @if (busy()) {
@@ -745,8 +748,11 @@
                 <small>Changes are sent only when you press Save job findings.</small>
               </span>
               <button
+                oaAsyncButton
                 class="button primary touch-button"
                 type="button"
+                [oaAsyncPending]="visitFindingsSaving()"
+                [oaAsyncError]="error()"
                 [disabled]="visitFindings.invalid || visitFindingsSaving()"
                 (click)="saveVisitFindings()"
               >
@@ -1656,8 +1662,11 @@
               }
               @if (!isEvTask()) {
                 <button
+                  oaAsyncButton
                   class="button primary touch-button submit-inspection"
                   type="submit"
+                  [oaAsyncPending]="busy()"
+                  [oaAsyncError]="error()"
                   [disabled]="
                     busy() || form.controls.signerName.invalid || !evReady() || findings.invalid
                   "
@@ -1698,8 +1707,11 @@
                 </button>
               } @else {
                 <button
+                  oaAsyncButton
                   class="button primary touch-button submit-inspection"
                   type="submit"
+                  [oaAsyncPending]="busy()"
+                  [oaAsyncError]="error()"
                   [disabled]="
                     busy() || form.controls.signerName.invalid || !evReady() || findings.invalid
                   "

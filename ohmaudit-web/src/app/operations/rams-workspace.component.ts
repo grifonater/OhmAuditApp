@@ -24,6 +24,7 @@ import {
   resolveRamsRecommendations,
 } from '../core/rams-library';
 import { ramsPdfFileName } from '../core/rams-routes';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
 import { RiskMatrixComponent } from '../shared/risk-matrix.component';
 
@@ -44,7 +45,7 @@ type SupportingReferenceList =
 
 @Component({
   selector: 'oa-rams-workspace',
-  imports: [RouterLink, RamsReadOnlyComponent, RiskMatrixComponent],
+  imports: [RouterLink, RamsReadOnlyComponent, RiskMatrixComponent, AsyncButtonDirective],
   templateUrl: './rams-workspace.component.html',
   styleUrls: ['./operations.css', './rams-workspace.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

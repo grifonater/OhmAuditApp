@@ -69,6 +69,9 @@
             <button
               class="button primary"
               type="button"
+              oaAsyncButton
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
               [disabled]="busy()"
               (click)="createSuggestedSchedules(group)"
             >
@@ -114,7 +117,14 @@
           <div class="form-actions full">
             <button class="button secondary" type="button" (click)="editingSite.set(false)">
               Cancel</button
-            ><button class="button primary" type="submit" [disabled]="busy() || siteForm.invalid">
+            ><button
+              class="button primary"
+              type="submit"
+              oaAsyncButton
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              [disabled]="busy() || siteForm.invalid"
+            >
               Save site
             </button>
           </div>
@@ -363,6 +373,9 @@
                 ><button
                   class="button primary"
                   type="submit"
+                  oaAsyncButton
+                  [oaAsyncPending]="busy()"
+                  [oaAsyncError]="error()"
                   [disabled]="busy() || assetForm.invalid"
                 >
                   {{ editingAssetId() ? 'Save asset' : 'Create asset' }}
@@ -583,6 +596,9 @@
                   ><button
                     class="button primary"
                     type="submit"
+                    oaAsyncButton
+                    [oaAsyncPending]="busy()"
+                    [oaAsyncError]="error()"
                     [disabled]="busy() || duplicateForm.invalid"
                   >
                     Create duplicate

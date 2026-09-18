@@ -163,7 +163,14 @@
           <div class="form-actions full">
             <button class="button secondary" type="button" (click)="editing.set(false)">
               Cancel</button
-            ><button class="button primary" type="submit" [disabled]="busy() || clientForm.invalid">
+            ><button
+              class="button primary"
+              type="submit"
+              oaAsyncButton
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              [disabled]="busy() || clientForm.invalid"
+            >
               Save changes
             </button>
           </div>
@@ -407,7 +414,14 @@
                 >Access instructions<textarea
                   formControlName="accessInstructions"
                 ></textarea></label
-              ><button class="button primary" type="submit" [disabled]="busy() || siteForm.invalid">
+              ><button
+                class="button primary"
+                type="submit"
+                oaAsyncButton
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
+                [disabled]="busy() || siteForm.invalid"
+              >
                 Create site
               </button>
             </form>

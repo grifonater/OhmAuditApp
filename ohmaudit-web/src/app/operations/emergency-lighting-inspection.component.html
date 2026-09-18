@@ -92,8 +92,11 @@
             <button class="button ghost" type="button" (click)="addingFitting.set(false)">
               Cancel</button
             ><button
+              oaAsyncButton
               class="button primary"
               type="submit"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
               [disabled]="busy() || fittingForm.invalid"
             >
               Add fitting

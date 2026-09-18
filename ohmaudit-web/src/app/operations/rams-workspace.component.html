@@ -9,7 +9,15 @@
           <strong>Edit template content</strong>
         </nav>
         <div class="toolbar-actions">
-          <button class="button primary" type="button" [disabled]="busy()" (click)="save()">
+          <button
+            oaAsyncButton
+            class="button primary"
+            type="button"
+            [oaAsyncPending]="busy()"
+            [oaAsyncError]="error()"
+            [disabled]="busy()"
+            (click)="save()"
+          >
             Save template
           </button>
         </div>
@@ -45,7 +53,15 @@
             {{ pdfActionLabel() }}
           </button>
           @if (editable()) {
-            <button class="button secondary" type="button" [disabled]="busy()" (click)="save()">
+            <button
+              oaAsyncButton
+              class="button secondary"
+              type="button"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              [disabled]="busy()"
+              (click)="save()"
+            >
               Save draft
             </button>
             <button
@@ -1913,7 +1929,15 @@
             }
           </div>
           @if (templateMode()) {
-            <button class="button primary" type="button" [disabled]="busy()" (click)="save()">
+            <button
+              oaAsyncButton
+              class="button primary"
+              type="button"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              [disabled]="busy()"
+              (click)="save()"
+            >
               Save template
             </button>
           } @else if (activeTab() === 'review') {
@@ -1929,8 +1953,11 @@
             }
           } @else {
             <button
+              oaAsyncButton
               class="button primary"
               type="button"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
               [disabled]="busy()"
               (click)="saveAndContinue()"
             >

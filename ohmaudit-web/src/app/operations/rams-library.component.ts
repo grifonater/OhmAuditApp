@@ -18,6 +18,7 @@ import {
   ramsRiskClass,
   ramsRiskScore,
 } from '../core/rams-library';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import { RiskMatrixComponent } from '../shared/risk-matrix.component';
 
 type LibraryTab = 'all' | 'templates' | 'methods' | 'hazards' | 'requirements';
@@ -41,7 +42,7 @@ type HazardEdit = { name: string; description: string; isDefault: boolean } & Ha
 
 @Component({
   selector: 'oa-rams-library',
-  imports: [RouterLink, RiskMatrixComponent],
+  imports: [RouterLink, RiskMatrixComponent, AsyncButtonDirective],
   templateUrl: './rams-library.component.html',
   styleUrls: ['./operations.css', './rams-library.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

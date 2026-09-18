@@ -440,6 +440,12 @@ export class VisitService {
       });
       if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
       this.rejectArchived(visit.archivedAt);
+      if (!['DRAFT', 'SCHEDULED', 'IN_PROGRESS'].includes(visit.status))
+        throw new DomainError(
+          'VISIT_TASK_ADD_BLOCKED',
+          'Tasks cannot be added after a job has been submitted, completed, or cancelled.',
+          409,
+        );
 
       const inputKeys = input.map((task) => `${task.assetId ?? 'site'}:${task.moduleKey}`);
       if (new Set(inputKeys).size !== inputKeys.length)
@@ -624,6 +630,73 @@ export class VisitService {
         },
       });
       return visit;
+    });
+  }
+
+  async complete(
+    organisationId: string,
+    visitId: string,
+    actorUserId: string,
+    correlationId: string,
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      const visit = await transaction.visit.findFirst({
+        where: { id: visitId, organisationId },
+        include: { tasks: { select: { id: true, status: true } } },
+      });
+      if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+      this.rejectArchived(visit.archivedAt);
+      if (visit.status === 'COMPLETED') return visit;
+      if (visit.status !== 'SUBMITTED')
+        throw new DomainError(
+          'VISIT_NOT_READY_FOR_COMPLETION',
+          'Only a submitted job can be marked complete.',
+          409,
+        );
+      if (
+        visit.tasks.length === 0 ||
+        visit.tasks.some(({ status }) => status !== 'COMPLETED' && status !== 'CANCELLED')
+      )
+        throw new DomainError(
+          'VISIT_NOT_READY_FOR_COMPLETION',
+          'All inspections must be completed or cancelled before the job can be marked complete.',
+          409,
+        );
+      const pendingAssetChanges = await transaction.proposedAssetChange.count({
+        where: {
+          organisationId,
+          status: 'PENDING',
+          inspection: { visitId },
+        },
+      });
+      if (pendingAssetChanges > 0)
+        throw new DomainError(
+          'VISIT_ASSET_CHANGES_PENDING',
+          'Review every pending asset change before marking the job complete.',
+          409,
+        );
+
+      const completedAt = new Date();
+      const completed = await transaction.visit.update({
+        where: { id: visitId },
+        data: { status: 'COMPLETED', completedAt },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          organisationId,
+          actorUserId,
+          correlationId,
+          eventType: 'VisitCompleted',
+          entityType: 'Visit',
+          entityId: visitId,
+          data: { completedAt: completedAt.toISOString(), taskCount: visit.tasks.length },
+        },
+      });
+      await transaction.guestAccessToken.updateMany({
+        where: { visitId, revokedAt: null, expiresAt: { gt: completedAt } },
+        data: { revokedAt: completedAt },
+      });
+      return completed;
     });
   }
 

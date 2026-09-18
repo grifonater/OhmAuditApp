@@ -3,6 +3,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, type AssetSummary, type EvChargePoint } from '../core/api.service';
 import { compressPhoto } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import {
   connectorSupplyIds,
   isSupportedImageMimeType,
@@ -17,7 +18,7 @@ type EvAssetDetail = AssetSummary & {
 
 @Component({
   selector: 'oa-ev-asset',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, AsyncButtonDirective],
   templateUrl: './ev-asset.component.html',
   styleUrls: ['./operations.css', './ev-asset.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

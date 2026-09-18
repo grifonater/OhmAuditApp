@@ -100,7 +100,14 @@
             /></label>
           </div>
           <div class="form-actions">
-            <button class="button primary" type="submit" [disabled]="profileForm.invalid">
+            <button
+              class="button primary"
+              type="submit"
+              oaAsyncButton
+              [oaAsyncPending]="saving()"
+              [oaAsyncError]="error()"
+              [disabled]="profileForm.invalid"
+            >
               Save and continue
             </button>
           </div>
@@ -168,7 +175,15 @@
             >
           </div>
           <div class="form-actions">
-            <button class="button primary" type="submit">Save branding</button>
+            <button
+              class="button primary"
+              type="submit"
+              oaAsyncButton
+              [oaAsyncPending]="saving()"
+              [oaAsyncError]="error()"
+            >
+              Save branding
+            </button>
           </div>
         </form>
       }
@@ -189,7 +204,14 @@
             >Scheme<input formControlName="scheme" placeholder="e.g. NICEIC" /></label
           ><label class="field"
             >Registration number<input formControlName="registrationNumber" /></label
-          ><button class="button primary" type="submit" [disabled]="accreditationForm.invalid">
+          ><button
+            class="button primary"
+            type="submit"
+            oaAsyncButton
+            [oaAsyncPending]="saving()"
+            [oaAsyncError]="error()"
+            [disabled]="accreditationForm.invalid"
+          >
             Add accreditation
           </button>
         </form>
@@ -236,7 +258,14 @@
               <option value="office-administrator">Office Administrator</option>
               <option value="read-only">Read Only</option>
             </select></label
-          ><button class="button primary" type="submit" [disabled]="invitationForm.invalid">
+          ><button
+            class="button primary"
+            type="submit"
+            oaAsyncButton
+            [oaAsyncPending]="saving()"
+            [oaAsyncError]="error()"
+            [disabled]="invitationForm.invalid"
+          >
             Create invitation
           </button>
         </form>

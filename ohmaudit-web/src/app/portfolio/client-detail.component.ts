@@ -12,10 +12,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, type CustomerDetail, type ReportSummary } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressLogo } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-client-detail',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [AsyncButtonDirective, ReactiveFormsModule, RouterLink],
   templateUrl: './client-detail.component.html',
   styleUrl: './client-detail.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

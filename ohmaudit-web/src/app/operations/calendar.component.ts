@@ -15,10 +15,11 @@ import {
   type ScheduleOccurrence,
   type SiteSummary,
 } from '../core/api.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-calendar',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, AsyncButtonDirective],
   templateUrl: './calendar.component.html',
   styleUrl: './operations.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

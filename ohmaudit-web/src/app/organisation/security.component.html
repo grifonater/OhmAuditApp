@@ -109,6 +109,9 @@
           <button
             class="button secondary security-action"
             type="submit"
+            oaAsyncButton
+            [oaAsyncPending]="notificationSaving()"
+            [oaAsyncError]="error()"
             [disabled]="notificationForm.invalid"
           >
             Save notification preferences

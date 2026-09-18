@@ -12,6 +12,7 @@ import {
   type EmergencyLightingLocation,
 } from '../core/api.service';
 import { compressPhoto } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import {
   emergencyLightingFittingPath,
   emergencyLightingLabelStudioPath,
@@ -32,7 +33,7 @@ type FittingFormValue = {
 
 @Component({
   selector: 'oa-emergency-lighting-asset',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, AsyncButtonDirective],
   templateUrl: './emergency-lighting-asset.component.html',
   styleUrls: ['./operations.css', './emergency-lighting.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

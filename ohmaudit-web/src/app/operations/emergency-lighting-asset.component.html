@@ -208,7 +208,14 @@
           <label class="field full">Notes<textarea formControlName="notes"></textarea></label>
           <footer class="form-actions full">
             <button class="button ghost" type="button" (click)="closeEditor()">Cancel</button>
-            <button class="button primary" type="submit" [disabled]="busy() || fittingForm.invalid">
+            <button
+              oaAsyncButton
+              class="button primary"
+              type="submit"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              [disabled]="busy() || fittingForm.invalid"
+            >
               {{ busy() ? 'Saving...' : 'Save fitting' }}
             </button>
           </footer>
@@ -547,7 +554,14 @@
                 aria-label="New location"
                 placeholder="New room or area"
                 [formControl]="locationForm"
-              /><button class="button primary compact" type="button" (click)="addLocation()">
+              /><button
+                oaAsyncButton
+                class="button primary compact"
+                type="button"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
+                (click)="addLocation()"
+              >
                 Add room
               </button>
             </div>
@@ -589,7 +603,14 @@
                 aria-label="New group"
                 placeholder="New test group"
                 [formControl]="groupForm"
-              /><button class="button primary compact" type="button" (click)="addGroup()">
+              /><button
+                oaAsyncButton
+                class="button primary compact"
+                type="button"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
+                (click)="addGroup()"
+              >
                 Add group
               </button>
             </div>
@@ -644,7 +665,15 @@
                   <option [value]="item.id">{{ item.name }}</option>
                 }
               </select>
-              <button class="button primary compact" type="submit">Add keyswitch</button>
+              <button
+                oaAsyncButton
+                class="button primary compact"
+                type="submit"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
+              >
+                Add keyswitch
+              </button>
             </form>
           </section>
 
@@ -673,7 +702,14 @@
                 aria-label="New fitting type"
                 placeholder="New fitting type"
                 [formControl]="fittingTypeForm"
-              /><button class="button primary compact" type="button" (click)="addFittingType()">
+              /><button
+                oaAsyncButton
+                class="button primary compact"
+                type="button"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
+                (click)="addFittingType()"
+              >
                 Add type
               </button>
             </div>
@@ -732,7 +768,15 @@
                 placeholder="Description"
                 formControlName="description"
               />
-              <button class="button primary compact" type="submit">Add device</button>
+              <button
+                oaAsyncButton
+                class="button primary compact"
+                type="submit"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
+              >
+                Add device
+              </button>
             </form>
           </section>
         </div>

@@ -23,7 +23,14 @@
           </span>
         </div>
         <div class="fitting-header-actions">
-          <button class="button primary" type="submit" [disabled]="busy() || fittingForm.invalid">
+          <button
+            oaAsyncButton
+            class="button primary"
+            type="submit"
+            [oaAsyncPending]="busy()"
+            [oaAsyncError]="error()"
+            [disabled]="busy() || fittingForm.invalid"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 3h13l3 3v15H4V3Zm2 2v14h12V7l-2-2H6Zm2 0h6v5H8V5Zm1 9h6v4H9v-4Z" />
             </svg>

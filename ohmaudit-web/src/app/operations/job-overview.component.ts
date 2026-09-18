@@ -21,11 +21,13 @@ import {
   type VisitTask,
 } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import {
   buildVisitTaskInputs,
   eligibleTaskAssets,
   type InspectionModuleKey,
 } from './visit-task-helpers';
+import { visitReadyForCompletion } from './visit-completion';
 
 type JobTab = 'overview' | 'rams' | 'inspections' | 'assets' | 'progress' | 'documents';
 
@@ -34,6 +36,7 @@ const EVENT_LABELS: Record<string, string> = {
   VisitUpdated: 'Job details updated',
   VisitTasksAdded: 'Inspection tasks added',
   VisitAssetRemoved: 'Asset removed from job',
+  VisitCompleted: 'Job completed',
   VisitArchived: 'Job archived',
   VisitCertificatesIssued: 'Certificates issued',
   InspectionSubmitted: 'Inspection submitted',
@@ -50,7 +53,7 @@ const EVENT_LABELS: Record<string, string> = {
 
 @Component({
   selector: 'oa-job-overview',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, AsyncButtonDirective],
   templateUrl: './job-overview.component.html',
   styleUrls: ['./operations.css', './job-overview.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -184,6 +187,9 @@ export class JobOverviewComponent {
   protected readonly completedTaskCount = computed(
     () => this.job()?.tasks.filter((task) => task.status === 'COMPLETED').length ?? 0,
   );
+  protected readonly canCompleteJob = computed(() => {
+    return this.canEdit() && visitReadyForCompletion(this.job());
+  });
   protected readonly progressEvents = computed(() =>
     this.timelineEvents().map((event) => ({
       event,
@@ -343,6 +349,21 @@ export class JobOverviewComponent {
     await this.run(async () => {
       await this.api.archiveVisit(this.organisationId, this.visitId);
       await this.router.navigate(['/app/org', this.organisationId, 'visits']);
+    });
+  }
+
+  protected async completeJob(): Promise<void> {
+    if (
+      !this.canCompleteJob() ||
+      !window.confirm(
+        'Mark this job as complete? All inspection work is finished and the completion will be recorded in the audit trail.',
+      )
+    )
+      return;
+    await this.run(async () => {
+      await this.api.completeVisit(this.organisationId, this.visitId);
+      await this.loadJob();
+      this.notice.set('Job marked complete.');
     });
   }
 

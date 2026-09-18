@@ -7,10 +7,11 @@ import {
   type CapabilityDefinition,
   type OrganisationRole,
 } from '../core/api.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-access',
-  imports: [ReactiveFormsModule],
+  imports: [AsyncButtonDirective, ReactiveFormsModule],
   templateUrl: './access.component.html',
   styleUrl: './access.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

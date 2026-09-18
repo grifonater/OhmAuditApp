@@ -65,7 +65,14 @@
             formControlName="notificationLeadDays"
         /></label>
         <div class="form-actions full">
-          <button class="button primary" type="submit" [disabled]="busy() || scheduleForm.invalid">
+          <button
+            oaAsyncButton
+            class="button primary"
+            type="submit"
+            [oaAsyncPending]="busy()"
+            [oaAsyncError]="error()"
+            [disabled]="busy() || scheduleForm.invalid"
+          >
             Create schedule
           </button>
         </div>

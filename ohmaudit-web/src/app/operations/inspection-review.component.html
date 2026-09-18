@@ -52,370 +52,883 @@
     <p class="review-message success" role="status">{{ success() }}</p>
   }
 
-  <section class="review-layout">
-    <aside class="unit-panel">
-      <div class="unit-panel-heading">
-        <div>
-          <p class="eyebrow">Inspection units</p>
-          <h2>Chargers</h2>
-        </div>
-        <span>{{ filteredInspections().length }} shown</span>
-      </div>
-      <label class="unit-search">
-        <span class="sr-only">Search chargers</span>
-        <input
-          type="search"
-          placeholder="Search reference, make or serial…"
-          [value]="unitSearch()"
-          (input)="setUnitSearch($event)"
-        />
-      </label>
-      <div class="unit-list">
-        @for (item of filteredInspections(); track item.id) {
-          <button
-            type="button"
-            class="unit-card"
-            [class.selected]="selectedId() === item.id"
-            [class.unit-fail]="result(item).toUpperCase() === 'FAIL'"
-            (click)="selectInspection(item.id)"
-          >
-            <span class="unit-index">{{ $index + 1 }}</span>
-            <span class="unit-copy">
-              <strong>{{
-                item.asset?.assetReference || item.asset?.displayName || item.inspectionType
-              }}</strong>
-              <small
-                >{{ item.asset?.manufacturer || 'Make not recorded' }}
-                {{ item.asset?.model || '' }}</small
-              >
-              <span>
-                <b [class]="resultClass(result(item))">{{ result(item) }}</b>
-                @if (item.defects.length) {
-                  <em>{{ item.defects.length }} fault{{ item.defects.length === 1 ? '' : 's' }}</em>
-                }
-                @if (pendingAssetChangeCount(item) > 0) {
-                  <em class="changed">{{ pendingAssetChangeCount(item) }} update pending</em>
-                }
-              </span>
-            </span>
-            <span class="unit-status" [class.approved]="item.status === 'APPROVED'">{{
-              item.status === 'UNDER_REVIEW' ? 'REVIEWING' : item.status
-            }}</span>
-          </button>
-        } @empty {
-          <div class="unit-empty">No chargers match this search.</div>
-        }
-      </div>
-    </aside>
+  <nav class="workspace-tabs" aria-label="Job review areas">
+    <button
+      type="button"
+      [class.active]="activeWorkspace() === 'inspections'"
+      (click)="setWorkspace('inspections')"
+    >
+      Inspections
+      <span>{{ inspections().length }}</span>
+    </button>
+    @if (visitId()) {
+      <button
+        type="button"
+        [class.active]="activeWorkspace() === 'findings'"
+        (click)="setWorkspace('findings')"
+      >
+        Job findings
+      </button>
+    }
+  </nav>
 
-    <section class="review-canvas">
-      @if (loadingDetail()) {
-        <div class="detail-loading" role="status">
-          <span class="spinner"></span>
-          <strong>Loading inspection details…</strong>
+  @if (activeWorkspace() === 'findings' && visitId(); as findingsVisitId) {
+    <section class="job-findings-workspace">
+      <oa-visit-findings-editor [organisationId]="organisationId" [visitId]="findingsVisitId" />
+    </section>
+  } @else {
+    <section class="review-layout">
+      <aside class="unit-panel">
+        <div class="unit-panel-heading">
+          <div>
+            <p class="eyebrow">Inspection units</p>
+            <h2>Chargers</h2>
+          </div>
+          <span>{{ filteredInspections().length }} shown</span>
         </div>
-      } @else if (inspection(); as item) {
-        <header class="unit-hero">
-          <div class="unit-title">
-            <span class="asset-reference">{{ item.asset?.assetReference || item.site.name }}</span>
-            <h2>
-              {{
-                item.asset?.displayName ||
-                  (item.moduleKey === 'thermal-imaging'
-                    ? 'Thermal imaging survey'
-                    : item.inspectionType)
-              }}
-            </h2>
-            @if (item.moduleKey === 'thermal-imaging') {
-              <p>
-                {{ thermalTargets().length }} target items ·
-                {{ item.evidenceMedia?.length || 0 }} images
-              </p>
-            } @else {
-              <p>
-                {{ item.asset?.manufacturer || 'Make not recorded' }}
-                {{ item.asset?.model || '' }}
-                @if (item.asset?.serialNumber) {
-                  · Serial {{ item.asset.serialNumber }}
-                }
-              </p>
-            }
-          </div>
-          <div class="unit-hero-actions">
-            @if (item.status === 'APPROVED') {
-              <div class="report-metadata">
-                <label
-                  ><span>Job reference</span>
-                  <input
-                    type="text"
-                    placeholder="Defaults to the job reference"
-                    [value]="reportReference()"
-                    (input)="setReportReference($event)"
-                    [readonly]="busy()"
-                  />
-                </label>
-                <label
-                  ><span>Overall outcome (optional)</span>
-                  <textarea
-                    rows="5"
-                    maxlength="4000"
-                    placeholder="Summarise the condition of the installation and recommended next steps…"
-                    [value]="overallOutcome()"
-                    (input)="setOverallOutcome($event)"
-                    [readonly]="busy()"
-                  ></textarea>
-                </label>
-              </div>
-              @if (item.moduleKey === 'thermal-imaging') {
-                <button
-                  class="button"
-                  type="button"
-                  [disabled]="busy() || !canIssueThermalReports()"
-                  (click)="previewThermalReport()"
-                >
-                  Preview A4 report
-                </button>
-              }
-              <button
-                class="button primary"
-                type="button"
-                [disabled]="busy() || (!canIssueCertificates() && !canIssueThermalReports())"
-                (click)="downloadCertificate()"
-              >
-                ↓
-                {{
-                  item.moduleKey === 'thermal-imaging'
-                    ? 'Download report PDF'
-                    : 'Download certificate'
-                }}
-              </button>
-            }
-            <div class="unit-result" [class]="resultClass(result(item))">
-              <small>Engineer result</small>
-              <strong>{{ result(item) }}</strong>
-              <span>Revision {{ item.currentRevisionNumber }}</span>
-            </div>
-          </div>
-        </header>
-
-        <nav class="review-tabs" aria-label="Inspection review sections">
-          <button
-            type="button"
-            [class.active]="activeSection() === 'overview'"
-            (click)="setSection('overview')"
-          >
-            Overview
-          </button>
-          <button
-            type="button"
-            [class.active]="activeSection() === 'tests'"
-            (click)="setSection('tests')"
-          >
-            {{ item.moduleKey === 'thermal-imaging' ? 'Target items' : 'Test results' }}
-          </button>
-          <button
-            type="button"
-            [class.active]="activeSection() === 'evidence'"
-            (click)="setSection('evidence')"
-          >
-            Evidence
-            @if ((item.evidenceMedia?.length || 0) > 0) {
-              <span>{{ item.evidenceMedia?.length }}</span>
-            }
-          </button>
-          <button
-            type="button"
-            [class.active]="activeSection() === 'updates'"
-            [class.attention]="pendingAssetChangeCount(item) > 0"
-            (click)="setSection('updates')"
-          >
-            Asset updates
-            @if (pendingAssetChangeCount(item) > 0) {
-              <span>{{ pendingAssetChangeCount(item) }}</span>
-            }
-          </button>
-          <button
-            type="button"
-            [class.active]="activeSection() === 'history'"
-            (click)="setSection('history')"
-          >
-            History
-          </button>
-          @if (visitId()) {
+        <label class="unit-search">
+          <span class="sr-only">Search chargers</span>
+          <input
+            type="search"
+            placeholder="Search reference, make or serial…"
+            [value]="unitSearch()"
+            (input)="setUnitSearch($event)"
+          />
+        </label>
+        <div class="unit-list">
+          @for (item of filteredInspections(); track item.id) {
             <button
               type="button"
-              [class.active]="activeSection() === 'findings'"
-              (click)="setSection('findings')"
+              class="unit-card"
+              [class.selected]="selectedId() === item.id"
+              [class.unit-fail]="result(item).toUpperCase() === 'FAIL'"
+              (click)="selectInspection(item.id)"
             >
-              Job findings
+              <span class="unit-index">{{ $index + 1 }}</span>
+              <span class="unit-copy">
+                <strong>{{
+                  item.asset?.assetReference || item.asset?.displayName || item.inspectionType
+                }}</strong>
+                <small
+                  >{{ item.asset?.manufacturer || 'Make not recorded' }}
+                  {{ item.asset?.model || '' }}</small
+                >
+                <span>
+                  <b [class]="resultClass(result(item))">{{ result(item) }}</b>
+                  @if (item.defects.length) {
+                    <em
+                      >{{ item.defects.length }} fault{{ item.defects.length === 1 ? '' : 's' }}</em
+                    >
+                  }
+                  @if (pendingAssetChangeCount(item) > 0) {
+                    <em class="changed">{{ pendingAssetChangeCount(item) }} update pending</em>
+                  }
+                </span>
+              </span>
+              <span class="unit-status" [class.approved]="item.status === 'APPROVED'">{{
+                item.status === 'UNDER_REVIEW' ? 'REVIEWING' : item.status
+              }}</span>
             </button>
+          } @empty {
+            <div class="unit-empty">No chargers match this search.</div>
           }
-        </nav>
+        </div>
+      </aside>
 
-        <div class="review-content">
-          @if (activeSection() === 'findings' && visitId(); as findingsVisitId) {
-            <oa-visit-findings-editor
-              [organisationId]="organisationId"
-              [visitId]="findingsVisitId"
-            />
-          } @else if (activeSection() === 'overview') {
-            <section class="summary-grid">
-              <article class="review-card result-summary">
-                <div class="card-heading">
-                  <div>
-                    <p class="eyebrow">Decision summary</p>
-                    <h3>Inspection outcome</h3>
-                  </div>
-                  <span class="large-result" [class]="resultClass(result(item))">{{
-                    result(item)
-                  }}</span>
+      <section class="review-canvas">
+        @if (loadingDetail()) {
+          <div class="detail-loading" role="status">
+            <span class="spinner"></span>
+            <strong>Loading inspection details…</strong>
+          </div>
+        } @else if (inspection(); as item) {
+          <header class="unit-hero">
+            <div class="unit-title">
+              <span class="asset-reference">{{
+                item.asset?.assetReference || item.site.name
+              }}</span>
+              <h2>
+                {{
+                  item.asset?.displayName ||
+                    (item.moduleKey === 'thermal-imaging'
+                      ? 'Thermal imaging survey'
+                      : item.inspectionType)
+                }}
+              </h2>
+              @if (item.moduleKey === 'thermal-imaging') {
+                <p>
+                  {{ thermalTargets().length }} target items ·
+                  {{ item.evidenceMedia?.length || 0 }} images
+                </p>
+              } @else {
+                <p>
+                  {{ item.asset?.manufacturer || 'Make not recorded' }}
+                  {{ item.asset?.model || '' }}
+                  @if (item.asset?.serialNumber) {
+                    · Serial {{ item.asset.serialNumber }}
+                  }
+                </p>
+              }
+            </div>
+            <div class="unit-hero-actions">
+              @if (item.status === 'APPROVED') {
+                <div class="report-metadata">
+                  <label
+                    ><span>Job reference</span>
+                    <input
+                      type="text"
+                      placeholder="Defaults to the job reference"
+                      [value]="reportReference()"
+                      (input)="setReportReference($event)"
+                      [readonly]="busy()"
+                    />
+                  </label>
+                  <label
+                    ><span>Overall outcome (optional)</span>
+                    <textarea
+                      rows="5"
+                      maxlength="4000"
+                      placeholder="Summarise the condition of the installation and recommended next steps…"
+                      [value]="overallOutcome()"
+                      (input)="setOverallOutcome($event)"
+                      [readonly]="busy()"
+                    ></textarea>
+                  </label>
                 </div>
-                @if (latest()?.data?.['automaticFailureReason']; as reason) {
-                  <div class="automatic-failure">
-                    <strong>Automatic failure</strong>
-                    <span>{{ display(reason) }}</span>
-                    @for (
-                      failure of latest()?.validation?.['rcdFailureReasons'] || [];
-                      track failure
-                    ) {
-                      <small>{{ failure }}</small>
-                    }
-                  </div>
+                @if (item.moduleKey === 'thermal-imaging') {
+                  <button
+                    class="button"
+                    type="button"
+                    [disabled]="busy() || !canIssueThermalReports()"
+                    (click)="previewThermalReport()"
+                  >
+                    Preview A4 report
+                  </button>
                 }
-                <dl class="summary-list">
-                  <div>
-                    <dt>Submitted</dt>
-                    <dd>{{ format(item.submittedAt) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Engineer</dt>
-                    <dd>{{ engineerName() }}</dd>
-                  </div>
-                  <div>
-                    <dt>Inspection type</dt>
-                    <dd>{{ item.inspectionType }}</dd>
-                  </div>
-                  <div>
-                    <dt>Module</dt>
-                    <dd>{{ display(item.moduleKey) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Validation</dt>
-                    <dd>
-                      {{
-                        latest()?.validation?.['valid'] === false ? 'Warnings recorded' : 'Complete'
-                      }}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Current status</dt>
-                    <dd>{{ display(item.status) }}</dd>
-                  </div>
-                </dl>
-              </article>
+                <button
+                  class="button primary"
+                  type="button"
+                  [disabled]="busy() || (!canIssueCertificates() && !canIssueThermalReports())"
+                  (click)="downloadCertificate()"
+                >
+                  ↓
+                  {{
+                    item.moduleKey === 'thermal-imaging'
+                      ? 'Download report PDF'
+                      : 'Download certificate'
+                  }}
+                </button>
+              }
+              <div class="unit-result" [class]="resultClass(result(item))">
+                <small>Engineer result</small>
+                <strong>{{ result(item) }}</strong>
+                <span>Revision {{ item.currentRevisionNumber }}</span>
+              </div>
+            </div>
+          </header>
 
-              <article
-                class="review-card fault-summary"
-                [class.has-faults]="item.defects.length > 0"
-              >
-                <div class="card-heading">
-                  <div>
-                    <p class="eyebrow">Engineer observations</p>
-                    <h3>Faults and condition</h3>
+          <nav class="review-tabs" aria-label="Inspection review sections">
+            <button
+              type="button"
+              [class.active]="activeSection() === 'overview'"
+              (click)="setSection('overview')"
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              [class.active]="activeSection() === 'tests'"
+              (click)="setSection('tests')"
+            >
+              {{ item.moduleKey === 'thermal-imaging' ? 'Target items' : 'Test results' }}
+            </button>
+            <button
+              type="button"
+              [class.active]="activeSection() === 'evidence'"
+              (click)="setSection('evidence')"
+            >
+              Evidence
+              @if ((item.evidenceMedia?.length || 0) > 0) {
+                <span>{{ item.evidenceMedia?.length }}</span>
+              }
+            </button>
+            <button
+              type="button"
+              [class.active]="activeSection() === 'updates'"
+              [class.attention]="pendingAssetChangeCount(item) > 0"
+              (click)="setSection('updates')"
+            >
+              Asset updates
+              @if (pendingAssetChangeCount(item) > 0) {
+                <span>{{ pendingAssetChangeCount(item) }}</span>
+              }
+            </button>
+            <button
+              type="button"
+              [class.active]="activeSection() === 'history'"
+              (click)="setSection('history')"
+            >
+              History
+            </button>
+            <button
+              type="button"
+              [class.active]="activeSection() === 'faults'"
+              (click)="setSection('faults')"
+            >
+              Faults
+              @if (item.defects.length > 0) {
+                <span>{{ item.defects.length }}</span>
+              }
+            </button>
+          </nav>
+
+          <div class="review-content">
+            @if (activeSection() === 'overview') {
+              <section class="summary-grid">
+                <article class="review-card result-summary">
+                  <div class="card-heading">
+                    <div>
+                      <p class="eyebrow">Decision summary</p>
+                      <h3>Inspection outcome</h3>
+                    </div>
+                    <span class="large-result" [class]="resultClass(result(item))">{{
+                      result(item)
+                    }}</span>
                   </div>
-                  <span class="count-pill">{{ item.defects.length }}</span>
-                </div>
-                @if (item.defects.length) {
-                  <div class="fault-list">
-                    @for (defect of item.defects; track defect.id) {
-                      <article [class]="'severity-' + defect.severity.toLowerCase()">
-                        <span>{{ defect.severity }}</span>
-                        <strong>{{ defect.title }}</strong>
-                        <p>{{ defect.description || 'No additional description.' }}</p>
-                        <small>{{ display(defect.status) }}</small>
+                  @if (latest()?.data?.['automaticFailureReason']; as reason) {
+                    <div class="automatic-failure">
+                      <strong>Automatic failure</strong>
+                      <span>{{ display(reason) }}</span>
+                      @for (
+                        failure of latest()?.validation?.['rcdFailureReasons'] || [];
+                        track failure
+                      ) {
+                        <small>{{ failure }}</small>
+                      }
+                    </div>
+                  }
+                  <dl class="summary-list">
+                    <div>
+                      <dt>Submitted</dt>
+                      <dd>{{ format(item.submittedAt) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Engineer</dt>
+                      <dd>{{ engineerName() }}</dd>
+                    </div>
+                    <div>
+                      <dt>Inspection type</dt>
+                      <dd>{{ item.inspectionType }}</dd>
+                    </div>
+                    <div>
+                      <dt>Module</dt>
+                      <dd>{{ display(item.moduleKey) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Validation</dt>
+                      <dd>
+                        {{
+                          latest()?.validation?.['valid'] === false
+                            ? 'Warnings recorded'
+                            : 'Complete'
+                        }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Current status</dt>
+                      <dd>{{ display(item.status) }}</dd>
+                    </div>
+                  </dl>
+                </article>
+
+                <article
+                  class="review-card fault-summary"
+                  [class.has-faults]="item.defects.length > 0"
+                >
+                  <div class="card-heading">
+                    <div>
+                      <p class="eyebrow">Engineer observations</p>
+                      <h3>Faults and condition</h3>
+                    </div>
+                    <span class="count-pill">{{ item.defects.length }}</span>
+                  </div>
+                  @if (item.defects.length) {
+                    <div class="fault-list">
+                      @for (defect of item.defects; track defect.id) {
+                        <article [class]="'severity-' + defect.severity.toLowerCase()">
+                          <span>{{ defect.severity }}</span>
+                          <strong>{{ defect.title }}</strong>
+                          <p>{{ defect.description || 'No additional description.' }}</p>
+                          <small>{{ display(defect.status) }}</small>
+                        </article>
+                      }
+                    </div>
+                  } @else {
+                    <div class="clear-state">
+                      <strong>No faults recorded</strong
+                      ><span>The engineer did not raise a physical or electrical defect.</span>
+                    </div>
+                  }
+                  @if (latest()?.evData?.engineerObservations) {
+                    <blockquote>{{ latest()?.evData?.engineerObservations }}</blockquote>
+                  }
+                </article>
+              </section>
+
+              @if (item.moduleKey === 'thermal-imaging') {
+                <section class="review-card asset-snapshot">
+                  <div class="card-heading">
+                    <div>
+                      <p class="eyebrow">Survey context</p>
+                      <h3>Inspection details</h3>
+                    </div>
+                  </div>
+                  <dl class="detail-grid">
+                    <div>
+                      <dt>Scope</dt>
+                      <dd>{{ display(thermalDetails()['scope']) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Purpose</dt>
+                      <dd>{{ display(thermalDetails()['purpose']) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Areas inspected</dt>
+                      <dd>{{ display(thermalDetails()['areasInspected']) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Areas excluded</dt>
+                      <dd>{{ display(thermalDetails()['areasExcluded']) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Limitations</dt>
+                      <dd>{{ display(thermalDetails()['limitations']) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Load condition</dt>
+                      <dd>{{ display(thermalDetails()['loadCondition']) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Ambient temperature</dt>
+                      <dd>{{ display(thermalDetails()['ambientTemperatureC']) }} °C</dd>
+                    </div>
+                    <div>
+                      <dt>Emissivity</dt>
+                      <dd>{{ display(thermalDetails()['emissivity']) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Camera</dt>
+                      <dd>
+                        {{ display(thermalEquipment()['name']) }} ·
+                        {{ display(thermalEquipment()['manufacturer']) }}
+                        {{ display(thermalEquipment()['model']) }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Camera serial</dt>
+                      <dd>{{ display(thermalEquipment()['serialNumber']) }}</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section class="review-card thermal-review-summary">
+                  <div class="card-heading">
+                    <div>
+                      <p class="eyebrow">Survey coverage</p>
+                      <h3>Thermal target items</h3>
+                    </div>
+                    <span class="count-pill">{{ thermalTargets().length }}</span>
+                  </div>
+                  <div class="thermal-target-review-grid">
+                    @for (target of thermalTargets(); track target['id']) {
+                      <article [class.has-fault]="target['condition'] === 'FAULT'">
+                        <header>
+                          <span class="target-reference">{{ display(target['reference']) }}</span>
+                          <span
+                            [class]="
+                              target['condition'] === 'FAULT' ? 'target-fault' : 'target-clear'
+                            "
+                            >{{
+                              target['condition'] === 'FAULT' ? '⚠ Fault reported' : '✓ No issues'
+                            }}</span
+                          >
+                        </header>
+                        <h4>{{ display(target['name']) }}</h4>
+                        <p>{{ display(target['location']) }}</p>
+                        <dl>
+                          <div>
+                            <dt>Images</dt>
+                            <dd>{{ targetImageCount(target) }}</dd>
+                          </div>
+                          @if (target['maxTemperatureC'] !== null) {
+                            <div>
+                              <dt>Maximum</dt>
+                              <dd>{{ display(target['maxTemperatureC']) }} °C</dd>
+                            </div>
+                          }
+                          @if (target['deltaTemperatureC'] !== null) {
+                            <div>
+                              <dt>ΔT</dt>
+                              <dd>{{ display(target['deltaTemperatureC']) }} °C</dd>
+                            </div>
+                          }
+                        </dl>
+                        @if (target['condition'] === 'FAULT') {
+                          <div class="thermal-fault-copy">
+                            <strong>{{ display(target['issueSummary']) }}</strong>
+                            <span>{{ display(target['observations']) }}</span>
+                            <small>Recommendation: {{ display(target['recommendation']) }}</small>
+                          </div>
+                        }
                       </article>
                     }
                   </div>
-                } @else {
-                  <div class="clear-state">
-                    <strong>No faults recorded</strong
-                    ><span>The engineer did not raise a physical or electrical defect.</span>
-                  </div>
-                }
-                @if (latest()?.evData?.engineerObservations) {
-                  <blockquote>{{ latest()?.evData?.engineerObservations }}</blockquote>
-                }
-              </article>
-            </section>
+                </section>
+              }
 
-            @if (item.moduleKey === 'thermal-imaging') {
-              <section class="review-card asset-snapshot">
+              @if (item.moduleKey === 'ev-charging') {
+                <section class="review-card asset-snapshot">
+                  <div class="card-heading">
+                    <div>
+                      <p class="eyebrow">Record at time of inspection</p>
+                      <h3>Charger details</h3>
+                    </div>
+                    @if ((item.proposedAssetChanges?.length || 0) > 0) {
+                      <button class="text-button" type="button" (click)="setSection('updates')">
+                        Review highlighted changes →
+                      </button>
+                    }
+                  </div>
+                  <dl class="detail-grid">
+                    <div>
+                      <dt>Reference</dt>
+                      <dd>{{ item.asset?.assetReference || 'Not recorded' }}</dd>
+                    </div>
+                    <div>
+                      <dt>Manufacturer</dt>
+                      <dd>{{ item.asset?.manufacturer || 'Not recorded' }}</dd>
+                    </div>
+                    <div>
+                      <dt>Model</dt>
+                      <dd>{{ item.asset?.model || 'Not recorded' }}</dd>
+                    </div>
+                    <div>
+                      <dt>Serial number</dt>
+                      <dd>{{ item.asset?.serialNumber || 'Not recorded' }}</dd>
+                    </div>
+                    <div>
+                      <dt>Power output</dt>
+                      <dd>{{ display(item.asset?.evChargePoint?.maximumPowerKw) }} kW</dd>
+                    </div>
+                    <div>
+                      <dt>DC protection</dt>
+                      <dd>{{ display(item.asset?.evChargePoint?.dcRcdType) }}</dd>
+                    </div>
+                  </dl>
+                </section>
+              }
+            }
+
+            @if (activeSection() === 'faults') {
+              @if (overrideDraft(); as draft) {
+                <section class="override-banner">
+                  <div>
+                    <strong>Administrator correction mode</strong>
+                    <span
+                      >Faults, notes and linked images will be saved as a new audited revision. The
+                      engineer's original submission remains in history.</span
+                    >
+                  </div>
+                  <button class="button ghost compact" type="button" (click)="cancelOverride()">
+                    Cancel corrections
+                  </button>
+                </section>
+                <section class="review-card override-reason">
+                  <label
+                    >Reason for correction <span>Required for the audit trail</span>
+                    <textarea
+                      [value]="draft.reason"
+                      (input)="setOverrideReason($event)"
+                      placeholder="Explain what was corrected and why…"
+                    ></textarea>
+                  </label>
+                </section>
+              } @else if (canCorrect(item) && canApprove()) {
+                <section class="correction-callout">
+                  <div>
+                    <strong>Edit this inspection's faults and notes</strong>
+                    <span
+                      >Add, correct or remove faults, notes and images while retaining the original
+                      signed submission in the audit history.</span
+                    >
+                  </div>
+                  <button class="button secondary" type="button" (click)="startOverride('faults')">
+                    Edit faults and notes
+                  </button>
+                </section>
+              }
+
+              <section class="review-card">
                 <div class="card-heading">
                   <div>
-                    <p class="eyebrow">Survey context</p>
-                    <h3>Inspection details</h3>
+                    <p class="eyebrow">Inspection record</p>
+                    <h3>Notes and observations</h3>
                   </div>
                 </div>
-                <dl class="detail-grid">
-                  <div>
-                    <dt>Scope</dt>
-                    <dd>{{ display(thermalDetails()['scope']) }}</dd>
+                @if (overrideDraft(); as draft) {
+                  <div class="editable-grid">
+                    <label class="full"
+                      >Inspection notes<textarea
+                        rows="5"
+                        [value]="draft.data['notes'] || ''"
+                        (input)="setData('notes', $event)"
+                      ></textarea>
+                    </label>
+                    @if (draft.evData) {
+                      <label class="full"
+                        >Engineer observations<textarea
+                          rows="5"
+                          [value]="draft.evData.engineerObservations || ''"
+                          (input)="setObservation($event)"
+                        ></textarea>
+                      </label>
+                    }
                   </div>
-                  <div>
-                    <dt>Purpose</dt>
-                    <dd>{{ display(thermalDetails()['purpose']) }}</dd>
+                } @else {
+                  <div class="fault-notes">
+                    <article>
+                      <strong>Inspection notes</strong>
+                      <p>{{ display(latest()?.data?.['notes']) }}</p>
+                    </article>
+                    @if (latest()?.evData?.engineerObservations) {
+                      <article>
+                        <strong>Engineer observations</strong>
+                        <p>{{ latest()?.evData?.engineerObservations }}</p>
+                      </article>
+                    }
                   </div>
-                  <div>
-                    <dt>Areas inspected</dt>
-                    <dd>{{ display(thermalDetails()['areasInspected']) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Areas excluded</dt>
-                    <dd>{{ display(thermalDetails()['areasExcluded']) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Limitations</dt>
-                    <dd>{{ display(thermalDetails()['limitations']) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Load condition</dt>
-                    <dd>{{ display(thermalDetails()['loadCondition']) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Ambient temperature</dt>
-                    <dd>{{ display(thermalDetails()['ambientTemperatureC']) }} °C</dd>
-                  </div>
-                  <div>
-                    <dt>Emissivity</dt>
-                    <dd>{{ display(thermalDetails()['emissivity']) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Camera</dt>
-                    <dd>
-                      {{ display(thermalEquipment()['name']) }} ·
-                      {{ display(thermalEquipment()['manufacturer']) }}
-                      {{ display(thermalEquipment()['model']) }}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Camera serial</dt>
-                    <dd>{{ display(thermalEquipment()['serialNumber']) }}</dd>
-                  </div>
-                </dl>
+                }
               </section>
-              <section class="review-card thermal-review-summary">
+
+              <section class="test-section">
+                <div class="section-title">
+                  <div>
+                    <p class="eyebrow">Asset / inspection specific</p>
+                    <h3>Faults, advice and conditions</h3>
+                  </div>
+                  @if (overrideDraft()) {
+                    <button class="button secondary compact" type="button" (click)="addDefect()">
+                      Add item
+                    </button>
+                  } @else {
+                    <span>{{ item.defects.length }} items</span>
+                  }
+                </div>
+
+                @if (overrideDraft(); as draft) {
+                  @for (defect of draft.defects; track defect.id; let index = $index) {
+                    <article class="review-card editable defect-editor">
+                      <div class="defect-editor-heading">
+                        <strong>{{ defect.title || 'Untitled item' }}</strong>
+                        <button
+                          class="text-button danger-text"
+                          type="button"
+                          (click)="removeDefect(index)"
+                        >
+                          Remove item
+                        </button>
+                      </div>
+                      <div class="editable-grid">
+                        <label
+                          >Title<input
+                            [value]="defect.title"
+                            (input)="setDefect(index, 'title', $event)"
+                        /></label>
+                        <label
+                          >Category<select
+                            [value]="defect.category"
+                            (change)="setDefect(index, 'category', $event)"
+                          >
+                            <option>ADVICE</option>
+                            <option>NOTE</option>
+                            <option>FAULT</option>
+                            <option>CONDITION</option>
+                          </select></label
+                        >
+                        <label
+                          >Severity<select
+                            [value]="defect.severity"
+                            (change)="setDefect(index, 'severity', $event)"
+                          >
+                            <option>ADVISORY</option>
+                            <option>MINOR</option>
+                            <option>MAJOR</option>
+                            <option>DANGEROUS</option>
+                          </select></label
+                        >
+                        <label
+                          >Status<select
+                            [value]="defect.status"
+                            (change)="setDefect(index, 'status', $event)"
+                          >
+                            <option>OPEN</option>
+                            <option>ACKNOWLEDGED</option>
+                            <option>RESOLVED</option>
+                            <option>DISMISSED</option>
+                          </select></label
+                        >
+                        <label class="full"
+                          >Description<textarea
+                            rows="4"
+                            [value]="defect.description"
+                            (input)="setDefect(index, 'description', $event)"
+                          ></textarea>
+                        </label>
+                      </div>
+                      <div class="fault-image-editor">
+                        <strong>Linked images</strong>
+                        <div class="fault-image-grid">
+                          @for (media of draftMediaForDefect(draft, defect); track media.id) {
+                            <article>
+                              <img
+                                [src]="imageUrl(media.id)"
+                                [alt]="media.caption || defect.title || 'Fault evidence'"
+                                loading="lazy"
+                              />
+                              <label
+                                >Caption<input
+                                  [value]="media.caption || ''"
+                                  (input)="setDraftMediaCaption(media.id, $event)"
+                              /></label>
+                              <button
+                                class="text-button danger-text"
+                                type="button"
+                                (click)="removeDraftMedia(media.id)"
+                              >
+                                Remove image
+                              </button>
+                            </article>
+                          } @empty {
+                            <small>No images are linked to this item.</small>
+                          }
+                        </div>
+                      </div>
+                    </article>
+                  } @empty {
+                    <div class="review-card clear-state">
+                      <strong>No faults or notes recorded</strong>
+                      <span
+                        >Add an item if the inspection needs a fault, note, advice or
+                        condition.</span
+                      >
+                    </div>
+                  }
+
+                  <section class="review-card review-upload-card">
+                    <div class="card-heading">
+                      <div>
+                        <p class="eyebrow">Fault evidence</p>
+                        <h3>Add an image</h3>
+                        <p>Choose which fault, note or condition this image supports.</p>
+                      </div>
+                    </div>
+                    <div class="review-upload-fields">
+                      <label>
+                        Image description
+                        <input
+                          type="text"
+                          maxlength="500"
+                          [value]="reviewPhotoCaption()"
+                          (input)="setReviewPhotoCaption($event)"
+                        />
+                      </label>
+                      <label>
+                        Link to item
+                        <select
+                          [value]="reviewPhotoDefectId()"
+                          (change)="setReviewPhotoDefect($event)"
+                        >
+                          <option value="">General inspection evidence</option>
+                          @for (defect of draft.defects; track defect.id) {
+                            <option [value]="defect.id">
+                              {{ defect.category }} · {{ defect.title }}
+                            </option>
+                          }
+                        </select>
+                      </label>
+                      <label class="review-upload-button" [class.disabled]="busy()">
+                        {{ busy() ? 'Uploading…' : 'Choose image' }}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          [disabled]="busy()"
+                          (change)="addReviewPhoto($event)"
+                        />
+                      </label>
+                    </div>
+                  </section>
+
+                  <div class="save-corrections">
+                    <div>
+                      <strong>Ready to save?</strong>
+                      <span
+                        >This creates revision {{ item.currentRevisionNumber + 1 }} and preserves
+                        the signed source revision.</span
+                      >
+                    </div>
+                    <button
+                      oaAsyncButton
+                      class="button primary"
+                      type="button"
+                      [oaAsyncPending]="busy()"
+                      [oaAsyncError]="error()"
+                      [disabled]="busy() || draft.reason.trim().length < 3"
+                      (click)="saveOverride()"
+                    >
+                      {{ busy() ? 'Saving revision…' : 'Save faults and notes' }}
+                    </button>
+                  </div>
+                } @else {
+                  @for (defect of item.defects; track defect.id) {
+                    <article
+                      class="review-card fault-detail"
+                      [class]="'review-card fault-detail severity-' + defect.severity.toLowerCase()"
+                    >
+                      <header>
+                        <div>
+                          <span>{{ display(defect.category || 'FAULT') }}</span>
+                          <h4>{{ defect.title }}</h4>
+                        </div>
+                        <div class="fault-badges">
+                          <span>{{ display(defect.severity) }}</span>
+                          <span>{{ display(defect.status) }}</span>
+                        </div>
+                      </header>
+                      <p>{{ defect.description || 'No additional description.' }}</p>
+                      <div class="fault-image-grid readonly">
+                        @for (mediaId of defect.photoMediaIds || []; track mediaId) {
+                          @if (imageUrl(mediaId)) {
+                            <a [href]="imageUrl(mediaId)" target="_blank" rel="noopener noreferrer">
+                              <img [src]="imageUrl(mediaId)" [alt]="defect.title + ' evidence'" />
+                              <span>{{
+                                inspectionMedia(mediaId)?.caption || 'Fault evidence'
+                              }}</span>
+                            </a>
+                          }
+                        } @empty {
+                          <small>No image linked to this item.</small>
+                        }
+                      </div>
+                    </article>
+                  } @empty {
+                    <div class="review-card clear-state">
+                      <strong>No faults, advice or conditions recorded</strong>
+                      <span>This inspection has no asset-specific findings.</span>
+                    </div>
+                  }
+                }
+              </section>
+            }
+
+            @if (activeSection() === 'tests') {
+              @if (overrideDraft(); as draft) {
+                <section class="override-banner">
+                  <div>
+                    <strong>Administrator correction mode</strong>
+                    <span
+                      >Changed values will be saved as a new revision. The engineer’s original
+                      submission remains in history.</span
+                    >
+                  </div>
+                  <button class="button ghost compact" type="button" (click)="cancelOverride()">
+                    Cancel corrections
+                  </button>
+                </section>
+                <section class="review-card override-reason">
+                  <label
+                    >Reason for correction <span>Required for the audit trail</span>
+                    <textarea
+                      [value]="draft.reason"
+                      (input)="setOverrideReason($event)"
+                      placeholder="Explain what was corrected and why…"
+                    ></textarea>
+                  </label>
+                </section>
+              } @else if (canCorrect(item)) {
+                @if (canApprove()) {
+                  <section class="correction-callout">
+                    <div>
+                      <strong>Spotted a small recording mistake?</strong
+                      ><span
+                        >Correct results, readings, observations or defect classifications. Approved
+                        inspections remain approved with a new audited revision.</span
+                      >
+                    </div>
+                    <button class="button secondary" type="button" (click)="startOverride()">
+                      Correct submitted results
+                    </button>
+                  </section>
+                }
+              }
+
+              <section class="review-card">
                 <div class="card-heading">
                   <div>
-                    <p class="eyebrow">Survey coverage</p>
-                    <h3>Thermal target items</h3>
+                    <p class="eyebrow">Overall assessment</p>
+                    <h3>Result and notes</h3>
                   </div>
-                  <span class="count-pill">{{ thermalTargets().length }}</span>
                 </div>
-                <div class="thermal-target-review-grid">
-                  @for (target of thermalTargets(); track target['id']) {
-                    <article [class.has-fault]="target['condition'] === 'FAULT'">
+                @if (overrideDraft(); as draft) {
+                  <div class="editable-grid">
+                    <label
+                      >Outcome<select
+                        [value]="draft.data['outcome']"
+                        (change)="setData('outcome', $event)"
+                      >
+                        <option>PASS</option>
+                        <option>FAIL</option>
+                      </select></label
+                    >
+                  </div>
+                } @else {
+                  <dl class="detail-grid">
+                    <div>
+                      <dt>Outcome</dt>
+                      <dd>
+                        <span [class]="resultClass(result(item))">{{ result(item) }}</span>
+                      </dd>
+                    </div>
+                    @for (entry of generalEntries(); track entry[0]) {
+                      <div>
+                        <dt>{{ display(entry[0]) }}</dt>
+                        <dd>{{ display(entry[1]) }}</dd>
+                      </div>
+                    }
+                  </dl>
+                  @if (latest()?.evData?.engineerObservations) {
+                    <p class="observation">{{ latest()?.evData?.engineerObservations }}</p>
+                  }
+                }
+              </section>
+
+              @if (item.moduleKey === 'thermal-imaging') {
+                <section class="test-section">
+                  <div class="section-title">
+                    <div>
+                      <p class="eyebrow">Recorded survey items</p>
+                      <h3>Target observations</h3>
+                    </div>
+                    <span>{{ thermalTargets().length }} targets</span>
+                  </div>
+                  @for (target of thermalTargets(); track target['id']; let index = $index) {
+                    <article
+                      class="review-card thermal-target-detail"
+                      [class.has-fault]="target['condition'] === 'FAULT'"
+                    >
                       <header>
-                        <span class="target-reference">{{ display(target['reference']) }}</span>
+                        <div>
+                          <small>{{ display(target['reference']) }}</small
+                          ><strong>{{ display(target['name']) }}</strong>
+                        </div>
                         <span
                           [class]="
                             target['condition'] === 'FAULT' ? 'target-fault' : 'target-clear'
@@ -425,933 +938,688 @@
                           }}</span
                         >
                       </header>
-                      <h4>{{ display(target['name']) }}</h4>
-                      <p>{{ display(target['location']) }}</p>
-                      <dl>
+                      <dl class="detail-grid">
                         <div>
-                          <dt>Images</dt>
+                          <dt>Location</dt>
+                          <dd>{{ display(target['location']) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Evidence images</dt>
                           <dd>{{ targetImageCount(target) }}</dd>
                         </div>
-                        @if (target['maxTemperatureC'] !== null) {
-                          <div>
-                            <dt>Maximum</dt>
-                            <dd>{{ display(target['maxTemperatureC']) }} °C</dd>
-                          </div>
-                        }
-                        @if (target['deltaTemperatureC'] !== null) {
-                          <div>
-                            <dt>ΔT</dt>
-                            <dd>{{ display(target['deltaTemperatureC']) }} °C</dd>
-                          </div>
-                        }
+                        <div>
+                          <dt>Severity</dt>
+                          <dd>{{ display(target['severity']) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Maximum temperature</dt>
+                          <dd>{{ display(target['maxTemperatureC']) }} °C</dd>
+                        </div>
+                        <div>
+                          <dt>Temperature difference</dt>
+                          <dd>{{ display(target['deltaTemperatureC']) }} °C</dd>
+                        </div>
                       </dl>
                       @if (target['condition'] === 'FAULT') {
                         <div class="thermal-fault-copy">
-                          <strong>{{ display(target['issueSummary']) }}</strong>
-                          <span>{{ display(target['observations']) }}</span>
-                          <small>Recommendation: {{ display(target['recommendation']) }}</small>
+                          <strong>{{ display(target['issueSummary']) }}</strong
+                          ><span>{{ display(target['observations']) }}</span
+                          ><small>Recommendation: {{ display(target['recommendation']) }}</small>
                         </div>
                       }
                     </article>
                   }
-                </div>
-              </section>
-            }
-
-            @if (item.moduleKey === 'ev-charging') {
-              <section class="review-card asset-snapshot">
-                <div class="card-heading">
-                  <div>
-                    <p class="eyebrow">Record at time of inspection</p>
-                    <h3>Charger details</h3>
+                </section>
+              } @else {
+                <section class="test-section">
+                  <div class="section-title">
+                    <div>
+                      <p class="eyebrow">Electrical intake</p>
+                      <h3>Supply tests</h3>
+                    </div>
+                    <span>{{ supplies().length }} supplies</span>
                   </div>
-                  @if ((item.proposedAssetChanges?.length || 0) > 0) {
-                    <button class="text-button" type="button" (click)="setSection('updates')">
-                      Review highlighted changes →
-                    </button>
+                  @if (overrideDraft(); as draft) {
+                    @for (
+                      supply of overrideSupplies(draft);
+                      track supply['id'];
+                      let index = $index
+                    ) {
+                      <article class="review-card test-card editable">
+                        <header>
+                          <strong>{{ display(supply['label']) }}</strong
+                          ><span>Supply {{ index + 1 }}</span>
+                        </header>
+                        <div class="editable-grid four">
+                          <label
+                            >Name<input
+                              [value]="supply['label'] || ''"
+                              (input)="setSupply(index, 'label', $event)"
+                          /></label>
+                          <label
+                            >Protective device<select
+                              [value]="supply['protectiveDeviceType'] || ''"
+                              (change)="setSupply(index, 'protectiveDeviceType', $event)"
+                            >
+                              @if (
+                                supply['protectiveDeviceType'] &&
+                                !['MCB', 'MCCB', 'RCBO', 'HRC', 'AFDD', 'OTHER'].includes(
+                                  $any(supply['protectiveDeviceType'])
+                                )
+                              ) {
+                                <option [value]="supply['protectiveDeviceType']">
+                                  {{ supply['protectiveDeviceType'] }}
+                                </option>
+                              }
+                              <option>MCB</option>
+                              <option>MCCB</option>
+                              <option>RCBO</option>
+                              <option>HRC</option>
+                              <option>AFDD</option>
+                              <option value="OTHER">Other</option>
+                            </select></label
+                          >
+                          <label
+                            >Rating (A)<input
+                              type="number"
+                              [value]="supply['protectiveDeviceRating'] ?? ''"
+                              (input)="setSupply(index, 'protectiveDeviceRating', $event, true)"
+                          /></label>
+                          <label
+                            >Earthing<select
+                              [value]="supply['earthingArrangement'] || ''"
+                              (change)="setSupply(index, 'earthingArrangement', $event)"
+                            >
+                              <option value="TNCS">TN-C-S</option>
+                              <option value="TNS">TN-S</option>
+                              <option>TT</option>
+                              <option>IT</option>
+                            </select></label
+                          >
+                          <label
+                            >Zs (Ω)<input
+                              type="number"
+                              step="0.01"
+                              [value]="supply['zsOhms'] ?? ''"
+                              (input)="setSupply(index, 'zsOhms', $event, true)"
+                          /></label>
+                          <label
+                            >Maximum PFC (kA)<input
+                              type="number"
+                              step="0.01"
+                              [value]="supply['maximumPfcKa'] ?? ''"
+                              (input)="setSupply(index, 'maximumPfcKa', $event, true)"
+                          /></label>
+                        </div>
+                      </article>
+                    }
+                  } @else {
+                    @for (supply of supplies(); track supply['id']; let index = $index) {
+                      <article class="review-card test-card">
+                        <header>
+                          <strong>{{ display(supply['label']) }}</strong
+                          ><span>Supply {{ index + 1 }}</span>
+                        </header>
+                        <dl class="reading-grid">
+                          <div>
+                            <dt>Zs</dt>
+                            <dd>{{ display(supply['zsOhms']) }} Ω</dd>
+                          </div>
+                          <div>
+                            <dt>Maximum PFC</dt>
+                            <dd>{{ display(supply['maximumPfcKa']) }} kA</dd>
+                          </div>
+                          <div>
+                            <dt>Device</dt>
+                            <dd>{{ display(supply['protectiveDeviceType']) }}</dd>
+                          </div>
+                          <div>
+                            <dt>Rating</dt>
+                            <dd>{{ display(supply['protectiveDeviceRating']) }} A</dd>
+                          </div>
+                          <div>
+                            <dt>Earthing</dt>
+                            <dd>{{ display(supply['earthingArrangement']) }}</dd>
+                          </div>
+                          <div>
+                            <dt>Phases</dt>
+                            <dd>{{ display(supply['phaseCount']) }}</dd>
+                          </div>
+                        </dl>
+                      </article>
+                    } @empty {
+                      <div class="review-card clear-state">
+                        <strong>No supply readings recorded</strong>
+                      </div>
+                    }
                   }
-                </div>
-                <dl class="detail-grid">
-                  <div>
-                    <dt>Reference</dt>
-                    <dd>{{ item.asset?.assetReference || 'Not recorded' }}</dd>
-                  </div>
-                  <div>
-                    <dt>Manufacturer</dt>
-                    <dd>{{ item.asset?.manufacturer || 'Not recorded' }}</dd>
-                  </div>
-                  <div>
-                    <dt>Model</dt>
-                    <dd>{{ item.asset?.model || 'Not recorded' }}</dd>
-                  </div>
-                  <div>
-                    <dt>Serial number</dt>
-                    <dd>{{ item.asset?.serialNumber || 'Not recorded' }}</dd>
-                  </div>
-                  <div>
-                    <dt>Power output</dt>
-                    <dd>{{ display(item.asset?.evChargePoint?.maximumPowerKw) }} kW</dd>
-                  </div>
-                  <div>
-                    <dt>DC protection</dt>
-                    <dd>{{ display(item.asset?.evChargePoint?.dcRcdType) }}</dd>
-                  </div>
-                </dl>
-              </section>
-            }
-          }
+                </section>
 
-          @if (activeSection() === 'tests') {
-            @if (overrideDraft(); as draft) {
-              <section class="override-banner">
-                <div>
-                  <strong>Administrator correction mode</strong>
-                  <span
-                    >Changed values will be saved as a new revision. The engineer’s original
-                    submission remains in history.</span
-                  >
-                </div>
-                <button class="button ghost compact" type="button" (click)="cancelOverride()">
-                  Cancel corrections
-                </button>
-              </section>
-              <section class="review-card override-reason">
-                <label
-                  >Reason for correction <span>Required for the audit trail</span>
-                  <textarea
-                    [value]="draft.reason"
-                    (input)="setOverrideReason($event)"
-                    placeholder="Explain what was corrected and why…"
-                  ></textarea>
-                </label>
-              </section>
-            } @else if (canCorrect(item)) {
-              @if (canApprove()) {
-                <section class="correction-callout">
+                <section class="test-section">
+                  <div class="section-title">
+                    <div>
+                      <p class="eyebrow">Charge point outputs</p>
+                      <h3>Connector tests</h3>
+                    </div>
+                    <span>{{ connectors().length }} connectors</span>
+                  </div>
+                  @if (overrideDraft(); as draft) {
+                    @for (
+                      connector of overrideConnectors(draft);
+                      track connector['id'];
+                      let index = $index
+                    ) {
+                      <article class="review-card connector-card editable">
+                        <header>
+                          <strong>Connector {{ display(connector['label']) }}</strong
+                          ><span>{{ display(connector['connectorType']) }}</span>
+                        </header>
+                        <div class="editable-grid four checks">
+                          @for (check of connectorChecks; track check.key) {
+                            <label
+                              >{{ check.label
+                              }}<select
+                                [value]="connector[check.key] || 'NOT_TESTED'"
+                                (change)="setConnector(index, check.key, $event)"
+                              >
+                                <option>PASS</option>
+                                <option>FAIL</option>
+                                <option value="NOT_TESTED">Not tested</option>
+                              </select></label
+                            >
+                          }
+                        </div>
+                        <div class="editable-grid four">
+                          @for (reading of connectorReadings; track reading.key) {
+                            <label
+                              >{{ reading.label
+                              }}<input
+                                type="number"
+                                step="0.01"
+                                [value]="connector[reading.key] ?? ''"
+                                (input)="setConnector(index, reading.key, $event, true)"
+                            /></label>
+                          }
+                        </div>
+                      </article>
+                    }
+                  } @else {
+                    @for (connector of connectors(); track connector['id']; let index = $index) {
+                      <article class="review-card connector-card">
+                        <header>
+                          <strong>Connector {{ display(connector['label']) }}</strong
+                          ><span>{{ display(connector['connectorType']) }}</span>
+                        </header>
+                        <div class="check-grid">
+                          @for (check of connectorChecks; track check.key) {
+                            <span [class]="resultClass(connector[check.key])"
+                              ><small>{{ check.label }}</small
+                              ><strong>{{ display(connector[check.key]) }}</strong></span
+                            >
+                          }
+                        </div>
+                        <dl class="reading-grid rcd">
+                          <div [class.fail-reading]="readingFails(connector['rcd1x0Ms'], 300)">
+                            <dt>1× 0°</dt>
+                            <dd>{{ display(connector['rcd1x0Ms']) }} ms</dd>
+                            <small>≤300 ms</small>
+                          </div>
+                          <div [class.fail-reading]="readingFails(connector['rcd1x180Ms'], 300)">
+                            <dt>1× 180°</dt>
+                            <dd>{{ display(connector['rcd1x180Ms']) }} ms</dd>
+                            <small>≤300 ms</small>
+                          </div>
+                          <div [class.fail-reading]="readingFails(connector['rcd5x0Ms'], 40)">
+                            <dt>5× 0°</dt>
+                            <dd>{{ display(connector['rcd5x0Ms']) }} ms</dd>
+                            <small>≤40 ms</small>
+                          </div>
+                          <div [class.fail-reading]="readingFails(connector['rcd5x180Ms'], 40)">
+                            <dt>5× 180°</dt>
+                            <dd>{{ display(connector['rcd5x180Ms']) }} ms</dd>
+                            <small>≤40 ms</small>
+                          </div>
+                          <div>
+                            <dt>DC ramp 0°</dt>
+                            <dd>{{ display(connector['dcRamp0Ma']) }} mA</dd>
+                          </div>
+                          <div>
+                            <dt>DC ramp 180°</dt>
+                            <dd>{{ display(connector['dcRamp180Ma']) }} mA</dd>
+                          </div>
+                        </dl>
+                      </article>
+                    } @empty {
+                      <div class="review-card clear-state">
+                        <strong>No connector readings recorded</strong>
+                      </div>
+                    }
+                  }
+                </section>
+              }
+
+              @if (overrideDraft(); as draft) {
+                <div class="save-corrections">
                   <div>
-                    <strong>Spotted a small recording mistake?</strong
+                    <strong>Ready to save?</strong
                     ><span
-                      >Correct results, readings, observations or defect classifications. Approved
-                      inspections remain approved with a new audited revision.</span
+                      >This creates revision {{ item.currentRevisionNumber + 1 }} and recalculates
+                      electrical pass/fail rules.</span
                     >
                   </div>
-                  <button class="button secondary" type="button" (click)="startOverride()">
-                    Correct submitted results
+                  <button
+                    oaAsyncButton
+                    class="button primary"
+                    type="button"
+                    [oaAsyncPending]="busy()"
+                    [oaAsyncError]="error()"
+                    [disabled]="busy() || draft.reason.trim().length < 3"
+                    (click)="saveOverride()"
+                  >
+                    {{ busy() ? 'Saving revision…' : 'Save administrator revision' }}
                   </button>
+                </div>
+              }
+            }
+
+            @if (activeSection() === 'evidence') {
+              @if (canAddReviewPhoto(item)) {
+                <section class="review-card review-upload-card">
+                  <div class="card-heading">
+                    <div>
+                      <p class="eyebrow">Office review</p>
+                      <h3>Add a missing inspection image</h3>
+                      <p>
+                        Add general evidence, or link the image directly to an existing finding.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="review-upload-fields">
+                    <label>
+                      Image description
+                      <input
+                        type="text"
+                        maxlength="500"
+                        [value]="reviewPhotoCaption()"
+                        (input)="setReviewPhotoCaption($event)"
+                      />
+                    </label>
+                    <label>
+                      Link to finding
+                      <select
+                        [value]="reviewPhotoDefectId()"
+                        (change)="setReviewPhotoDefect($event)"
+                      >
+                        <option value="">General inspection evidence</option>
+                        @for (defect of overrideDraft()?.defects || item.defects; track defect.id) {
+                          <option [value]="defect.id">
+                            {{ defect.category || 'FAULT' }} · {{ defect.title }}
+                          </option>
+                        }
+                      </select>
+                    </label>
+                    <label class="review-upload-button" [class.disabled]="busy()">
+                      {{ busy() ? 'Uploading…' : 'Choose image' }}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        [disabled]="busy()"
+                        (change)="addReviewPhoto($event)"
+                      />
+                    </label>
+                  </div>
+                </section>
+              }
+              <section class="review-card">
+                <div class="card-heading">
+                  <div>
+                    <p class="eyebrow">Inspection uploads</p>
+                    <h3>Photographic evidence</h3>
+                  </div>
+                  <span class="count-pill">{{
+                    overrideDraft()?.media?.length || item.evidenceMedia?.length || 0
+                  }}</span>
+                </div>
+                @if ((overrideDraft()?.media?.length || item.evidenceMedia?.length || 0) > 0) {
+                  <div class="evidence-grid">
+                    @for (
+                      media of overrideDraft()?.media || item.evidenceMedia || [];
+                      track media.id
+                    ) {
+                      @if (overrideDraft(); as draft) {
+                        <article>
+                          <img
+                            [src]="imageUrl(media.id)"
+                            [alt]="media.caption || 'Inspection evidence'"
+                            loading="lazy"
+                          />
+                          <label
+                            >Caption<input
+                              [value]="media.caption || ''"
+                              (input)="setDraftMediaCaption(media.id, $event)"
+                          /></label>
+                          <label
+                            >Use as<select
+                              [value]="draftMediaOwner(draft, media.id)"
+                              (change)="setDraftMediaOwner(media.id, $event)"
+                            >
+                              <option value="">General inspection image</option>
+                              @for (defect of draft.defects; track defect.id) {
+                                <option [value]="defect.id">
+                                  {{ defect.category }} · {{ defect.title }}
+                                </option>
+                              }
+                            </select></label
+                          >
+                          <button
+                            class="text-button"
+                            type="button"
+                            (click)="removeDraftMedia(media.id)"
+                          >
+                            Remove image
+                          </button>
+                        </article>
+                      } @else {
+                        <a [href]="imageUrl(media.id)" target="_blank" rel="noopener noreferrer">
+                          <img
+                            [src]="imageUrl(media.id)"
+                            [alt]="media.caption || 'Inspection evidence'"
+                            loading="lazy"
+                          />
+                          <span
+                            ><strong>{{ media.caption || 'Inspection evidence' }}</strong
+                            ><small>{{ display(media.category) }}</small></span
+                          >
+                        </a>
+                      }
+                    }
+                  </div>
+                } @else {
+                  <div class="clear-state">
+                    <strong>No photographs uploaded</strong
+                    ><span>The engineer did not attach photographic evidence to this unit.</span>
+                  </div>
+                }
+              </section>
+              @if (item.defects.length) {
+                <section class="review-card">
+                  <div class="card-heading">
+                    <div>
+                      <p class="eyebrow">Evidence mapping</p>
+                      <h3>Photos linked to faults</h3>
+                    </div>
+                  </div>
+                  <div class="fault-evidence-list">
+                    @for (defect of item.defects; track defect.id) {
+                      <article>
+                        <div>
+                          <span>{{ defect.severity }}</span
+                          ><strong>{{ defect.title }}</strong>
+                          <p>{{ defect.description }}</p>
+                        </div>
+                        <div class="mini-gallery">
+                          @for (mediaId of defect.photoMediaIds || []; track mediaId) {
+                            @if (imageUrl(mediaId)) {
+                              <a
+                                [href]="imageUrl(mediaId)"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                ><img [src]="imageUrl(mediaId)" alt="Fault evidence"
+                              /></a>
+                            }
+                          } @empty {
+                            <small>No photo linked directly to this fault.</small>
+                          }
+                        </div>
+                      </article>
+                    }
+                  </div>
                 </section>
               }
             }
 
-            <section class="review-card">
-              <div class="card-heading">
+            @if (activeSection() === 'updates') {
+              <section class="updates-intro">
                 <div>
-                  <p class="eyebrow">Overall assessment</p>
-                  <h3>Result and notes</h3>
+                  <p class="eyebrow">Permanent asset register</p>
+                  <h3>Engineer-proposed updates</h3>
+                  <p>
+                    Choose exactly which changes should update the office record. Unticked fields
+                    retain their current value; selected fields can be corrected before applying.
+                  </p>
                 </div>
-              </div>
-              @if (overrideDraft(); as draft) {
-                <div class="editable-grid">
-                  <label
-                    >Outcome<select
-                      [value]="draft.data['outcome']"
-                      (change)="setData('outcome', $event)"
-                    >
-                      <option>PASS</option>
-                      <option>FAIL</option>
-                    </select></label
-                  >
-                  <label class="full"
-                    >General notes<textarea
-                      [value]="draft.data['notes'] || ''"
-                      (input)="setData('notes', $event)"
-                    ></textarea>
-                  </label>
-                  @if (draft.evData) {
-                    <label class="full"
-                      >Engineer observations<textarea
-                        [value]="draft.evData.engineerObservations || ''"
-                        (input)="setObservation($event)"
-                      ></textarea>
-                    </label>
-                  }
-                </div>
-              } @else {
-                <dl class="detail-grid">
-                  <div>
-                    <dt>Outcome</dt>
-                    <dd>
-                      <span [class]="resultClass(result(item))">{{ result(item) }}</span>
-                    </dd>
-                  </div>
-                  @for (entry of generalEntries(); track entry[0]) {
+                <span class="change-legend"><b></b> Engineer value</span>
+              </section>
+              @for (change of item.proposedAssetChanges || []; track change.id) {
+                <article
+                  class="review-card change-review"
+                  [class.reviewed]="change.status !== 'PENDING'"
+                >
+                  <header>
                     <div>
-                      <dt>{{ display(entry[0]) }}</dt>
-                      <dd>{{ display(entry[1]) }}</dd>
+                      <span class="change-type">{{
+                        change.proposedData['_operation'] === 'CREATE'
+                          ? 'NEW CHARGER'
+                          : 'RECORD UPDATE'
+                      }}</span>
+                      <h3>
+                        {{
+                          change.proposedData['_operation'] === 'CREATE'
+                            ? 'Add charger to the site register'
+                            : 'Review changed charger details'
+                        }}
+                      </h3>
                     </div>
-                  }
-                </dl>
-                @if (latest()?.evData?.engineerObservations) {
-                  <p class="observation">{{ latest()?.evData?.engineerObservations }}</p>
-                }
-              }
-            </section>
-
-            @if (item.moduleKey === 'thermal-imaging') {
-              <section class="test-section">
-                <div class="section-title">
-                  <div>
-                    <p class="eyebrow">Recorded survey items</p>
-                    <h3>Target observations</h3>
-                  </div>
-                  <span>{{ thermalTargets().length }} targets</span>
-                </div>
-                @for (target of thermalTargets(); track target['id']; let index = $index) {
-                  <article
-                    class="review-card thermal-target-detail"
-                    [class.has-fault]="target['condition'] === 'FAULT'"
-                  >
-                    <header>
-                      <div>
-                        <small>{{ display(target['reference']) }}</small
-                        ><strong>{{ display(target['name']) }}</strong>
-                      </div>
-                      <span
-                        [class]="target['condition'] === 'FAULT' ? 'target-fault' : 'target-clear'"
-                        >{{
-                          target['condition'] === 'FAULT' ? '⚠ Fault reported' : '✓ No issues'
-                        }}</span
-                      >
-                    </header>
-                    <dl class="detail-grid">
-                      <div>
-                        <dt>Location</dt>
-                        <dd>{{ display(target['location']) }}</dd>
-                      </div>
-                      <div>
-                        <dt>Evidence images</dt>
-                        <dd>{{ targetImageCount(target) }}</dd>
-                      </div>
-                      <div>
-                        <dt>Severity</dt>
-                        <dd>{{ display(target['severity']) }}</dd>
-                      </div>
-                      <div>
-                        <dt>Maximum temperature</dt>
-                        <dd>{{ display(target['maxTemperatureC']) }} °C</dd>
-                      </div>
-                      <div>
-                        <dt>Temperature difference</dt>
-                        <dd>{{ display(target['deltaTemperatureC']) }} °C</dd>
-                      </div>
-                    </dl>
-                    @if (target['condition'] === 'FAULT') {
-                      <div class="thermal-fault-copy">
-                        <strong>{{ display(target['issueSummary']) }}</strong
-                        ><span>{{ display(target['observations']) }}</span
-                        ><small>Recommendation: {{ display(target['recommendation']) }}</small>
-                      </div>
-                    }
-                  </article>
-                }
-              </section>
-            } @else {
-              <section class="test-section">
-                <div class="section-title">
-                  <div>
-                    <p class="eyebrow">Electrical intake</p>
-                    <h3>Supply tests</h3>
-                  </div>
-                  <span>{{ supplies().length }} supplies</span>
-                </div>
-                @if (overrideDraft(); as draft) {
-                  @for (supply of overrideSupplies(draft); track supply['id']; let index = $index) {
-                    <article class="review-card test-card editable">
-                      <header>
-                        <strong>{{ display(supply['label']) }}</strong
-                        ><span>Supply {{ index + 1 }}</span>
-                      </header>
-                      <div class="editable-grid four">
-                        <label
-                          >Name<input
-                            [value]="supply['label'] || ''"
-                            (input)="setSupply(index, 'label', $event)"
-                        /></label>
-                        <label
-                          >Protective device<select
-                            [value]="supply['protectiveDeviceType'] || ''"
-                            (change)="setSupply(index, 'protectiveDeviceType', $event)"
-                          >
-                            @if (
-                              supply['protectiveDeviceType'] &&
-                              !['MCB', 'MCCB', 'RCBO', 'HRC', 'AFDD', 'OTHER'].includes(
-                                $any(supply['protectiveDeviceType'])
-                              )
-                            ) {
-                              <option [value]="supply['protectiveDeviceType']">
-                                {{ supply['protectiveDeviceType'] }}
-                              </option>
-                            }
-                            <option>MCB</option>
-                            <option>MCCB</option>
-                            <option>RCBO</option>
-                            <option>HRC</option>
-                            <option>AFDD</option>
-                            <option value="OTHER">Other</option>
-                          </select></label
-                        >
-                        <label
-                          >Rating (A)<input
-                            type="number"
-                            [value]="supply['protectiveDeviceRating'] ?? ''"
-                            (input)="setSupply(index, 'protectiveDeviceRating', $event, true)"
-                        /></label>
-                        <label
-                          >Earthing<select
-                            [value]="supply['earthingArrangement'] || ''"
-                            (change)="setSupply(index, 'earthingArrangement', $event)"
-                          >
-                            <option value="TNCS">TN-C-S</option>
-                            <option value="TNS">TN-S</option>
-                            <option>TT</option>
-                            <option>IT</option>
-                          </select></label
-                        >
-                        <label
-                          >Zs (Ω)<input
-                            type="number"
-                            step="0.01"
-                            [value]="supply['zsOhms'] ?? ''"
-                            (input)="setSupply(index, 'zsOhms', $event, true)"
-                        /></label>
-                        <label
-                          >Maximum PFC (kA)<input
-                            type="number"
-                            step="0.01"
-                            [value]="supply['maximumPfcKa'] ?? ''"
-                            (input)="setSupply(index, 'maximumPfcKa', $event, true)"
-                        /></label>
-                      </div>
-                    </article>
-                  }
-                } @else {
-                  @for (supply of supplies(); track supply['id']; let index = $index) {
-                    <article class="review-card test-card">
-                      <header>
-                        <strong>{{ display(supply['label']) }}</strong
-                        ><span>Supply {{ index + 1 }}</span>
-                      </header>
-                      <dl class="reading-grid">
-                        <div>
-                          <dt>Zs</dt>
-                          <dd>{{ display(supply['zsOhms']) }} Ω</dd>
-                        </div>
-                        <div>
-                          <dt>Maximum PFC</dt>
-                          <dd>{{ display(supply['maximumPfcKa']) }} kA</dd>
-                        </div>
-                        <div>
-                          <dt>Device</dt>
-                          <dd>{{ display(supply['protectiveDeviceType']) }}</dd>
-                        </div>
-                        <div>
-                          <dt>Rating</dt>
-                          <dd>{{ display(supply['protectiveDeviceRating']) }} A</dd>
-                        </div>
-                        <div>
-                          <dt>Earthing</dt>
-                          <dd>{{ display(supply['earthingArrangement']) }}</dd>
-                        </div>
-                        <div>
-                          <dt>Phases</dt>
-                          <dd>{{ display(supply['phaseCount']) }}</dd>
-                        </div>
-                      </dl>
-                    </article>
-                  } @empty {
-                    <div class="review-card clear-state">
-                      <strong>No supply readings recorded</strong>
-                    </div>
-                  }
-                }
-              </section>
-
-              <section class="test-section">
-                <div class="section-title">
-                  <div>
-                    <p class="eyebrow">Charge point outputs</p>
-                    <h3>Connector tests</h3>
-                  </div>
-                  <span>{{ connectors().length }} connectors</span>
-                </div>
-                @if (overrideDraft(); as draft) {
-                  @for (
-                    connector of overrideConnectors(draft);
-                    track connector['id'];
-                    let index = $index
-                  ) {
-                    <article class="review-card connector-card editable">
-                      <header>
-                        <strong>Connector {{ display(connector['label']) }}</strong
-                        ><span>{{ display(connector['connectorType']) }}</span>
-                      </header>
-                      <div class="editable-grid four checks">
-                        @for (check of connectorChecks; track check.key) {
-                          <label
-                            >{{ check.label
-                            }}<select
-                              [value]="connector[check.key] || 'NOT_TESTED'"
-                              (change)="setConnector(index, check.key, $event)"
+                    <span class="status-badge">{{ change.status }}</span>
+                  </header>
+                  @if (changeFields(item, change); as fields) {
+                    @if (fields.length) {
+                      @for (section of sectionNames(fields); track section) {
+                        <section class="change-group">
+                          <h4>{{ section }}</h4>
+                          @for (field of fieldsForSection(fields, section); track field.path) {
+                            <div
+                              class="decision-row"
+                              [class.ignored]="!decisionSelected(change.id, field.path)"
                             >
-                              <option>PASS</option>
-                              <option>FAIL</option>
-                              <option value="NOT_TESTED">Not tested</option>
-                            </select></label
-                          >
-                        }
-                      </div>
-                      <div class="editable-grid four">
-                        @for (reading of connectorReadings; track reading.key) {
-                          <label
-                            >{{ reading.label
-                            }}<input
-                              type="number"
-                              step="0.01"
-                              [value]="connector[reading.key] ?? ''"
-                              (input)="setConnector(index, reading.key, $event, true)"
-                          /></label>
-                        }
-                      </div>
-                    </article>
+                              <label class="decision-toggle">
+                                <input
+                                  type="checkbox"
+                                  [checked]="decisionSelected(change.id, field.path)"
+                                  [disabled]="change.status !== 'PENDING'"
+                                  (change)="toggleDecision(change.id, field.path, $event)"
+                                />
+                                <span>{{
+                                  decisionSelected(change.id, field.path) ? 'Apply' : 'Ignore'
+                                }}</span>
+                              </label>
+                              <div class="decision-label">
+                                <strong>{{ field.label }}</strong
+                                ><small>{{
+                                  decisionSelected(change.id, field.path)
+                                    ? 'Update the asset record'
+                                    : 'Keep the current office value'
+                                }}</small>
+                              </div>
+                              <div class="value-box current">
+                                <small>Current</small><strong>{{ display(field.current) }}</strong>
+                              </div>
+                              <span class="value-arrow">→</span>
+                              <div class="value-box proposed">
+                                <small>{{
+                                  decisionSelected(change.id, field.path)
+                                    ? 'Approved value'
+                                    : 'Ignored engineer value'
+                                }}</small>
+                                @if (field.type === 'select' || field.type === 'supply') {
+                                  <select
+                                    [attr.aria-label]="'Approved value for ' + field.label"
+                                    [value]="
+                                      field.type === 'supply'
+                                        ? selectedSupplyValue(decisionValue(change.id, field.path))
+                                        : decisionValue(change.id, field.path)
+                                    "
+                                    [disabled]="
+                                      change.status !== 'PENDING' ||
+                                      !decisionSelected(change.id, field.path)
+                                    "
+                                    (change)="
+                                      setDecisionValue(change.id, field.path, $event, field.type)
+                                    "
+                                  >
+                                    @for (option of field.options || []; track option.value) {
+                                      <option [value]="option.value">{{ option.label }}</option>
+                                    }
+                                  </select>
+                                } @else {
+                                  <input
+                                    [attr.aria-label]="'Approved value for ' + field.label"
+                                    [type]="field.type"
+                                    [value]="decisionValue(change.id, field.path) ?? ''"
+                                    [disabled]="
+                                      change.status !== 'PENDING' ||
+                                      !decisionSelected(change.id, field.path)
+                                    "
+                                    (input)="
+                                      setDecisionValue(change.id, field.path, $event, field.type)
+                                    "
+                                  />
+                                }
+                              </div>
+                            </div>
+                          }
+                        </section>
+                      }
+                    } @else {
+                      <div class="clear-state"><strong>No effective differences found</strong></div>
+                    }
                   }
-                } @else {
-                  @for (connector of connectors(); track connector['id']; let index = $index) {
-                    <article class="review-card connector-card">
-                      <header>
-                        <strong>Connector {{ display(connector['label']) }}</strong
-                        ><span>{{ display(connector['connectorType']) }}</span>
-                      </header>
-                      <div class="check-grid">
-                        @for (check of connectorChecks; track check.key) {
-                          <span [class]="resultClass(connector[check.key])"
-                            ><small>{{ check.label }}</small
-                            ><strong>{{ display(connector[check.key]) }}</strong></span
-                          >
-                        }
-                      </div>
-                      <dl class="reading-grid rcd">
-                        <div [class.fail-reading]="readingFails(connector['rcd1x0Ms'], 300)">
-                          <dt>1× 0°</dt>
-                          <dd>{{ display(connector['rcd1x0Ms']) }} ms</dd>
-                          <small>≤300 ms</small>
-                        </div>
-                        <div [class.fail-reading]="readingFails(connector['rcd1x180Ms'], 300)">
-                          <dt>1× 180°</dt>
-                          <dd>{{ display(connector['rcd1x180Ms']) }} ms</dd>
-                          <small>≤300 ms</small>
-                        </div>
-                        <div [class.fail-reading]="readingFails(connector['rcd5x0Ms'], 40)">
-                          <dt>5× 0°</dt>
-                          <dd>{{ display(connector['rcd5x0Ms']) }} ms</dd>
-                          <small>≤40 ms</small>
-                        </div>
-                        <div [class.fail-reading]="readingFails(connector['rcd5x180Ms'], 40)">
-                          <dt>5× 180°</dt>
-                          <dd>{{ display(connector['rcd5x180Ms']) }} ms</dd>
-                          <small>≤40 ms</small>
-                        </div>
-                        <div>
-                          <dt>DC ramp 0°</dt>
-                          <dd>{{ display(connector['dcRamp0Ma']) }} mA</dd>
-                        </div>
-                        <div>
-                          <dt>DC ramp 180°</dt>
-                          <dd>{{ display(connector['dcRamp180Ma']) }} mA</dd>
-                        </div>
-                      </dl>
-                    </article>
-                  } @empty {
-                    <div class="review-card clear-state">
-                      <strong>No connector readings recorded</strong>
+                  @if (change.status === 'PENDING' && hasEffectiveChanges(item, change)) {
+                    <footer>
+                      @if (canManageAssets()) {
+                        <button
+                          class="button danger"
+                          type="button"
+                          [disabled]="busy()"
+                          (click)="reviewAssetChange(change, false)"
+                        >
+                          Reject all updates
+                        </button>
+                        <button
+                          class="button primary"
+                          type="button"
+                          [disabled]="busy()"
+                          (click)="reviewAssetChange(change, true)"
+                        >
+                          Apply selected updates
+                        </button>
+                      } @else {
+                        <span class="no-change-explanation"
+                          >You do not have permission to apply asset updates.</span
+                        >
+                      }
+                    </footer>
+                  } @else if (change.status === 'PENDING') {
+                    <footer>
+                      <span class="no-change-explanation"
+                        >There is nothing to apply to the asset record.</span
+                      >
+                      @if (canManageAssets()) {
+                        <button
+                          class="button secondary"
+                          type="button"
+                          [disabled]="busy()"
+                          (click)="reviewAssetChange(change, false)"
+                        >
+                          Dismiss empty proposal
+                        </button>
+                      }
+                    </footer>
+                  }
+                </article>
+              } @empty {
+                <section class="review-card clear-state">
+                  <strong>No asset record changes proposed</strong
+                  ><span>The engineer’s stable charger details match the office record.</span>
+                </section>
+              }
+            }
+
+            @if (activeSection() === 'history') {
+              <section class="review-card revision-history">
+                <div class="card-heading">
+                  <div>
+                    <p class="eyebrow">Immutable audit trail</p>
+                    <h3>Inspection revisions</h3>
+                  </div>
+                  <span class="count-pill">{{ item.revisions.length }}</span>
+                </div>
+                @for (revision of item.revisions; track revision.id) {
+                  <article [class.admin-revision]="revision.validation['administratorOverride']">
+                    <span class="revision-number">{{ revision.revisionNumber }}</span>
+                    <div>
+                      <strong>{{
+                        revision.validation['administratorOverride']
+                          ? 'Administrator correction'
+                          : 'Engineer submission'
+                      }}</strong>
+                      <p>
+                        {{
+                          revision.validation['administratorOverride']
+                            ? display(revision.validation['administratorOverride'])
+                            : 'Signed inspection record'
+                        }}
+                      </p>
+                      <small
+                        >{{ format(revision.createdAt) }} ·
+                        {{ revision.signatures?.[0]?.signerName || 'Office administrator' }}</small
+                      >
                     </div>
-                  }
+                    <span [class]="resultClass(revision.data['outcome'])">{{
+                      display(revision.data['outcome'])
+                    }}</span>
+                  </article>
                 }
               </section>
             }
+          </div>
 
-            @if (overrideDraft(); as draft) {
-              <section class="test-section">
-                <div class="section-title">
-                  <div>
-                    <p class="eyebrow">Recorded issues</p>
-                    <h3>Defect corrections</h3>
-                  </div>
-                  <button class="button secondary compact" type="button" (click)="addDefect()">
-                    Add finding
-                  </button>
-                </div>
-                @for (defect of draft.defects; track defect.id; let index = $index) {
-                  <article class="review-card editable defect-editor">
-                    <button class="text-button" type="button" (click)="removeDefect(index)">
-                      Remove finding
-                    </button>
-                    <div class="editable-grid">
-                      <label
-                        >Title<input
-                          [value]="defect.title"
-                          (input)="setDefect(index, 'title', $event)"
-                      /></label>
-                      <label
-                        >Category<select
-                          [value]="defect.category"
-                          (change)="setDefect(index, 'category', $event)"
-                        >
-                          <option>ADVICE</option>
-                          <option>NOTE</option>
-                          <option>FAULT</option>
-                          <option>CONDITION</option>
-                        </select></label
-                      >
-                      <label
-                        >Severity<select
-                          [value]="defect.severity"
-                          (change)="setDefect(index, 'severity', $event)"
-                        >
-                          <option>ADVISORY</option>
-                          <option>MINOR</option>
-                          <option>MAJOR</option>
-                          <option>DANGEROUS</option>
-                        </select></label
-                      >
-                      <label
-                        >Status<select
-                          [value]="defect.status"
-                          (change)="setDefect(index, 'status', $event)"
-                        >
-                          <option>OPEN</option>
-                          <option>ACKNOWLEDGED</option>
-                          <option>RESOLVED</option>
-                          <option>DISMISSED</option>
-                        </select></label
-                      >
-                      <label class="full"
-                        >Description<textarea
-                          [value]="defect.description"
-                          (input)="setDefect(index, 'description', $event)"
-                        ></textarea>
-                      </label>
-                    </div>
-                  </article>
-                }
-              </section>
-              <div class="save-corrections">
+          @if (item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW') {
+            @if (canApprove()) {
+              <footer class="review-actions">
                 <div>
-                  <strong>Ready to save?</strong
-                  ><span
-                    >This creates revision {{ item.currentRevisionNumber + 1 }} and recalculates
-                    electrical pass/fail rules.</span
+                  <strong
+                    >Review decision for
+                    {{ item.asset?.assetReference || item.asset?.displayName }}</strong
+                  >
+                  <span
+                    >Confirm the results, evidence and highlighted record updates before
+                    approving.</span
                   >
                 </div>
                 <button
+                  class="button danger"
+                  type="button"
+                  [disabled]="busy() || overrideDraft()"
+                  (click)="reviewInspection(false)"
+                >
+                  Return to engineer
+                </button>
+                <button
                   class="button primary"
                   type="button"
-                  [disabled]="busy() || draft.reason.trim().length < 3"
-                  (click)="saveOverride()"
+                  [disabled]="busy() || overrideDraft()"
+                  (click)="reviewInspection(true)"
                 >
-                  {{ busy() ? 'Saving revision…' : 'Save administrator revision' }}
+                  Approve inspection
                 </button>
-              </div>
+              </footer>
             }
           }
-
-          @if (activeSection() === 'evidence') {
-            @if (canAddReviewPhoto(item)) {
-              <section class="review-card review-upload-card">
-                <div class="card-heading">
-                  <div>
-                    <p class="eyebrow">Office review</p>
-                    <h3>Add a missing inspection image</h3>
-                    <p>Add general evidence, or link the image directly to an existing finding.</p>
-                  </div>
-                </div>
-                <div class="review-upload-fields">
-                  <label>
-                    Image description
-                    <input
-                      type="text"
-                      maxlength="500"
-                      [value]="reviewPhotoCaption()"
-                      (input)="setReviewPhotoCaption($event)"
-                    />
-                  </label>
-                  <label>
-                    Link to finding
-                    <select [value]="reviewPhotoDefectId()" (change)="setReviewPhotoDefect($event)">
-                      <option value="">General inspection evidence</option>
-                      @for (defect of overrideDraft()?.defects || item.defects; track defect.id) {
-                        <option [value]="defect.id">
-                          {{ defect.category || 'FAULT' }} · {{ defect.title }}
-                        </option>
-                      }
-                    </select>
-                  </label>
-                  <label class="review-upload-button" [class.disabled]="busy()">
-                    {{ busy() ? 'Uploading…' : 'Choose image' }}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      [disabled]="busy()"
-                      (change)="addReviewPhoto($event)"
-                    />
-                  </label>
-                </div>
-              </section>
-            }
-            <section class="review-card">
-              <div class="card-heading">
-                <div>
-                  <p class="eyebrow">Inspection uploads</p>
-                  <h3>Photographic evidence</h3>
-                </div>
-                <span class="count-pill">{{
-                  overrideDraft()?.media?.length || item.evidenceMedia?.length || 0
-                }}</span>
-              </div>
-              @if ((overrideDraft()?.media?.length || item.evidenceMedia?.length || 0) > 0) {
-                <div class="evidence-grid">
-                  @for (
-                    media of overrideDraft()?.media || item.evidenceMedia || [];
-                    track media.id
-                  ) {
-                    @if (overrideDraft(); as draft) {
-                      <article>
-                        <img
-                          [src]="imageUrl(media.id)"
-                          [alt]="media.caption || 'Inspection evidence'"
-                          loading="lazy"
-                        />
-                        <label
-                          >Caption<input
-                            [value]="media.caption || ''"
-                            (input)="setDraftMediaCaption(media.id, $event)"
-                        /></label>
-                        <label
-                          >Use as<select
-                            [value]="draftMediaOwner(draft, media.id)"
-                            (change)="setDraftMediaOwner(media.id, $event)"
-                          >
-                            <option value="">General inspection image</option>
-                            @for (defect of draft.defects; track defect.id) {
-                              <option [value]="defect.id">
-                                {{ defect.category }} · {{ defect.title }}
-                              </option>
-                            }
-                          </select></label
-                        >
-                        <button
-                          class="text-button"
-                          type="button"
-                          (click)="removeDraftMedia(media.id)"
-                        >
-                          Remove image
-                        </button>
-                      </article>
-                    } @else {
-                      <a [href]="imageUrl(media.id)" target="_blank" rel="noopener noreferrer">
-                        <img
-                          [src]="imageUrl(media.id)"
-                          [alt]="media.caption || 'Inspection evidence'"
-                          loading="lazy"
-                        />
-                        <span
-                          ><strong>{{ media.caption || 'Inspection evidence' }}</strong
-                          ><small>{{ display(media.category) }}</small></span
-                        >
-                      </a>
-                    }
-                  }
-                </div>
-              } @else {
-                <div class="clear-state">
-                  <strong>No photographs uploaded</strong
-                  ><span>The engineer did not attach photographic evidence to this unit.</span>
-                </div>
-              }
-            </section>
-            @if (item.defects.length) {
-              <section class="review-card">
-                <div class="card-heading">
-                  <div>
-                    <p class="eyebrow">Evidence mapping</p>
-                    <h3>Photos linked to faults</h3>
-                  </div>
-                </div>
-                <div class="fault-evidence-list">
-                  @for (defect of item.defects; track defect.id) {
-                    <article>
-                      <div>
-                        <span>{{ defect.severity }}</span
-                        ><strong>{{ defect.title }}</strong>
-                        <p>{{ defect.description }}</p>
-                      </div>
-                      <div class="mini-gallery">
-                        @for (mediaId of defect.photoMediaIds || []; track mediaId) {
-                          @if (imageUrl(mediaId)) {
-                            <a [href]="imageUrl(mediaId)" target="_blank" rel="noopener noreferrer"
-                              ><img [src]="imageUrl(mediaId)" alt="Fault evidence"
-                            /></a>
-                          }
-                        } @empty {
-                          <small>No photo linked directly to this fault.</small>
-                        }
-                      </div>
-                    </article>
-                  }
-                </div>
-              </section>
-            }
-          }
-
-          @if (activeSection() === 'updates') {
-            <section class="updates-intro">
-              <div>
-                <p class="eyebrow">Permanent asset register</p>
-                <h3>Engineer-proposed updates</h3>
-                <p>
-                  Choose exactly which changes should update the office record. Unticked fields
-                  retain their current value; selected fields can be corrected before applying.
-                </p>
-              </div>
-              <span class="change-legend"><b></b> Engineer value</span>
-            </section>
-            @for (change of item.proposedAssetChanges || []; track change.id) {
-              <article
-                class="review-card change-review"
-                [class.reviewed]="change.status !== 'PENDING'"
-              >
-                <header>
-                  <div>
-                    <span class="change-type">{{
-                      change.proposedData['_operation'] === 'CREATE'
-                        ? 'NEW CHARGER'
-                        : 'RECORD UPDATE'
-                    }}</span>
-                    <h3>
-                      {{
-                        change.proposedData['_operation'] === 'CREATE'
-                          ? 'Add charger to the site register'
-                          : 'Review changed charger details'
-                      }}
-                    </h3>
-                  </div>
-                  <span class="status-badge">{{ change.status }}</span>
-                </header>
-                @if (changeFields(item, change); as fields) {
-                  @if (fields.length) {
-                    @for (section of sectionNames(fields); track section) {
-                      <section class="change-group">
-                        <h4>{{ section }}</h4>
-                        @for (field of fieldsForSection(fields, section); track field.path) {
-                          <div
-                            class="decision-row"
-                            [class.ignored]="!decisionSelected(change.id, field.path)"
-                          >
-                            <label class="decision-toggle">
-                              <input
-                                type="checkbox"
-                                [checked]="decisionSelected(change.id, field.path)"
-                                [disabled]="change.status !== 'PENDING'"
-                                (change)="toggleDecision(change.id, field.path, $event)"
-                              />
-                              <span>{{
-                                decisionSelected(change.id, field.path) ? 'Apply' : 'Ignore'
-                              }}</span>
-                            </label>
-                            <div class="decision-label">
-                              <strong>{{ field.label }}</strong
-                              ><small>{{
-                                decisionSelected(change.id, field.path)
-                                  ? 'Update the asset record'
-                                  : 'Keep the current office value'
-                              }}</small>
-                            </div>
-                            <div class="value-box current">
-                              <small>Current</small><strong>{{ display(field.current) }}</strong>
-                            </div>
-                            <span class="value-arrow">→</span>
-                            <div class="value-box proposed">
-                              <small>{{
-                                decisionSelected(change.id, field.path)
-                                  ? 'Approved value'
-                                  : 'Ignored engineer value'
-                              }}</small>
-                              @if (field.type === 'select' || field.type === 'supply') {
-                                <select
-                                  [attr.aria-label]="'Approved value for ' + field.label"
-                                  [value]="
-                                    field.type === 'supply'
-                                      ? selectedSupplyValue(decisionValue(change.id, field.path))
-                                      : decisionValue(change.id, field.path)
-                                  "
-                                  [disabled]="
-                                    change.status !== 'PENDING' ||
-                                    !decisionSelected(change.id, field.path)
-                                  "
-                                  (change)="
-                                    setDecisionValue(change.id, field.path, $event, field.type)
-                                  "
-                                >
-                                  @for (option of field.options || []; track option.value) {
-                                    <option [value]="option.value">{{ option.label }}</option>
-                                  }
-                                </select>
-                              } @else {
-                                <input
-                                  [attr.aria-label]="'Approved value for ' + field.label"
-                                  [type]="field.type"
-                                  [value]="decisionValue(change.id, field.path) ?? ''"
-                                  [disabled]="
-                                    change.status !== 'PENDING' ||
-                                    !decisionSelected(change.id, field.path)
-                                  "
-                                  (input)="
-                                    setDecisionValue(change.id, field.path, $event, field.type)
-                                  "
-                                />
-                              }
-                            </div>
-                          </div>
-                        }
-                      </section>
-                    }
-                  } @else {
-                    <div class="clear-state"><strong>No effective differences found</strong></div>
-                  }
-                }
-                @if (change.status === 'PENDING' && hasEffectiveChanges(item, change)) {
-                  <footer>
-                    @if (canManageAssets()) {
-                      <button
-                        class="button danger"
-                        type="button"
-                        [disabled]="busy()"
-                        (click)="reviewAssetChange(change, false)"
-                      >
-                        Reject all updates
-                      </button>
-                      <button
-                        class="button primary"
-                        type="button"
-                        [disabled]="busy()"
-                        (click)="reviewAssetChange(change, true)"
-                      >
-                        Apply selected updates
-                      </button>
-                    } @else {
-                      <span class="no-change-explanation"
-                        >You do not have permission to apply asset updates.</span
-                      >
-                    }
-                  </footer>
-                } @else if (change.status === 'PENDING') {
-                  <footer>
-                    <span class="no-change-explanation"
-                      >There is nothing to apply to the asset record.</span
-                    >
-                    @if (canManageAssets()) {
-                      <button
-                        class="button secondary"
-                        type="button"
-                        [disabled]="busy()"
-                        (click)="reviewAssetChange(change, false)"
-                      >
-                        Dismiss empty proposal
-                      </button>
-                    }
-                  </footer>
-                }
-              </article>
-            } @empty {
-              <section class="review-card clear-state">
-                <strong>No asset record changes proposed</strong
-                ><span>The engineer’s stable charger details match the office record.</span>
-              </section>
-            }
-          }
-
-          @if (activeSection() === 'history') {
-            <section class="review-card revision-history">
-              <div class="card-heading">
-                <div>
-                  <p class="eyebrow">Immutable audit trail</p>
-                  <h3>Inspection revisions</h3>
-                </div>
-                <span class="count-pill">{{ item.revisions.length }}</span>
-              </div>
-              @for (revision of item.revisions; track revision.id) {
-                <article [class.admin-revision]="revision.validation['administratorOverride']">
-                  <span class="revision-number">{{ revision.revisionNumber }}</span>
-                  <div>
-                    <strong>{{
-                      revision.validation['administratorOverride']
-                        ? 'Administrator correction'
-                        : 'Engineer submission'
-                    }}</strong>
-                    <p>
-                      {{
-                        revision.validation['administratorOverride']
-                          ? display(revision.validation['administratorOverride'])
-                          : 'Signed inspection record'
-                      }}
-                    </p>
-                    <small
-                      >{{ format(revision.createdAt) }} ·
-                      {{ revision.signatures?.[0]?.signerName || 'Office administrator' }}</small
-                    >
-                  </div>
-                  <span [class]="resultClass(revision.data['outcome'])">{{
-                    display(revision.data['outcome'])
-                  }}</span>
-                </article>
-              }
-            </section>
-          }
-        </div>
-
-        @if (item.status === 'SUBMITTED' || item.status === 'UNDER_REVIEW') {
-          @if (canApprove()) {
-            <footer class="review-actions">
-              <div>
-                <strong
-                  >Review decision for
-                  {{ item.asset?.assetReference || item.asset?.displayName }}</strong
-                >
-                <span
-                  >Confirm the results, evidence and highlighted record updates before
-                  approving.</span
-                >
-              </div>
-              <button
-                class="button danger"
-                type="button"
-                [disabled]="busy() || overrideDraft()"
-                (click)="reviewInspection(false)"
-              >
-                Return to engineer
-              </button>
-              <button
-                class="button primary"
-                type="button"
-                [disabled]="busy() || overrideDraft()"
-                (click)="reviewInspection(true)"
-              >
-                Approve inspection
-              </button>
-            </footer>
-          }
+        } @else {
+          <div class="detail-loading"><strong>Select a charger to review.</strong></div>
         }
-      } @else {
-        <div class="detail-loading"><strong>Select a charger to review.</strong></div>
-      }
+      </section>
     </section>
-  </section>
+  }
 </main>

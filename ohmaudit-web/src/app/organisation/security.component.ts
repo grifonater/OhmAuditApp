@@ -3,10 +3,11 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-security',
-  imports: [ReactiveFormsModule],
+  imports: [AsyncButtonDirective, ReactiveFormsModule],
   templateUrl: './security.component.html',
   styleUrl: './organisation.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -22,6 +23,7 @@ export class SecurityComponent {
   protected readonly error = signal('');
   protected readonly canManageUsers = signal(false);
   protected readonly canManageOrganisation = signal(false);
+  protected readonly notificationSaving = signal(false);
   protected readonly code = new FormControl('', {
     nonNullable: true,
     validators: [Validators.required, Validators.pattern(/^\d{6}$/u)],
@@ -77,6 +79,8 @@ export class SecurityComponent {
 
   protected async saveNotificationPreferences(): Promise<void> {
     if (!this.canManageOrganisation() || this.notificationForm.invalid) return;
+    this.notificationSaving.set(true);
+    this.error.set('');
     try {
       await this.api.updateNotificationPreferences(
         this.organisationId,
@@ -85,6 +89,8 @@ export class SecurityComponent {
       this.message.set('Notification preferences saved.');
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to save preferences.');
+    } finally {
+      this.notificationSaving.set(false);
     }
   }
 

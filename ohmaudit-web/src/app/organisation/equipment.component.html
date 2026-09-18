@@ -121,7 +121,15 @@
       </div>
       <footer>
         <button class="button secondary" type="button" (click)="formOpen.set(false)">Cancel</button
-        ><button class="button primary" type="button" [disabled]="busy()" (click)="save()">
+        ><button
+          class="button primary"
+          type="button"
+          oaAsyncButton
+          [oaAsyncPending]="busy()"
+          [oaAsyncError]="error()"
+          [disabled]="busy()"
+          (click)="save()"
+        >
           {{ busy() ? 'Saving…' : 'Save equipment' }}
         </button>
       </footer>

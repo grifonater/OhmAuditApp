@@ -25,6 +25,7 @@ import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
 import { AssetIconComponent } from '../shared/asset-icon.component';
 import { assetIconOptions, defaultAssetIconKey, resolvedAssetIconKey } from '../shared/asset-icons';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import {
   createSchedulesForGroup,
   groupScheduleSuggestions,
@@ -35,7 +36,7 @@ import {
 type SiteTab = 'overview' | 'assets' | 'reports' | 'reminders';
 @Component({
   selector: 'oa-site-detail',
-  imports: [AssetIconComponent, ReactiveFormsModule, RouterLink],
+  imports: [AssetIconComponent, AsyncButtonDirective, ReactiveFormsModule, RouterLink],
   templateUrl: './site-detail.component.html',
   styleUrl: './site-detail.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

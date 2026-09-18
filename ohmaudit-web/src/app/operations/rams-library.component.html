@@ -199,8 +199,11 @@
           </label>
           <div class="form-actions full">
             <button
+              oaAsyncButton
               class="button primary"
               type="button"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
               [disabled]="busy() || !templateName().trim()"
               (click)="createTemplate()"
             >
@@ -274,8 +277,11 @@
                   <button class="button ghost compact" type="button" (click)="closeTemplateEdit()">
                     Cancel</button
                   ><button
+                    oaAsyncButton
                     class="button primary compact"
                     type="button"
+                    [oaAsyncPending]="busy()"
+                    [oaAsyncError]="error()"
                     [disabled]="busy() || !edit.name.trim()"
                     (click)="saveTemplate(template, false)"
                   >
@@ -390,8 +396,11 @@
             >
               Add step</button
             ><button
+              oaAsyncButton
               class="button primary"
               type="button"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
               [disabled]="busy() || !newGroup().name.trim() || !newGroup().steps.length"
               (click)="createGroup()"
             >
@@ -482,8 +491,11 @@
                   >
                     Cancel</button
                   ><button
+                    oaAsyncButton
                     class="button primary compact"
                     type="button"
+                    [oaAsyncPending]="busy()"
+                    [oaAsyncError]="error()"
                     [disabled]="busy() || !edit.name.trim() || !edit.steps.length"
                     (click)="saveGroup(group)"
                   >
@@ -651,7 +663,14 @@
             >
           </div>
           <div class="group-footer">
-            <button class="button primary" type="button" (click)="createHazard()">
+            <button
+              oaAsyncButton
+              class="button primary"
+              type="button"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              (click)="createHazard()"
+            >
               Add hazard
             </button>
           </div>
@@ -825,8 +844,11 @@
                   >
                     Cancel</button
                   ><button
+                    oaAsyncButton
                     class="button primary compact"
                     type="button"
+                    [oaAsyncPending]="busy()"
+                    [oaAsyncError]="error()"
                     (click)="saveHazard(hazard)"
                   >
                     Save hazard
@@ -964,8 +986,11 @@
     @if (canManage()) {
       <div class="requirement-default-actions">
         <button
+          oaAsyncButton
           class="button primary"
           type="button"
+          [oaAsyncPending]="busy()"
+          [oaAsyncError]="error()"
           [disabled]="busy()"
           (click)="saveRequirementDefaults()"
         >

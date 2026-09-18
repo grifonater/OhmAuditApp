@@ -59,6 +59,9 @@
             <button
               class="button primary"
               type="submit"
+              oaAsyncButton
+              [oaAsyncPending]="profileBusy()"
+              [oaAsyncError]="profileError()"
               [disabled]="profileBusy() || profileForm.invalid"
             >
               {{ profileBusy() ? 'Saving…' : 'Save changes' }}

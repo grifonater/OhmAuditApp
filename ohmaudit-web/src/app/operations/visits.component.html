@@ -235,7 +235,14 @@
                   [formControl]="newCategoryName"
                   placeholder="Category name"
                 />
-                <button class="button secondary compact" type="button" (click)="createCategory()">
+                <button
+                  oaAsyncButton
+                  class="button secondary compact"
+                  type="button"
+                  [oaAsyncPending]="busy()"
+                  [oaAsyncError]="error()"
+                  (click)="createCategory()"
+                >
                   Add
                 </button>
               </span>
@@ -285,8 +292,11 @@
               }}</strong>
               inspection task(s) will be created</span
             ><button
+              oaAsyncButton
               class="button primary"
               type="submit"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
               [disabled]="
                 busy() ||
                 form.invalid ||

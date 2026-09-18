@@ -22,7 +22,13 @@
         @if (error()) {
           <p class="error" role="alert">{{ error() }}</p>
         }
-        <button type="submit" [disabled]="busy() || form.invalid">
+        <button
+          type="submit"
+          oaAsyncButton
+          [oaAsyncPending]="busy()"
+          [oaAsyncError]="error()"
+          [disabled]="busy() || form.invalid"
+        >
           {{ busy() ? 'Creating…' : 'Create account' }}
         </button>
       </form>

@@ -3,10 +3,11 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../core/auth.service';
 import { storePendingInvitation } from '../core/pending-invitation';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-signup',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [AsyncButtonDirective, ReactiveFormsModule, RouterLink],
   templateUrl: './signup.component.html',
   styleUrl: './auth.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

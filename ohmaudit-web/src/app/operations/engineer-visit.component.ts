@@ -31,6 +31,7 @@ import {
 import { compressImage, compressPhoto } from '../core/image-compression';
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { OfflineVisitService } from '../core/offline-visit.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import {
   applyDataPlateCandidate as applyCandidate,
   canRemoveVisitEvTask,
@@ -112,7 +113,12 @@ type ConnectorTestGroup = FormGroup<{
 
 @Component({
   selector: 'oa-engineer-visit',
-  imports: [ReactiveFormsModule, RamsReadOnlyComponent, SignaturePadComponent],
+  imports: [
+    ReactiveFormsModule,
+    RamsReadOnlyComponent,
+    SignaturePadComponent,
+    AsyncButtonDirective,
+  ],
   templateUrl: './engineer-visit.component.html',
   styleUrls: [
     './operations.css',

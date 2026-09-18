@@ -191,6 +191,7 @@ describe('Job management', () => {
       visit: {
         findFirst: vi.fn().mockResolvedValue({
           id: 'visit-a',
+          status: 'SCHEDULED',
           siteId: 'site-a',
           archivedAt: null,
           tasks: [{ assetId: null, moduleKey: 'core', displayOrder: 3 }],
@@ -250,6 +251,7 @@ describe('Job management', () => {
       visit: {
         findFirst: vi.fn().mockResolvedValue({
           id: 'visit-a',
+          status: 'SCHEDULED',
           siteId: 'site-a',
           archivedAt: null,
           tasks: [{ assetId: null, moduleKey: 'core', displayOrder: 0 }],
@@ -273,6 +275,29 @@ describe('Job management', () => {
         { moduleKey: 'core', title: 'Existing site task' },
       ]),
     ).rejects.toMatchObject({ code: 'VISIT_TASK_DUPLICATE', status: 409 });
+  });
+
+  it('rejects new tasks on a completed job', async () => {
+    const transaction = {
+      visit: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'visit-a',
+          status: 'COMPLETED',
+          archivedAt: null,
+          tasks: [],
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: (operation: (client: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).addTasks('organisation-a', 'visit-a', 'user-a', 'correlation-a', [
+        { moduleKey: 'core', title: 'Late inspection' },
+      ]),
+    ).rejects.toMatchObject({ code: 'VISIT_TASK_ADD_BLOCKED', status: 409 });
   });
 
   it('removes every unstarted task for an asset without deleting the asset', async () => {
@@ -404,5 +429,107 @@ describe('Job management', () => {
     expect(auditInput).toMatchObject({
       data: { eventType: 'VisitArchived', entityId: 'visit-a' },
     });
+  });
+
+  it('marks an eligible job complete and records an audit event', async () => {
+    const completedVisit = {
+      id: 'visit-a',
+      status: 'COMPLETED',
+      completedAt: new Date('2026-09-18T10:00:00.000Z'),
+    };
+    const visitUpdate = vi.fn().mockResolvedValue(completedVisit);
+    const auditCreate = vi.fn().mockResolvedValue({ id: 'audit-a' });
+    const revokeGuestLinks = vi.fn().mockResolvedValue({ count: 1 });
+    const transaction = {
+      visit: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'visit-a',
+          status: 'SUBMITTED',
+          archivedAt: null,
+          tasks: [
+            { id: 'task-a', status: 'COMPLETED' },
+            { id: 'task-b', status: 'CANCELLED' },
+          ],
+        }),
+        update: visitUpdate,
+      },
+      proposedAssetChange: { count: vi.fn().mockResolvedValue(0) },
+      guestAccessToken: { updateMany: revokeGuestLinks },
+      auditEvent: { create: auditCreate },
+    };
+    const prisma = {
+      $transaction: (operation: (client: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).complete('organisation-a', 'visit-a', 'user-a', 'correlation-a'),
+    ).resolves.toBe(completedVisit);
+    const visitUpdateInput = visitUpdate.mock.calls[0]?.[0] as
+      { where: { id: string }; data: { status: string; completedAt: Date } } | undefined;
+    expect(visitUpdateInput?.where.id).toBe('visit-a');
+    expect(visitUpdateInput?.data.status).toBe('COMPLETED');
+    expect(visitUpdateInput?.data.completedAt).toBeInstanceOf(Date);
+    const auditInput = auditCreate.mock.calls[0]?.[0] as
+      { data: { eventType: string; entityId: string; data: Record<string, unknown> } } | undefined;
+    expect(auditInput?.data.eventType).toBe('VisitCompleted');
+    expect(auditInput?.data.entityId).toBe('visit-a');
+    expect(auditInput?.data.data).toMatchObject({ taskCount: 2 });
+    expect(revokeGuestLinks).toHaveBeenCalledWith({
+      where: {
+        visitId: 'visit-a',
+        revokedAt: null,
+        expiresAt: { gt: visitUpdateInput?.data.completedAt },
+      },
+      data: { revokedAt: visitUpdateInput?.data.completedAt },
+    });
+  });
+
+  it('refuses to complete a job with unfinished inspections', async () => {
+    const transaction = {
+      visit: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'visit-a',
+          status: 'SUBMITTED',
+          archivedAt: null,
+          tasks: [{ id: 'task-a', status: 'SUBMITTED' }],
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: (operation: (client: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new VisitService(prisma).complete('organisation-a', 'visit-a', 'user-a', 'correlation-a'),
+    ).rejects.toMatchObject({ code: 'VISIT_NOT_READY_FOR_COMPLETION', status: 409 });
+  });
+
+  it('refuses to complete a job before submission or with pending asset changes', async () => {
+    const current = {
+      id: 'visit-a',
+      status: 'IN_PROGRESS',
+      archivedAt: null,
+      tasks: [{ id: 'task-a', status: 'COMPLETED' }],
+    };
+    const transaction = {
+      visit: { findFirst: vi.fn(() => Promise.resolve(current)) },
+      proposedAssetChange: { count: vi.fn().mockResolvedValue(1) },
+    };
+    const prisma = {
+      $transaction: (operation: (client: typeof transaction) => Promise<unknown>) =>
+        operation(transaction),
+    } as unknown as PrismaClient;
+    const service = new VisitService(prisma);
+
+    await expect(
+      service.complete('organisation-a', 'visit-a', 'user-a', 'correlation-a'),
+    ).rejects.toMatchObject({ code: 'VISIT_NOT_READY_FOR_COMPLETION', status: 409 });
+
+    current.status = 'SUBMITTED';
+    await expect(
+      service.complete('organisation-a', 'visit-a', 'user-a', 'correlation-a'),
+    ).rejects.toMatchObject({ code: 'VISIT_ASSET_CHANGES_PENDING', status: 409 });
   });
 });

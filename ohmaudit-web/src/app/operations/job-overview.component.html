@@ -62,6 +62,19 @@
       </div>
       <div class="job-actions">
         @if (canEdit()) {
+          @if (canCompleteJob()) {
+            <button
+              oaAsyncButton
+              class="button primary compact"
+              type="button"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              [disabled]="busy()"
+              (click)="completeJob()"
+            >
+              Mark job complete
+            </button>
+          }
           <button class="button secondary compact" type="button" (click)="startEditing()">
             Edit job
           </button>
@@ -161,7 +174,14 @@
             <button class="button secondary" type="button" (click)="editing.set(false)">
               Cancel
             </button>
-            <button class="button primary" type="submit" [disabled]="busy() || form.invalid">
+            <button
+              oaAsyncButton
+              class="button primary"
+              type="submit"
+              [oaAsyncPending]="busy()"
+              [oaAsyncError]="error()"
+              [disabled]="busy() || form.invalid"
+            >
               Save job
             </button>
           </div>
@@ -563,8 +583,11 @@
                 </button>
               }
               <button
+                oaAsyncButton
                 class="button primary compact"
                 type="button"
+                [oaAsyncPending]="busy()"
+                [oaAsyncError]="error()"
                 [disabled]="
                   busy() ||
                   (taskModule() === 'thermal-imaging'

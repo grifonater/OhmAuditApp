@@ -9,11 +9,12 @@ import {
   type PlatformUser,
 } from '../core/api.service';
 import { compressPhoto } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import { EvTestInstructionsComponent } from './ev-test-instructions.component';
 
 @Component({
   selector: 'oa-platform',
-  imports: [ReactiveFormsModule, EvTestInstructionsComponent],
+  imports: [ReactiveFormsModule, EvTestInstructionsComponent, AsyncButtonDirective],
   templateUrl: './platform.component.html',
   styleUrl: './platform.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -22,6 +22,7 @@ import {
   emergencyLightingAssetPath,
   emergencyLightingFittingPath,
 } from '../core/emergency-lighting-routes';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 type LabelPreset = EmergencyLightingLabelSettings['preset'];
 
@@ -124,7 +125,7 @@ const DEFAULT_SETTINGS: EmergencyLightingLabelSettings = {
 
 @Component({
   selector: 'oa-emergency-lighting-label-studio',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, AsyncButtonDirective],
   templateUrl: './emergency-lighting-label-studio.component.html',
   styleUrls: ['./operations.css', './emergency-lighting-label-studio.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,

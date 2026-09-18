@@ -19,6 +19,7 @@ import {
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
 import { OfflineVisitService } from '../core/offline-visit.service';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import {
   buildMediaMetadataUpdateBody,
   buildThermalInspectionReport,
@@ -59,7 +60,7 @@ const emptyDetails = (): ThermalDetails => ({
 
 @Component({
   selector: 'oa-thermal-inspection',
-  imports: [FormsModule],
+  imports: [FormsModule, AsyncButtonDirective],
   templateUrl: './thermal-inspection.component.html',
   styleUrl: './thermal-inspection.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -90,6 +91,7 @@ export class ThermalInspectionComponent {
   protected readonly search = signal('');
   protected readonly loading = signal(false);
   protected readonly submitting = signal(false);
+  protected readonly savingDraft = signal(false);
   protected readonly previewing = signal(false);
   protected readonly previewError = signal('');
   protected readonly uploading = signal(false);
@@ -595,9 +597,18 @@ export class ThermalInspectionComponent {
     };
     const write = () =>
       this.offline.saveDraft(visit.organisationId, visit.id, inspection.id, snapshot);
-    this.draftWrite = this.draftWrite.then(write, write);
-    await this.draftWrite;
-    if (message) this.saved.set(message);
+    this.savingDraft.set(true);
+    this.error.set('');
+    try {
+      this.draftWrite = this.draftWrite.then(write, write);
+      await this.draftWrite;
+      if (message) this.saved.set(message);
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'The draft could not be saved.');
+      throw error;
+    } finally {
+      this.savingDraft.set(false);
+    }
   }
   private async load(): Promise<void> {
     this.loading.set(true);

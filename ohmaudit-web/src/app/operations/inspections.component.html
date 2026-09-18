@@ -225,8 +225,12 @@
             @if (change.status === 'PENDING') {
               <div class="form-actions">
                 <button
+                  oaAsyncButton
+                  [oaAsyncPending]="busy()"
+                  [oaAsyncError]="error()"
                   class="button primary"
                   type="button"
+                  [disabled]="busy()"
                   (click)="reviewAssetChange(change.id, true)"
                 >
                   {{

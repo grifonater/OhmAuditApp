@@ -24,6 +24,7 @@ import { AuthService } from '../core/auth.service';
 import { OfflineVisitService } from '../core/offline-visit.service';
 import { OrganisationContextService } from '../core/organisation-context.service';
 import { clearPendingInvitation, readPendingInvitation } from '../core/pending-invitation';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 interface DeploymentMetadata {
   id: string;
@@ -59,7 +60,7 @@ const DRAWER_DRAG_INTENT_PX = 6;
 
 @Component({
   selector: 'oa-app-shell',
-  imports: [ReactiveFormsModule, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [AsyncButtonDirective, ReactiveFormsModule, RouterLink, RouterLinkActive, RouterOutlet],
   templateUrl: './app-shell.component.html',
   styleUrl: './app-shell.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

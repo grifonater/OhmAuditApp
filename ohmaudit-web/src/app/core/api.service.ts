@@ -2241,6 +2241,12 @@ export class ApiService {
       { method: 'DELETE' },
     );
   }
+  completeVisit(organisationId: string, visitId: string) {
+    return this.request<{ visit: VisitSummary }>(
+      `/visits/${visitId}/complete?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST' },
+    );
+  }
   addVisitEvAsset(
     organisationId: string,
     visitId: string,
@@ -2705,6 +2711,7 @@ export class ApiService {
         status: string;
         reviewedAt?: string;
         approvedAt?: string;
+        completionEligible?: boolean;
       };
     }>(`/inspections/${inspectionId}/review?organisationId=${encodeURIComponent(organisationId)}`, {
       method: 'POST',

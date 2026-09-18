@@ -1063,18 +1063,24 @@ export class InspectionService {
           where: { id: inspection.visitTaskId },
           data: { status: approved ? 'COMPLETED' : 'IN_PROGRESS' },
         });
+      let completionEligible = false;
       if (approved && inspection.visitId !== null) {
-        const outstandingTasks = await transaction.visitTask.count({
-          where: {
-            visitId: inspection.visitId,
-            status: { notIn: ['COMPLETED', 'CANCELLED'] },
-          },
-        });
-        if (outstandingTasks === 0)
-          await transaction.visit.update({
-            where: { id: inspection.visitId },
-            data: { status: 'COMPLETED', completedAt: new Date() },
-          });
+        const [outstandingTasks, pendingAssetChanges] = await Promise.all([
+          transaction.visitTask.count({
+            where: {
+              visitId: inspection.visitId,
+              status: { notIn: ['COMPLETED', 'CANCELLED'] },
+            },
+          }),
+          transaction.proposedAssetChange.count({
+            where: {
+              organisationId,
+              status: 'PENDING',
+              inspection: { visitId: inspection.visitId },
+            },
+          }),
+        ]);
+        completionEligible = outstandingTasks === 0 && pendingAssetChanges === 0;
       }
       const rebasedScheduleCount = approved
         ? await new ScheduleService(this.prisma).completeAndRebaseForInspection(
@@ -1094,7 +1100,7 @@ export class InspectionService {
           data: { revisionNumber: inspection.currentRevisionNumber, rebasedScheduleCount },
         },
       });
-      return updated;
+      return { ...updated, completionEligible };
     });
   }
 

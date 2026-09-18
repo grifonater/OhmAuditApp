@@ -10,10 +10,12 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService, type AssetMedia, type InspectionSummary } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 import { VisitFindingsEditorComponent } from '../shared/visit-findings-editor.component';
 
 type ProposedChange = NonNullable<InspectionSummary['proposedAssetChanges']>[number];
-type ReviewSection = 'overview' | 'tests' | 'evidence' | 'updates' | 'findings' | 'history';
+type ReviewWorkspace = 'inspections' | 'findings';
+type ReviewSection = 'overview' | 'tests' | 'faults' | 'evidence' | 'updates' | 'history';
 type FieldType = 'text' | 'number' | 'select' | 'supply';
 
 interface ChangeField {
@@ -59,9 +61,13 @@ interface OverrideDraft {
 
 @Component({
   selector: 'oa-inspection-review',
-  imports: [RouterLink, VisitFindingsEditorComponent],
+  imports: [RouterLink, VisitFindingsEditorComponent, AsyncButtonDirective],
   templateUrl: './inspection-review.component.html',
-  styleUrls: ['./operations.css', './inspection-review.component.css'],
+  styleUrls: [
+    './operations.css',
+    './inspection-review.component.css',
+    './inspection-review-faults.css',
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class InspectionReviewComponent {
@@ -94,6 +100,9 @@ export class InspectionReviewComponent {
   protected readonly inspections = signal<InspectionSummary[]>([]);
   protected readonly selectedId = signal('');
   protected readonly inspection = signal<InspectionSummary | undefined>(undefined);
+  protected readonly activeWorkspace = signal<ReviewWorkspace>(
+    this.route.snapshot.queryParamMap.get('view') === 'findings' ? 'findings' : 'inspections',
+  );
   protected readonly activeSection = signal<ReviewSection>('overview');
   protected readonly unitSearch = signal('');
   protected readonly overrideDraft = signal<OverrideDraft | undefined>(undefined);
@@ -193,6 +202,16 @@ export class InspectionReviewComponent {
 
   protected setSection(section: ReviewSection): void {
     this.activeSection.set(section);
+  }
+
+  protected async setWorkspace(workspace: ReviewWorkspace): Promise<void> {
+    this.activeWorkspace.set(workspace);
+    await this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { view: workspace === 'findings' ? 'findings' : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   protected setUnitSearch(event: Event): void {
@@ -303,7 +322,7 @@ export class InspectionReviewComponent {
       : 'Not recorded';
   }
 
-  protected startOverride(): void {
+  protected startOverride(section: ReviewSection = 'tests'): void {
     const item = this.inspection();
     const revision = this.latest(item);
     if (item === undefined || revision === undefined) return;
@@ -328,7 +347,7 @@ export class InspectionReviewComponent {
         .map(({ id }) => id),
       media: structuredClone(item.evidenceMedia ?? []),
     });
-    this.activeSection.set('tests');
+    this.activeSection.set(section);
   }
 
   protected cancelOverride(): void {
@@ -428,6 +447,7 @@ export class InspectionReviewComponent {
       if (draft === undefined) return draft;
       const removed = draft.defects[index];
       if (removed === undefined) return draft;
+      if (this.reviewPhotoDefectId() === removed.id) this.reviewPhotoDefectId.set('');
       return {
         ...draft,
         defects: draft.defects.filter((_, candidate) => candidate !== index),
@@ -476,6 +496,16 @@ export class InspectionReviewComponent {
 
   protected draftMediaOwner(draft: OverrideDraft, mediaId: string): string {
     return draft.defects.find((defect) => defect.photoMediaIds.includes(mediaId))?.id ?? '';
+  }
+
+  protected draftMediaForDefect(draft: OverrideDraft, defect: DefectDraft): OverrideDraft['media'] {
+    return draft.media.filter((media) => defect.photoMediaIds.includes(media.id));
+  }
+
+  protected inspectionMedia(mediaId: string): AssetMedia | undefined {
+    return (this.overrideDraft()?.media ?? this.inspection()?.evidenceMedia ?? []).find(
+      ({ id }) => id === mediaId,
+    );
   }
 
   protected async removeDraftMedia(mediaId: string): Promise<void> {
@@ -838,7 +868,35 @@ export class InspectionReviewComponent {
         // served from a connection that has not observed the committed transaction yet.
         this.patchInspectionState(item.id, confirmedStatus);
       }
-      this.success.set(approved ? 'Inspection approved.' : 'Inspection returned to the engineer.');
+      if (approved && result.inspection.completionEligible && item.visit?.id) {
+        if (
+          confirm(
+            'All inspections and assets on this job are complete. Would you like to mark the job as complete now?',
+          )
+        ) {
+          try {
+            await this.api.completeVisit(this.organisationId, item.visit.id);
+            this.success.set('Inspection approved and job marked complete.');
+          } catch (error: unknown) {
+            this.success.set(
+              'Inspection approved. The job remains open and can be completed from the job page.',
+            );
+            this.error.set(
+              error instanceof Error
+                ? `The inspection was approved, but the job could not be completed: ${error.message}`
+                : 'The inspection was approved, but the job could not be completed.',
+            );
+          }
+        } else {
+          this.success.set(
+            'Inspection approved. The job is ready to be marked complete from the job page.',
+          );
+        }
+      } else {
+        this.success.set(
+          approved ? 'Inspection approved.' : 'Inspection returned to the engineer.',
+        );
+      }
     });
   }
 

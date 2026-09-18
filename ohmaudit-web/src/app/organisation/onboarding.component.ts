@@ -3,10 +3,11 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ActivatedRoute } from '@angular/router';
 import { ApiService, type Entitlement, type OnboardingState } from '../core/api.service';
 import { compressLogo } from '../core/image-compression';
+import { AsyncButtonDirective } from '../shared/async-button.directive';
 
 @Component({
   selector: 'oa-onboarding',
-  imports: [ReactiveFormsModule],
+  imports: [AsyncButtonDirective, ReactiveFormsModule],
   templateUrl: './onboarding.component.html',
   styleUrl: './organisation.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -21,6 +22,7 @@ export class OnboardingComponent {
   protected readonly canManageUsers = signal(false);
   protected readonly error = signal('');
   protected readonly message = signal('');
+  protected readonly saving = signal(false);
   protected readonly logoUrl = signal('');
   protected readonly activeSection = signal<
     'details' | 'brand' | 'accreditations' | 'team' | 'modules'
@@ -102,6 +104,7 @@ export class OnboardingComponent {
   }
   protected async invite(): Promise<void> {
     if (!this.canManageUsers() || this.invitationForm.invalid) return;
+    this.saving.set(true);
     this.error.set('');
     try {
       const result = await this.api.inviteMember(
@@ -112,9 +115,12 @@ export class OnboardingComponent {
       await this.load();
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to create the invitation.');
+    } finally {
+      this.saving.set(false);
     }
   }
   private async run(operation: () => Promise<unknown>, message: string): Promise<boolean> {
+    this.saving.set(true);
     this.error.set('');
     try {
       await operation();
@@ -124,6 +130,8 @@ export class OnboardingComponent {
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to save.');
       return false;
+    } finally {
+      this.saving.set(false);
     }
   }
   private async load(): Promise<void> {
