@@ -1,244 +1,1340 @@
-<main class="page reports-page">
-  <header class="page-header reports-heading">
-    <div>
-      <p class="eyebrow">Reporting</p>
-      <h1>Reports</h1>
-      <p>Create, customise and export organisation reports.</p>
-    </div>
-    <div class="header-actions">
-      <button class="button secondary" type="button">Import template</button>
-      <button class="button primary" type="button">
-        Create report <span aria-hidden="true">+</span>
-      </button>
-    </div>
-  </header>
-
-  <section class="report-metrics" aria-label="Report summary">
-    <article>
-      <span class="metric-symbol reports" aria-hidden="true">▤</span>
-      <div><small>Total reports</small><strong>24</strong><span>Saved reports</span></div>
-    </article>
-    <article>
-      <span class="metric-symbol schedules" aria-hidden="true">□</span>
-      <div><small>Scheduled exports</small><strong>5</strong><span>Active schedules</span></div>
-    </article>
-    <article>
-      <span class="metric-symbol runs" aria-hidden="true">▶</span>
-      <div><small>Recent runs</small><strong>18</strong><span>In the last 30 days</span></div>
-    </article>
-    <article>
-      <span class="metric-symbol templates" aria-hidden="true">♙</span>
+<main class="page reports-page" [class.builder-open]="view() === 'builder'">
+  @if (view() === 'directory') {
+    <header class="page-header reports-heading">
       <div>
-        <small>Shared templates</small><strong>6</strong><span>Organisation templates</span>
+        <p class="eyebrow">Reporting</p>
+        <h1>Reports</h1>
+        <p>Create, customise and export organisation reports.</p>
       </div>
-    </article>
-  </section>
+      <div class="header-actions">
+        <label class="button secondary import-button">
+          Import template
+          <input type="file" accept="application/json,.json" (change)="importTemplate($event)" />
+        </label>
+        <button class="button primary" type="button" (click)="startReport()">
+          Create report <span aria-hidden="true">+</span>
+        </button>
+      </div>
+    </header>
 
-  <section class="report-directory card">
-    <div class="report-filters">
-      <label class="report-search">
-        <span class="search-icon" aria-hidden="true"></span>
-        <span class="sr-only">Search reports</span>
-        <input
-          type="search"
-          [value]="search()"
-          (input)="updateSearch($event)"
-          placeholder="Search reports by name, module or owner..."
-        />
-      </label>
-      <label>
-        <span class="sr-only">Filter by module</span>
-        <select [value]="moduleFilter()" (change)="updateModule($event)">
-          <option>All modules</option>
-          <option>Inspections</option>
-          <option>Assets</option>
-          <option>RAMS</option>
-          <option>Jobs</option>
-        </select>
-      </label>
-      <label>
-        <span class="sr-only">Filter by status</span>
-        <select [value]="statusFilter()" (change)="updateStatus($event)">
-          <option>All statuses</option>
-          <option>Published</option>
-          <option>Template</option>
-          <option>Draft</option>
-        </select>
-      </label>
-      <label>
-        <span class="sr-only">Sort reports</span>
-        <select class="sort-select" [value]="sortOrder()" (change)="updateSort($event)">
-          <option value="newest">Sort: Last run (newest)</option>
-          <option value="oldest">Sort: Last run (oldest)</option>
-        </select>
-      </label>
-    </div>
+    @if (error()) {
+      <p class="notice error">{{ error() }} Example reports remain available.</p>
+    }
 
-    <div class="report-table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Report name</th>
-            <th>Module</th>
-            <th>Last run</th>
-            <th>Output</th>
-            <th>Status</th>
-            <th>Owner</th>
-            <th><span class="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (report of filteredReports(); track report.id) {
+    <section class="report-metrics" aria-label="Report summary">
+      <article>
+        <span class="metric-symbol reports" aria-hidden="true">▤</span>
+        <div>
+          <small>Total reports</small><strong>{{ reports().length }}</strong
+          ><span>Saved reports</span>
+        </div>
+      </article>
+      <article>
+        <span class="metric-symbol schedules" aria-hidden="true">□</span>
+        <div>
+          <small>Scheduled exports</small><strong>{{ scheduledCount() }}</strong
+          ><span>Locally configured</span>
+        </div>
+      </article>
+      <article>
+        <span class="metric-symbol runs" aria-hidden="true">▶</span>
+        <div>
+          <small>Issued reports</small><strong>{{ recentRunCount() }}</strong
+          ><span>From inspection data</span>
+        </div>
+      </article>
+      <article>
+        <span class="metric-symbol templates" aria-hidden="true">♙</span>
+        <div>
+          <small>Report data</small><strong>{{ dataRows().length }}</strong
+          ><span>Inspections</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="report-directory card">
+      <div class="report-filters">
+        <label class="report-search">
+          <span class="search-icon" aria-hidden="true"></span>
+          <span class="sr-only">Search reports</span>
+          <input
+            type="search"
+            [value]="search()"
+            (input)="updateSearch($event)"
+            placeholder="Search reports by name, module or owner..."
+          />
+        </label>
+        <label>
+          <span class="sr-only">Filter by module</span>
+          <select [value]="moduleFilter()" (change)="updateModule($event)">
+            <option>All modules</option>
+            <option>Inspections</option>
+            <option>Assets</option>
+            <option>RAMS</option>
+            <option>Jobs</option>
+          </select>
+        </label>
+        <label>
+          <span class="sr-only">Filter by status</span>
+          <select [value]="statusFilter()" (change)="updateStatus($event)">
+            <option>All statuses</option>
+            <option>Published</option>
+            <option>Template</option>
+            <option>Draft</option>
+          </select>
+        </label>
+        <label>
+          <span class="sr-only">Sort reports</span>
+          <select class="sort-select" [value]="sortOrder()" (change)="updateSort($event)">
+            <option value="newest">Sort: Last run (newest)</option>
+            <option value="oldest">Sort: Last run (oldest)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="report-table-wrap">
+        <table>
+          <caption class="sr-only">
+            Saved organisation reports
+          </caption>
+          <thead>
             <tr>
-              <td class="report-name-cell">
-                <span
-                  class="file-symbol"
-                  [class.sheet]="report.format === 'Excel'"
-                  aria-hidden="true"
-                >
-                  {{ report.format === 'Excel' ? '▥' : '▤' }}
-                </span>
-                <span
-                  ><strong>{{ report.name }}</strong
-                  ><small>{{ report.description }}</small></span
-                >
-              </td>
-              <td>
-                <span class="module-pill">{{ report.module }}</span>
-              </td>
-              <td>{{ report.lastRun }}</td>
-              <td>{{ report.format }}</td>
-              <td>
-                <span class="status-pill" [class]="report.status.toLowerCase()">{{
-                  report.status
-                }}</span>
-              </td>
-              <td>
-                <span class="owner"
-                  ><span class="owner-avatar">{{ report.initials }}</span
-                  >{{ report.owner }}</span
-                >
-              </td>
-              <td class="actions-cell">
-                <button
-                  class="row-menu-button"
-                  type="button"
-                  (click)="toggleMenu(report.id)"
-                  [attr.aria-expanded]="openMenu() === report.id"
-                  [attr.aria-label]="'Actions for ' + report.name"
-                >
-                  •••
-                </button>
-                @if (openMenu() === report.id) {
-                  <div class="row-menu">
-                    <button type="button">Run report</button>
-                    <button type="button">Edit report</button>
-                    <button type="button">Duplicate</button>
-                  </div>
-                }
-              </td>
+              <th scope="col">Report name</th>
+              <th scope="col">Module</th>
+              <th scope="col">Last run</th>
+              <th scope="col">Output</th>
+              <th scope="col">Status</th>
+              <th scope="col">Owner</th>
+              <th scope="col"><span class="sr-only">Actions</span></th>
             </tr>
+          </thead>
+          <tbody>
+            @for (report of filteredReports(); track report.id) {
+              <tr>
+                <td class="report-name-cell">
+                  <span
+                    class="file-symbol"
+                    [class.sheet]="report.format === 'Excel' || report.format === 'CSV'"
+                    aria-hidden="true"
+                    >{{ report.format === 'Excel' || report.format === 'CSV' ? '▥' : '▤' }}</span
+                  >
+                  <span>
+                    <strong>{{ report.name }}</strong>
+                    <small>{{ report.description }}</small>
+                  </span>
+                </td>
+                <td>
+                  <span class="module-pill">{{ report.module }}</span>
+                </td>
+                <td>{{ report.lastRun }}</td>
+                <td>{{ report.format }}</td>
+                <td>
+                  <span class="status-pill" [class]="report.status.toLowerCase()">{{
+                    report.status
+                  }}</span>
+                </td>
+                <td>
+                  <span class="owner"
+                    ><span class="owner-avatar" aria-hidden="true">{{ report.initials }}</span
+                    >{{ report.owner }}</span
+                  >
+                </td>
+                <td class="actions-cell">
+                  <button
+                    class="row-menu-button"
+                    type="button"
+                    aria-haspopup="menu"
+                    (click)="toggleMenu(report.id)"
+                    [attr.aria-expanded]="openMenu() === report.id"
+                    [attr.aria-label]="'Actions for ' + report.name"
+                  >
+                    •••
+                  </button>
+                  @if (openMenu() === report.id) {
+                    <div class="row-menu" role="menu">
+                      <button type="button" role="menuitem" (click)="runReport(report)">
+                        {{ report.documentId ? 'Open issued PDF' : 'Run as CSV' }}
+                      </button>
+                      <button type="button" role="menuitem" (click)="editReport(report)">
+                        Edit report
+                      </button>
+                      <button type="button" role="menuitem" (click)="duplicateReport(report)">
+                        Duplicate
+                      </button>
+                    </div>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td class="no-results" colspan="7">No reports match the selected filters.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <footer class="directory-footer" aria-live="polite">
+        <span>Showing {{ filteredReports().length }} of {{ reports().length }} reports</span>
+        <span class="placeholder-note">Report definitions are stored in this browser.</span>
+      </footer>
+    </section>
+
+    <div class="lower-grid">
+      <section class="card activity-card">
+        <header>
+          <div>
+            <h2>Recent inspection activity</h2>
+            <p>Latest records available to reporting.</p>
+          </div>
+        </header>
+        <div class="compact-list">
+          @for (row of dataRows().slice(0, 3); track row.client + row.site + row.inspectionDate) {
+            <article>
+              <span
+                class="activity-state"
+                [class.success]="row.result === 'Compliant'"
+                [class.failed]="row.result !== 'Compliant'"
+                aria-hidden="true"
+                >{{ row.result === 'Compliant' ? '✓' : '!' }}</span
+              >
+              <div>
+                <strong>{{ row.site }}</strong
+                ><small>{{ row.client }} · {{ row.asset }}</small>
+              </div>
+              <time
+                >{{ row.inspectionDate }}<small>{{ row.result }}</small></time
+              >
+            </article>
           } @empty {
-            <tr>
-              <td class="no-results" colspan="7">No reports match the selected filters.</td>
-            </tr>
+            <p class="list-empty">No inspection activity is available yet.</p>
           }
-        </tbody>
-      </table>
+        </div>
+      </section>
+
+      <section class="card schedule-card">
+        <header>
+          <div>
+            <h2>Scheduled exports</h2>
+            <p>Upcoming exports configured in this browser.</p>
+          </div>
+        </header>
+        <div class="compact-list schedule-list">
+          @for (report of scheduledReports(); track report.id) {
+            <article>
+              <span class="calendar-symbol" aria-hidden="true">□</span>
+              <div>
+                <strong>{{ report.name }}</strong>
+                <small
+                  >{{ report.draft.frequency }} · {{ report.draft.scheduleDay }} at
+                  {{ report.draft.scheduleTime }} · {{ report.draft.attachAs }}</small
+                >
+              </div>
+              <span class="active-pill">Configured</span>
+            </article>
+          } @empty {
+            <p class="list-empty">No automated exports have been configured.</p>
+          }
+        </div>
+      </section>
     </div>
-    <footer class="directory-footer">
-      <span>Showing {{ filteredReports().length }} of 24 reports</span>
-      <nav class="pagination" aria-label="Report pages">
-        <button type="button" aria-label="Previous page" disabled>‹</button>
-        <button class="active" type="button" aria-current="page">1</button>
-        <button type="button">2</button>
-        <button type="button">3</button>
-        <button type="button">4</button>
-        <button type="button">5</button>
-        <button type="button" aria-label="Next page">›</button>
-      </nav>
+  } @else {
+    <header class="builder-heading">
+      <div>
+        <button class="text-button breadcrumb-back" type="button" (click)="closeBuilder()">
+          Reports
+        </button>
+        <span aria-hidden="true">/</span>
+        <span>Create report</span>
+        <p class="eyebrow">Report builder</p>
+        <h1>{{ activeStep() === 1 ? 'Create report' : draft().name || 'Untitled report' }}</h1>
+        <p>
+          {{
+            activeStep() === 1
+              ? 'Set up your report structure, data and output.'
+              : steps[activeStep() - 1]?.detail
+          }}
+        </p>
+      </div>
+      <span class="status-pill draft">Draft</span>
+    </header>
+
+    <nav class="builder-steps" aria-label="Report builder progress">
+      @for (item of steps; track item.number) {
+        <button
+          type="button"
+          [class.active]="activeStep() === item.number"
+          [class.complete]="furthestStep() > item.number"
+          [disabled]="item.number > furthestStep()"
+          [attr.aria-current]="activeStep() === item.number ? 'step' : null"
+          (click)="goToStep(item.number)"
+        >
+          <span>{{ furthestStep() > item.number ? '✓' : item.number }}</span>
+          <strong>{{ item.label }}</strong>
+          <small>{{ item.detail }}</small>
+        </button>
+      }
+    </nav>
+
+    @if (notice()) {
+      <p class="builder-notice" aria-live="polite">{{ notice() }}</p>
+    }
+
+    @switch (activeStep()) {
+      @case (1) {
+        <div class="setup-grid builder-content">
+          <section class="card builder-panel setup-form">
+            <header class="panel-heading">
+              <h2>Report setup</h2>
+              <p>
+                Start with the basics. You can configure data, layout and sharing in the next steps.
+              </p>
+            </header>
+            <div class="setup-fields">
+              <label class="builder-field full-row">
+                <span>Report name <b>*</b></span>
+                <input [value]="draft().name" (input)="setText('name', $event)" maxlength="120" />
+                <small>Choose a clear, descriptive name for your report.</small>
+              </label>
+              <label class="builder-field full-row">
+                <span>Description</span>
+                <textarea
+                  [value]="draft().description"
+                  (input)="setText('description', $event)"
+                  rows="3"
+                ></textarea>
+                <small>Optional. Help others understand what this report includes.</small>
+              </label>
+
+              <div class="choice-row full-row">
+                <div class="choice-label">
+                  <strong>Module <b>*</b></strong
+                  ><small>Select the primary module for this report.</small>
+                </div>
+                <div class="module-choices">
+                  @for (module of modules; track module) {
+                    <button
+                      type="button"
+                      [class.selected]="draft().module === module"
+                      (click)="chooseModule(module)"
+                    >
+                      <span aria-hidden="true">{{
+                        module === 'Inspections'
+                          ? '▤'
+                          : module === 'Jobs'
+                            ? '▣'
+                            : module === 'RAMS'
+                              ? '◇'
+                              : module === 'Assets'
+                                ? '⬡'
+                                : '♙'
+                      }}</span>
+                      <strong>{{ module }}</strong>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <div class="choice-row full-row">
+                <div class="choice-label">
+                  <strong>Report type <b>*</b></strong
+                  ><small>Choose how your data will be presented.</small>
+                </div>
+                <div class="type-choices">
+                  @for (type of reportTypes; track type) {
+                    <button
+                      type="button"
+                      [class.selected]="draft().reportType === type"
+                      (click)="chooseReportType(type)"
+                    >
+                      <span aria-hidden="true">{{
+                        type === 'Table report'
+                          ? '▦'
+                          : type === 'Summary dashboard'
+                            ? '▥'
+                            : type === 'Certificate pack'
+                              ? '▤'
+                              : '◇'
+                      }}</span>
+                      <strong>{{ type }}</strong>
+                      <small>{{
+                        type === 'Table report'
+                          ? 'Detailed list with customisable columns'
+                          : type === 'Summary dashboard'
+                            ? 'KPIs, charts and visual summaries'
+                            : type === 'Certificate pack'
+                              ? 'Pre-formatted compliance certificates'
+                              : 'Focus on compliance and audit readiness'
+                      }}</small>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <div class="choice-row full-row">
+                <div class="choice-label">
+                  <strong>Audience <b>*</b></strong
+                  ><small>Who can access this report?</small>
+                </div>
+                <div class="audience-choices">
+                  @for (audience of ['Private', 'Organisation', 'Template']; track audience) {
+                    <button
+                      type="button"
+                      [class.selected]="draft().audience === audience"
+                      (click)="chooseAudience($any(audience))"
+                    >
+                      <span class="radio-mark" aria-hidden="true"></span>
+                      <strong>{{ audience }}</strong>
+                      <small>{{
+                        audience === 'Private'
+                          ? 'Only you'
+                          : audience === 'Organisation'
+                            ? 'All users in your organisation'
+                            : 'Save as a reusable template'
+                      }}</small>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              <div class="output-row full-row">
+                <div class="choice-label">
+                  <strong>Default output format(s)</strong
+                  ><small>Select the default formats when this report is run.</small>
+                </div>
+                <div class="check-list horizontal">
+                  @for (format of outputs; track format) {
+                    <label
+                      ><input
+                        type="checkbox"
+                        [checked]="draft().formats.includes(format)"
+                        (change)="toggleList('formats', format)"
+                      />{{ format }}</label
+                    >
+                  }
+                </div>
+              </div>
+              <label class="switch-line full-row"
+                ><input
+                  type="checkbox"
+                  [checked]="draft().siteFiltering"
+                  (change)="setBoolean('siteFiltering', $event)"
+                /><span></span><strong>Allow site-level filtering when run</strong
+                ><small>Users can filter this report by client or site.</small></label
+              >
+            </div>
+          </section>
+
+          <aside class="setup-sidebar">
+            <section class="card builder-panel summary-card">
+              <header class="panel-heading">
+                <h2>Setup summary</h2>
+                <p>A live preview of your report settings.</p>
+              </header>
+              <dl>
+                <div>
+                  <dt>Report name</dt>
+                  <dd>{{ draft().name || 'Untitled report' }}</dd>
+                </div>
+                <div>
+                  <dt>Description</dt>
+                  <dd>{{ draft().description || 'No description' }}</dd>
+                </div>
+                <div>
+                  <dt>Module</dt>
+                  <dd>
+                    <span class="module-pill">{{ draft().module }}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Report type</dt>
+                  <dd>
+                    <span class="module-pill">{{ draft().reportType }}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Audience</dt>
+                  <dd>{{ draft().audience }}</dd>
+                </div>
+                <div>
+                  <dt>Default outputs</dt>
+                  <dd class="tag-row">
+                    @for (format of draft().formats; track format) {
+                      <span>{{ format }}</span>
+                    }
+                  </dd>
+                </div>
+                <div>
+                  <dt>Site-level filtering</dt>
+                  <dd>
+                    <span class="status-pill published">{{
+                      draft().siteFiltering ? 'Enabled' : 'Disabled'
+                    }}</span>
+                  </dd>
+                </div>
+              </dl>
+              <div class="summary-owner">
+                <span class="owner-avatar">{{ ownerInitials() }}</span>
+                <div>
+                  <small>Owner</small><strong>{{ ownerName() }}</strong>
+                </div>
+              </div>
+            </section>
+            <section class="card builder-panel templates-card">
+              <header class="panel-heading">
+                <h2>Recommended templates</h2>
+                <p>Popular templates to get you started.</p>
+              </header>
+              <button type="button" (click)="applyTemplate('compliance')">
+                <span>▤</span>
+                <div>
+                  <strong>Inspection compliance summary</strong
+                  ><small>Completion rates and outstanding items</small>
+                </div>
+                <b>Use</b>
+              </button>
+              <button type="button" (click)="applyTemplate('assets')">
+                <span>▥</span>
+                <div>
+                  <strong>Asset service due report</strong
+                  ><small>Assets due in the next 30 days</small>
+                </div>
+                <b>Use</b>
+              </button>
+              <button type="button" (click)="applyTemplate('rams')">
+                <span>◇</span>
+                <div>
+                  <strong>RAMS issue register</strong><small>Open and closed RAMS issues</small>
+                </div>
+                <b>Use</b>
+              </button>
+              <button type="button" (click)="applyTemplate('clients')">
+                <span>♙</span>
+                <div>
+                  <strong>Client inspection trends</strong
+                  ><small>Inspection activity by client</small>
+                </div>
+                <b>Use</b>
+              </button>
+            </section>
+          </aside>
+        </div>
+      }
+
+      @case (2) {
+        <div class="builder-content data-step">
+          <div class="data-columns">
+            <section class="card builder-panel available-fields">
+              <header class="panel-heading">
+                <h2>Available data fields</h2>
+                <p>Choose fields from your data sources and add them to your report.</p>
+              </header>
+              <label class="field-search"
+                ><span class="search-icon"></span
+                ><input type="search" placeholder="Search fields..."
+              /></label>
+              @for (category of categories; track category) {
+                <details [open]="category === 'Site details' || category === 'Client details'">
+                  <summary>
+                    {{ category }} <span>{{ categoryFields(category).length }} fields</span>
+                  </summary>
+                  @for (field of categoryFields(category); track field.key) {
+                    <label class="available-field-row">
+                      <span class="drag-dots">⠿</span>
+                      <input
+                        type="checkbox"
+                        [checked]="fieldEnabled(field.key)"
+                        [disabled]="field.required"
+                        (change)="toggleList('fields', field.key)"
+                      />
+                      <strong>{{ field.label }}</strong>
+                      @if (field.required) {
+                        <span class="required-pill">Required</span>
+                      }
+                    </label>
+                  }
+                </details>
+              }
+            </section>
+
+            <section class="card builder-panel selected-fields">
+              <header class="panel-heading">
+                <h2>Selected fields ({{ selectedFields().length }})</h2>
+                <p>Reorder fields and set grouping options.</p>
+              </header>
+              <div class="field-table-heading">
+                <span>Field</span><span>Group</span><span>Aggregation</span><span>Actions</span>
+              </div>
+              @for (field of selectedFields(); track field.key; let index = $index) {
+                <div class="selected-field-row">
+                  <span class="field-name"
+                    ><span class="drag-dots">⠿</span><strong>{{ field.label }}</strong></span
+                  >
+                  <input
+                    type="checkbox"
+                    [checked]="draft().groupedFields.includes(field.key)"
+                    (change)="toggleList('groupedFields', field.key)"
+                    [attr.aria-label]="'Group by ' + field.label"
+                  />
+                  <select aria-label="Aggregation">
+                    <option>{{ field.key === 'defects' ? 'Count (Sum)' : 'None' }}</option>
+                  </select>
+                  <span class="field-actions"
+                    ><button
+                      type="button"
+                      (click)="moveField(index, -1)"
+                      [disabled]="index === 0"
+                      aria-label="Move field up"
+                    >
+                      ↑</button
+                    ><button
+                      type="button"
+                      (click)="moveField(index, 1)"
+                      [disabled]="index === selectedFields().length - 1"
+                      aria-label="Move field down"
+                    >
+                      ↓
+                    </button></span
+                  >
+                </div>
+              }
+            </section>
+
+            <section class="card builder-panel filters-panel">
+              <header class="panel-heading">
+                <h2>Filters & options</h2>
+                <p>Narrow your data set and define how it is organised.</p>
+              </header>
+              <div class="record-estimate">
+                <small>Estimated records</small><strong>{{ filteredRows().length }}</strong
+                ><span>Based on current filters</span>
+              </div>
+              <h3>Filters</h3>
+              <label
+                ><span>Module</span
+                ><select
+                  [value]="draft().moduleFilter"
+                  (change)="setSelect('moduleFilter', $event)"
+                >
+                  <option>All modules</option>
+                  <option>EV charging</option>
+                  <option>Thermal imaging</option>
+                  <option>Emergency lighting</option>
+                </select></label
+              >
+              <label
+                ><span>Result</span
+                ><select
+                  [value]="draft().resultFilter"
+                  (change)="setSelect('resultFilter', $event)"
+                >
+                  <option>All results</option>
+                  <option>Compliant</option>
+                  <option>Non-compliant</option>
+                </select></label
+              >
+              <label class="switch-line compact"
+                ><input
+                  type="checkbox"
+                  [checked]="draft().overdueOnly"
+                  (change)="setBoolean('overdueOnly', $event)"
+                /><span></span><strong>Outstanding defects only</strong></label
+              >
+              <label class="switch-line compact"
+                ><input
+                  type="checkbox"
+                  [checked]="draft().includeArchived"
+                  (change)="setBoolean('includeArchived', $event)"
+                /><span></span><strong>Include archived records</strong></label
+              >
+              <div class="group-sort-box">
+                <h3>Grouping & sorting</h3>
+                <div class="grouping-row">
+                  <span>Group by</span>
+                  <div class="selected-tags">
+                    @for (field of draft().groupedFields; track field) {
+                      <span
+                        >{{ fieldLabel(field) }}
+                        <button type="button" (click)="toggleList('groupedFields', field)">
+                          ×
+                        </button></span
+                      >
+                    }
+                  </div>
+                </div>
+                <label
+                  ><span>Sort by</span
+                  ><select [value]="draft().sortField" (change)="setSelect('sortField', $event)">
+                    @for (field of selectedFields(); track field.key) {
+                      <option [value]="field.key">{{ field.label }}</option>
+                    }</select
+                  ><select
+                    [value]="draft().sortDirection"
+                    (change)="setSelect('sortDirection', $event)"
+                  >
+                    <option>Ascending</option>
+                    <option>Descending</option>
+                  </select></label
+                >
+              </div>
+            </section>
+          </div>
+
+          <section class="card builder-panel data-preview">
+            <header class="panel-heading">
+              <h2>Data preview</h2>
+              <p>Showing a preview based on selected fields and filters.</p>
+            </header>
+            <div class="preview-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    @for (field of selectedFields(); track field.key) {
+                      <th>{{ field.label }}</th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of previewRows(); track row.client + row.site + row.inspectionDate) {
+                    <tr>
+                      @for (field of selectedFields(); track field.key) {
+                        <td>
+                          <span
+                            [class.result-good]="
+                              field.key === 'result' && row.result === 'Compliant'
+                            "
+                            [class.result-bad]="
+                              field.key === 'result' && row.result !== 'Compliant'
+                            "
+                            >{{ valueFor(row, field.key) }}</span
+                          >
+                        </td>
+                      }
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td [attr.colspan]="selectedFields().length">
+                        No inspection records match these filters.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      }
+
+      @case (3) {
+        <div class="layout-grid builder-content">
+          <div class="layout-controls">
+            <section class="card builder-panel">
+              <header class="panel-heading">
+                <h2>Format</h2>
+                <p>Choose the output format for this report.</p>
+              </header>
+              <div class="format-choices">
+                @for (format of outputs; track format) {
+                  <button
+                    type="button"
+                    [class.selected]="draft().formats[0] === format"
+                    (click)="prioritizeFormat(format)"
+                  >
+                    <span>{{
+                      format === 'PDF'
+                        ? '▤'
+                        : format === 'Excel'
+                          ? '▥'
+                          : format === 'CSV'
+                            ? '▦'
+                            : '▣'
+                    }}</span
+                    ><strong>{{ format }}</strong
+                    ><small>{{
+                      format === 'PDF'
+                        ? 'Best for sharing'
+                        : format === 'Web view'
+                          ? 'Online version'
+                          : 'For further analysis'
+                    }}</small>
+                  </button>
+                }
+              </div>
+            </section>
+            <section class="card builder-panel page-settings">
+              <header class="panel-heading">
+                <h2>Page settings</h2>
+                <p>Configure page size, orientation and layout.</p>
+              </header>
+              <div class="inline-settings">
+                <label
+                  >Page size<select
+                    [value]="draft().pageSize"
+                    (change)="setSelect('pageSize', $event)"
+                  >
+                    <option>A4</option>
+                    <option>Letter</option>
+                  </select></label
+                >
+                <fieldset>
+                  <legend>Orientation</legend>
+                  <label
+                    ><input
+                      type="radio"
+                      name="orientation"
+                      value="Portrait"
+                      [checked]="draft().orientation === 'Portrait'"
+                      (change)="setSelect('orientation', $event)"
+                    />Portrait</label
+                  ><label
+                    ><input
+                      type="radio"
+                      name="orientation"
+                      value="Landscape"
+                      [checked]="draft().orientation === 'Landscape'"
+                      (change)="setSelect('orientation', $event)"
+                    />Landscape</label
+                  >
+                </fieldset>
+                <label
+                  >Margins<select [value]="draft().margins" (change)="setSelect('margins', $event)">
+                    <option>Normal</option>
+                    <option>Narrow</option>
+                    <option>Wide</option>
+                  </select></label
+                >
+                <label class="switch-line compact"
+                  ><input
+                    type="checkbox"
+                    [checked]="draft().pageNumbers"
+                    (change)="setBoolean('pageNumbers', $event)"
+                  /><span></span><strong>Page numbers</strong></label
+                >
+              </div>
+            </section>
+            <section class="card builder-panel branding-panel">
+              <header class="panel-heading">
+                <h2>Branding</h2>
+                <p>Apply organisation and customer branding.</p>
+              </header>
+              <div class="branding-grid">
+                <label class="switch-line compact"
+                  ><input
+                    type="checkbox"
+                    [checked]="draft().customerLogo"
+                    (change)="setBoolean('customerLogo', $event)"
+                  /><span></span><strong>Include customer logo</strong></label
+                >
+                <div class="brand-chip">
+                  T<span>{{ organisationName() }}</span>
+                </div>
+                <label class="switch-line compact"
+                  ><input
+                    type="checkbox"
+                    [checked]="draft().organisationLogo"
+                    (change)="setBoolean('organisationLogo', $event)"
+                  /><span></span><strong>Include organisation logo</strong></label
+                >
+                <div class="brand-chip ohm"><b>Ω</b><span>OhmAudit</span></div>
+                <div class="accent-picker">
+                  <strong>Theme accent colour</strong>
+                  @for (
+                    colour of ['#1473e6', '#11a870', '#7347d8', '#f2a900', '#e6505c', '#9aa8ba'];
+                    track colour
+                  ) {
+                    <button
+                      type="button"
+                      [style.background]="colour"
+                      [class.selected]="draft().accent === colour"
+                      (click)="patchDraft({ accent: colour })"
+                      [attr.aria-label]="'Use ' + colour"
+                    ></button>
+                  }
+                </div>
+              </div>
+            </section>
+            <section class="card builder-panel content-panel">
+              <header class="panel-heading">
+                <h2>Content blocks</h2>
+                <p>Choose and reorder the sections to include.</p>
+              </header>
+              <div class="content-blocks">
+                @for (section of sectionOptions; track section) {
+                  <label
+                    ><span class="drag-dots">⠿</span><strong>{{ section }}</strong
+                    ><input
+                      type="checkbox"
+                      [checked]="draft().sections.includes(section)"
+                      (change)="toggleList('sections', section)"
+                  /></label>
+                }
+              </div>
+            </section>
+            <div class="layout-options-row">
+              <section class="card builder-panel">
+                <header class="panel-heading"><h2>Chart options</h2></header>
+                <div class="check-list">
+                  @for (chart of chartOptions; track chart) {
+                    <label
+                      ><input
+                        type="checkbox"
+                        [checked]="draft().charts.includes(chart)"
+                        (change)="toggleList('charts', chart)"
+                      />{{ chart }}</label
+                    >
+                  }
+                </div>
+              </section>
+              <section class="card builder-panel text-options">
+                <header class="panel-heading"><h2>Text options</h2></header>
+                <label
+                  >Report title<input
+                    [value]="draft().name"
+                    (input)="setText('name', $event)" /></label
+                ><label
+                  >Subtitle<input
+                    [value]="draft().subtitle"
+                    (input)="setText('subtitle', $event)" /></label
+                ><label
+                  >Footer text<input
+                    [value]="draft().footer"
+                    (input)="setText('footer', $event)" /></label
+                ><label
+                  >Disclaimer<input
+                    [value]="draft().disclaimer"
+                    (input)="setText('disclaimer', $event)"
+                /></label>
+              </section>
+            </div>
+          </div>
+
+          <section class="card report-preview-panel">
+            <header>
+              <div>
+                <h2>Report preview</h2>
+                <p>Live example using current inspection data.</p>
+              </div>
+              <button class="button secondary compact" type="button" (click)="exportCurrent('PDF')">
+                Print preview
+              </button>
+            </header>
+            <div class="paper-stage">
+              <article
+                class="report-paper"
+                [class.landscape]="draft().orientation === 'Landscape'"
+                [style.--report-accent]="draft().accent"
+              >
+                <header>
+                  <strong>{{ organisationName() }}</strong
+                  ><b>Ω <span>OhmAudit</span></b>
+                </header>
+                <div class="paper-rule"></div>
+                <div class="paper-title">
+                  <div>
+                    <h2>{{ draft().name }}</h2>
+                    <p>{{ draft().subtitle }}</p>
+                  </div>
+                  <small
+                    >Report generated<br />{{ previewRows()[0]?.inspectionDate || 'Today' }}</small
+                  >
+                </div>
+                <div class="cover-banner">
+                  <div class="charger-illustration">⚡</div>
+                  <strong>Safer<br />Greener<br />Stronger Together</strong>
+                </div>
+                <h3>Executive summary</h3>
+                <p>
+                  This report summarises inspection activity across your organisation, highlighting
+                  compliance rates, key findings and outstanding actions.
+                </p>
+                <div class="paper-kpis">
+                  <span
+                    ><b>{{ filteredRows().length }}</b
+                    ><small>Total inspections</small></span
+                  ><span
+                    ><b>{{ complianceRate() }}%</b><small>Pass rate</small></span
+                  ><span
+                    ><b>{{ outstandingDefects() }}</b
+                    ><small>Actions outstanding</small></span
+                  ><span
+                    ><b>{{ dataRows().length }}</b
+                    ><small>Records reviewed</small></span
+                  >
+                </div>
+                <div class="paper-charts">
+                  <div>
+                    <h4>Inspection outcomes</h4>
+                    <div class="bar-chart">
+                      @for (height of [35, 48, 55, 72, 49, 78]; track $index) {
+                        <span [style.height.%]="height"></span>
+                      }
+                    </div>
+                  </div>
+                  <div>
+                    <h4>Overall result</h4>
+                    <div class="donut" [style.--rate]="complianceRate() + '%'">
+                      {{ complianceRate() }}%
+                    </div>
+                  </div>
+                </div>
+                <h3>Recent inspections</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Site</th>
+                      <th>Inspector</th>
+                      <th>Result</th>
+                      <th>Findings</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of previewRows().slice(0, 4); track row.site + row.inspectionDate) {
+                      <tr>
+                        <td>{{ row.inspectionDate }}</td>
+                        <td>{{ row.site }}</td>
+                        <td>{{ row.engineer }}</td>
+                        <td>
+                          <span
+                            [class.result-good]="row.result === 'Compliant'"
+                            [class.result-bad]="row.result !== 'Compliant'"
+                            >{{ row.result }}</span
+                          >
+                        </td>
+                        <td>{{ row.defects }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+                <footer>{{ draft().footer }} <span>Page 1</span></footer>
+              </article>
+            </div>
+          </section>
+        </div>
+      }
+
+      @case (4) {
+        <div class="share-grid builder-content">
+          <section class="card builder-panel export-options">
+            <header class="panel-heading">
+              <h2>Export options</h2>
+              <p>Generate a copy of your report now.</p>
+            </header>
+            @for (format of outputs; track format) {
+              <button type="button" (click)="exportCurrent(format)">
+                <span>{{
+                  format === 'PDF' ? '▤' : format === 'Excel' ? '▥' : format === 'CSV' ? '▦' : '↗'
+                }}</span>
+                <div>
+                  <strong>{{ format === 'Web view' ? 'Open web view' : 'Export ' + format }}</strong
+                  ><small>{{
+                    format === 'PDF'
+                      ? 'Best for sharing and printing'
+                      : format === 'Web view'
+                        ? 'View this report in your browser'
+                        : 'Download editable report data'
+                  }}</small>
+                </div>
+                <b>›</b>
+              </button>
+            }
+            <button type="button" (click)="copyShareLink()">
+              <span>↗</span>
+              <div><strong>Copy share link</strong><small>Copy a local preview link</small></div>
+              <b>›</b>
+            </button>
+          </section>
+
+          <section class="card builder-panel schedule-options">
+            <header class="panel-heading split-heading">
+              <div>
+                <h2>Schedule automated exports</h2>
+                <p>Configure future delivery settings.</p>
+              </div>
+              <label class="switch-line compact"
+                ><input
+                  type="checkbox"
+                  [checked]="draft().scheduleEnabled"
+                  (change)="setBoolean('scheduleEnabled', $event)"
+                /><span></span><strong>Enable schedule</strong></label
+              >
+            </header>
+            <fieldset [disabled]="!draft().scheduleEnabled">
+              <legend>Frequency</legend>
+              <div class="frequency-choices">
+                @for (frequency of ['Weekly', 'Monthly', 'Quarterly']; track frequency) {
+                  <label [class.selected]="draft().frequency === frequency"
+                    ><input
+                      type="radio"
+                      name="frequency"
+                      [value]="frequency"
+                      [checked]="draft().frequency === frequency"
+                      (change)="setSelect('frequency', $event)"
+                    />{{ frequency }}</label
+                  >
+                }
+              </div>
+              <div class="two-fields">
+                <label
+                  >Day<select
+                    [value]="draft().scheduleDay"
+                    (change)="setSelect('scheduleDay', $event)"
+                  >
+                    <option>Monday</option>
+                    <option>Tuesday</option>
+                    <option>Wednesday</option>
+                    <option>Thursday</option>
+                    <option>Friday</option>
+                    <option>1st of month</option>
+                  </select></label
+                ><label
+                  >Time<input
+                    type="time"
+                    [value]="draft().scheduleTime"
+                    (input)="setText('scheduleTime', $event)"
+                /></label>
+              </div>
+              <label
+                >Recipients<input
+                  type="email"
+                  [value]="draft().recipients"
+                  (input)="setText('recipients', $event)"
+                  placeholder="name@example.com, another@example.com"
+              /></label>
+              <label
+                >Email subject<input
+                  [value]="draft().emailSubject"
+                  (input)="setText('emailSubject', $event)"
+              /></label>
+              <div class="radio-line">
+                <strong>Attach as</strong>
+                @for (format of ['PDF', 'Excel', 'Both']; track format) {
+                  <label
+                    ><input
+                      type="radio"
+                      name="attachAs"
+                      [value]="format"
+                      [checked]="draft().attachAs === format"
+                      (change)="setSelect('attachAs', $event)"
+                    />{{ format }}</label
+                  >
+                }
+              </div>
+              <p class="placeholder-callout">
+                Scheduling settings are saved with this report. Automated delivery will activate
+                when the report scheduling API is available.
+              </p>
+            </fieldset>
+          </section>
+
+          <section class="card builder-panel access-options">
+            <header class="panel-heading">
+              <h2>Access & distribution</h2>
+              <p>Control who can access this report and how it can be shared.</p>
+            </header>
+            <label
+              >Report visibility<select
+                [value]="draft().visibility"
+                (change)="setSelect('visibility', $event)"
+              >
+                <option>Private</option>
+                <option>Organisation users</option>
+                <option>Internal and client contacts</option>
+              </select></label
+            >
+            <label
+              >Internal users
+              <div class="token-input">
+                <span>{{ ownerInitials() }} {{ ownerName() }} ×</span
+                ><input placeholder="Add internal users..." /></div
+            ></label>
+            <label
+              >Client contacts
+              <div class="token-input"><input placeholder="Add client contacts..." /></div
+            ></label>
+            <label class="switch-line compact"
+              ><input
+                type="checkbox"
+                [checked]="draft().guestLinks"
+                (change)="setBoolean('guestLinks', $event)"
+              /><span></span><strong>Allow guest share links</strong></label
+            >
+            <label
+              >Link expiry<select
+                [value]="draft().linkExpiry"
+                (change)="setSelect('linkExpiry', $event)"
+              >
+                <option>7 days</option>
+                <option>30 days</option>
+                <option>90 days</option>
+              </select></label
+            >
+            <label class="switch-line compact"
+              ><input
+                type="checkbox"
+                [checked]="draft().watermark"
+                (change)="setBoolean('watermark', $event)"
+              /><span></span><strong>Add watermark (OhmAudit logo)</strong></label
+            >
+            <label class="switch-line compact"
+              ><input
+                type="checkbox"
+                [checked]="draft().versionHistory"
+                (change)="setBoolean('versionHistory', $event)"
+              /><span></span><strong>Keep version history</strong></label
+            >
+            <p class="placeholder-callout">
+              Recipient and guest-link controls are placeholders until report-specific sharing APIs
+              are available.
+            </p>
+          </section>
+        </div>
+      }
+
+      @case (5) {
+        <div class="review-grid builder-content">
+          <section class="card builder-panel review-summary">
+            <header class="panel-heading">
+              <div>
+                <p class="eyebrow">Ready to publish</p>
+                <h2>{{ draft().name }}</h2>
+                <p>{{ draft().description }}</p>
+              </div>
+              <span class="status-pill draft">Draft</span>
+            </header>
+            <div class="review-kpis">
+              <span
+                ><small>Records</small><strong>{{ filteredRows().length }}</strong></span
+              ><span
+                ><small>Fields</small><strong>{{ selectedFields().length }}</strong></span
+              ><span
+                ><small>Compliance</small><strong>{{ complianceRate() }}%</strong></span
+              ><span
+                ><small>Outstanding actions</small><strong>{{ outstandingDefects() }}</strong></span
+              >
+            </div>
+            <div class="review-sections">
+              <article>
+                <h3>Setup</h3>
+                <dl>
+                  <div>
+                    <dt>Module</dt>
+                    <dd>{{ draft().module }}</dd>
+                  </div>
+                  <div>
+                    <dt>Type</dt>
+                    <dd>{{ draft().reportType }}</dd>
+                  </div>
+                  <div>
+                    <dt>Audience</dt>
+                    <dd>{{ draft().audience }}</dd>
+                  </div>
+                </dl>
+                <button type="button" (click)="goToStep(1)">Edit</button>
+              </article>
+              <article>
+                <h3>Data & fields</h3>
+                <dl>
+                  <div>
+                    <dt>Fields</dt>
+                    <dd>{{ selectedFields().length }} selected</dd>
+                  </div>
+                  <div>
+                    <dt>Grouping</dt>
+                    <dd>{{ draft().groupedFields.length }} fields</dd>
+                  </div>
+                  <div>
+                    <dt>Records</dt>
+                    <dd>{{ filteredRows().length }} available</dd>
+                  </div>
+                </dl>
+                <button type="button" (click)="goToStep(2)">Edit</button>
+              </article>
+              <article>
+                <h3>Layout</h3>
+                <dl>
+                  <div>
+                    <dt>Page</dt>
+                    <dd>{{ draft().pageSize }} · {{ draft().orientation }}</dd>
+                  </div>
+                  <div>
+                    <dt>Sections</dt>
+                    <dd>{{ draft().sections.length }} enabled</dd>
+                  </div>
+                  <div>
+                    <dt>Primary output</dt>
+                    <dd>{{ draft().formats[0] }}</dd>
+                  </div>
+                </dl>
+                <button type="button" (click)="goToStep(3)">Edit</button>
+              </article>
+              <article>
+                <h3>Share & export</h3>
+                <dl>
+                  <div>
+                    <dt>Visibility</dt>
+                    <dd>{{ draft().visibility }}</dd>
+                  </div>
+                  <div>
+                    <dt>Schedule</dt>
+                    <dd>{{ draft().scheduleEnabled ? draft().frequency : 'Not enabled' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Formats</dt>
+                    <dd>{{ draft().formats.join(', ') }}</dd>
+                  </div>
+                </dl>
+                <button type="button" (click)="goToStep(4)">Edit</button>
+              </article>
+            </div>
+          </section>
+          <aside class="card builder-panel publish-panel">
+            <div class="publish-icon">✓</div>
+            <h2>Everything is ready</h2>
+            <p>
+              Save a private draft, publish the report definition, or export current inspection data
+              now.
+            </p>
+            <button class="button primary" type="button" (click)="saveReport('Published', true)">
+              Publish report
+            </button>
+            <button
+              class="button secondary"
+              type="button"
+              (click)="exportCurrent(draft().formats[0] || 'CSV')"
+            >
+              Run report now
+            </button>
+            <small
+              >Definitions and schedules are stored in this browser until server-side report builder
+              APIs are introduced.</small
+            >
+          </aside>
+        </div>
+      }
+    }
+
+    <footer class="builder-footer">
+      <button
+        class="button secondary"
+        type="button"
+        (click)="activeStep() === 1 ? closeBuilder() : previousStep()"
+      >
+        {{ activeStep() === 1 ? 'Cancel' : '← Back' }}
+      </button>
+      <div>
+        <button class="button secondary" type="button" (click)="saveReport('Draft')">
+          Save draft
+        </button>
+        @if (activeStep() < 5) {
+          <button class="button primary" type="button" (click)="nextStep()">
+            Continue to {{ nextStepLabel() }} →
+          </button>
+        } @else {
+          <button class="button primary" type="button" (click)="saveReport('Published', true)">
+            Publish & finish
+          </button>
+        }
+      </div>
     </footer>
-  </section>
-
-  <div class="lower-grid">
-    <section class="card activity-card">
-      <header>
-        <div>
-          <h2>Recent activity</h2>
-          <p>Latest report runs across your organisation.</p>
-        </div>
-        <button type="button">View all activity</button>
-      </header>
-      <div class="compact-list">
-        <article>
-          <span class="activity-state success" aria-hidden="true">✓</span>
-          <div>
-            <strong>EV inspection compliance summary</strong
-            ><small>Report generated successfully</small>
-          </div>
-          <time>1 Sept 2026, 10:24<small>by Ryan Griffin</small></time>
-        </article>
-        <article>
-          <span class="activity-state success" aria-hidden="true">✓</span>
-          <div>
-            <strong>Asset service due report</strong><small>Report generated successfully</small>
-          </div>
-          <time>31 Aug 2026, 16:02<small>by Ryan Griffin</small></time>
-        </article>
-        <article>
-          <span class="activity-state failed" aria-hidden="true">!</span>
-          <div>
-            <strong>Client inspection trends</strong
-            ><small>Report failed - no data available</small>
-          </div>
-          <time>30 Aug 2026, 12:11<small>by James White</small></time>
-        </article>
-      </div>
-    </section>
-
-    <section class="card schedule-card">
-      <header>
-        <div>
-          <h2>Scheduled exports</h2>
-          <p>Upcoming automated report exports.</p>
-        </div>
-        <button type="button">View all schedules</button>
-      </header>
-      <div class="compact-list schedule-list">
-        <article>
-          <span class="calendar-symbol" aria-hidden="true">□</span>
-          <div>
-            <strong>Weekly inspection summary</strong
-            ><small>Every Monday at 08:00 · PDF · Email to 3 recipients</small>
-          </div>
-          <span class="active-pill">Active</span
-          ><button class="row-menu-button" type="button" aria-label="Weekly schedule actions">
-            •••
-          </button>
-        </article>
-        <article>
-          <span class="calendar-symbol" aria-hidden="true">□</span>
-          <div>
-            <strong>Monthly asset service report</strong
-            ><small>1st of month at 09:00 · Excel · Email to 5 recipients</small>
-          </div>
-          <span class="active-pill">Active</span
-          ><button class="row-menu-button" type="button" aria-label="Monthly schedule actions">
-            •••
-          </button>
-        </article>
-        <article>
-          <span class="calendar-symbol" aria-hidden="true">□</span>
-          <div>
-            <strong>Quarterly client compliance</strong
-            ><small>1st of quarter at 09:00 · PDF · Email to 4 recipients</small>
-          </div>
-          <span class="active-pill">Active</span
-          ><button class="row-menu-button" type="button" aria-label="Quarterly schedule actions">
-            •••
-          </button>
-        </article>
-      </div>
-    </section>
-  </div>
+  }
 </main>
