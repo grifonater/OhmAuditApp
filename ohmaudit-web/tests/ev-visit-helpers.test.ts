@@ -53,7 +53,11 @@ describe('EV visit helpers', () => {
   it('assigns a sole supply only when a connector has no explicit mapping', () => {
     expect(connectorSupplyIds([], [{ id: 'supply-1' }])).toEqual(['supply-1']);
     expect(connectorSupplyIds([], [{ id: 'supply-1' }, { id: 'supply-2' }])).toEqual([]);
-    expect(connectorSupplyIds(['explicit'], [{ id: 'supply-1' }])).toEqual(['explicit']);
+    expect(connectorSupplyIds(['supply-1'], [{ id: 'supply-1' }])).toEqual(['supply-1']);
+    expect(connectorSupplyIds(['removed-supply'], [{ id: 'supply-1' }])).toEqual(['supply-1']);
+    expect(
+      connectorSupplyIds(['removed-supply'], [{ id: 'supply-1' }, { id: 'supply-2' }]),
+    ).toEqual([]);
   });
 
   it('applies a selected nameplate candidate without changing other manual values', () => {

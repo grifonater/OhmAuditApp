@@ -1251,9 +1251,19 @@
                             [value]="connector.controls.supplyIds.value[0] || ''"
                             (change)="chooseConnectorSupply(connector, $any($event.target).value)"
                           >
-                            <option value="">Select one supply</option>
+                            <option
+                              value=""
+                              [selected]="connector.controls.supplyIds.value.length === 0"
+                            >
+                              Select one supply
+                            </option>
                             @for (supply of supplyTests.controls; track supply.get('id')?.value) {
-                              <option [value]="supply.get('id')?.value">
+                              <option
+                                [value]="supply.get('id')?.value"
+                                [selected]="
+                                  connector.controls.supplyIds.value[0] === supply.get('id')?.value
+                                "
+                              >
                                 {{ supply.get('label')?.value }}
                               </option>
                             }</select

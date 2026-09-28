@@ -103,6 +103,12 @@ function Assert-ApiBindings([object]$Production) {
   if (-not $serviceBindings.Contains('AI_WORKER')) {
     throw 'ohmaudit-api env.production requires the AI_WORKER service binding.'
   }
+  if ($null -eq $Production.send_email -or @($Production.send_email).Count -eq 0) {
+    throw 'ohmaudit-api env.production requires the EMAIL send binding.'
+  }
+  if ($null -eq $Production.queues.consumers -or @($Production.queues.consumers).Count -eq 0) {
+    throw 'ohmaudit-api env.production requires the Email Service event queue consumer.'
+  }
   if ([string]::IsNullOrWhiteSpace([string]$Production.vars.SUPABASE_URL)) {
     throw 'ohmaudit-api env.production requires SUPABASE_URL.'
   }

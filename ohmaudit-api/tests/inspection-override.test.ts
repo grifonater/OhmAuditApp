@@ -108,6 +108,9 @@ describe('administrator inspection corrections', () => {
       data: expect.objectContaining({
         eventType: 'InspectionSubmissionOverridden',
         entityId: 'inspection-a',
+        data: expect.objectContaining({
+          reason: 'Engineer selected the wrong overall result.',
+        }),
       }),
     });
   });

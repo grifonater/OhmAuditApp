@@ -108,6 +108,15 @@ export const routes: Routes = [
           import('./dashboard/dashboard.component').then((module) => module.DashboardComponent),
       },
       {
+        path: 'platform/emails',
+        canActivate: [authorizationGuard],
+        data: { platformAdmin: true },
+        loadComponent: () =>
+          import('./platform/platform-emails.component').then(
+            (module) => module.PlatformEmailsComponent,
+          ),
+      },
+      {
         path: 'platform',
         canActivate: [authorizationGuard],
         data: { platformAdmin: true },

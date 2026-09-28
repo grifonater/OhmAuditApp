@@ -12,6 +12,10 @@ import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
 import { VisitFindingsEditorComponent } from '../shared/visit-findings-editor.component';
+import {
+  administratorCorrectionReason,
+  connectorSupplySelection,
+} from './inspection-review.helpers';
 
 type ProposedChange = NonNullable<InspectionSummary['proposedAssetChanges']>[number];
 type ReviewWorkspace = 'inspections' | 'findings';
@@ -107,7 +111,6 @@ export class InspectionReviewComponent {
   protected readonly unitSearch = signal('');
   protected readonly overrideDraft = signal<OverrideDraft | undefined>(undefined);
   protected readonly reportReference = signal('');
-  protected readonly overallOutcome = signal('');
   protected readonly decisions = signal<Record<string, ChangeDecision>>({});
   protected readonly imageUrls = signal<Record<string, string>>({});
   protected readonly busy = signal(false);
@@ -222,15 +225,9 @@ export class InspectionReviewComponent {
     this.reportReference.set(this.eventValue(event).trim());
   }
 
-  protected setOverallOutcome(event: Event): void {
-    this.overallOutcome.set(this.eventValue(event));
-  }
-
-  private overriding(): { reportReference?: string; overallOutcome?: string } {
-    const overallOutcome = this.overallOutcome().trim();
+  private overriding(): { reportReference?: string } {
     return {
       ...(this.reportReference() === '' ? {} : { reportReference: this.reportReference() }),
-      ...(overallOutcome === '' ? {} : { overallOutcome }),
     };
   }
 
@@ -405,6 +402,20 @@ export class InspectionReviewComponent {
     });
   }
 
+  protected setConnectorSupply(index: number, event: Event): void {
+    this.overrideDraft.update((draft) => {
+      if (draft?.evData === undefined) return draft;
+      const connectors = this.records(draft.evData.connectorTests);
+      const current = connectors[index];
+      if (current === undefined) return draft;
+      connectors[index] = {
+        ...current,
+        supplyIds: connectorSupplySelection(this.eventValue(event)),
+      };
+      return { ...draft, evData: { ...draft.evData, connectorTests: connectors } };
+    });
+  }
+
   protected setDefect(index: number, key: keyof DefectDraft, event: Event): void {
     this.overrideDraft.update((draft) => {
       if (draft === undefined) return draft;
@@ -573,7 +584,6 @@ export class InspectionReviewComponent {
       this.success.set('Administrator correction saved as a new audited revision.');
       this.overrideDraft.set(undefined);
       this.reportReference.set('');
-      this.overallOutcome.set('');
       await this.refreshSelected();
       await this.refreshSummaries();
     });
@@ -1075,6 +1085,10 @@ export class InspectionReviewComponent {
 
   protected selectedSupplyValue(value: unknown): string {
     return this.scalar(this.array(value)[0]);
+  }
+
+  protected correctionReason(validation: Record<string, unknown>): string {
+    return administratorCorrectionReason(validation) ?? 'Reason not recorded';
   }
 
   protected overrideSupplies(draft: OverrideDraft): Record<string, unknown>[] {

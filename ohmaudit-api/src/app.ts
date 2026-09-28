@@ -28,6 +28,8 @@ import { JobCategoryService } from './jobs/job-category.service';
 import { RamsService } from './rams/rams.service';
 import { RamsLibraryService } from './rams/rams-library.service';
 import { requestRamsRecommendations } from './rams/rams-recommendation.client';
+import { emailSendingMetadata } from './email/cloudflare-email-analytics';
+import { EmailAuditService } from './email/email-audit.service';
 import { DomainError } from './shared/domain-error';
 import type { ApiBindings } from './shared/environment';
 import { parseEnvironment } from './shared/environment';
@@ -421,6 +423,17 @@ const supportSessionInput = z.object({
   targetUserId: z.uuid(),
   reason: z.string().trim().min(5).max(500),
 });
+const emailAuditStatusInput = z
+  .enum(['PENDING', 'SENT', 'DELIVERED', 'DEFERRED', 'BOUNCED', 'FAILED', 'REJECTED', 'COMPLAINED'])
+  .optional();
+const testEmailInput = z
+  .object({
+    to: z.email(),
+    subject: z.string().trim().min(1).max(500),
+    html: z.string().min(1).max(500_000),
+    text: z.string().min(1).max(100_000),
+  })
+  .strict();
 const stockImageInput = z.object({
   organisationId: z.uuid(),
   manufacturer: z.string().trim().min(1).max(160),
@@ -809,6 +822,7 @@ const visitFindingSchema = z
   .strict();
 export const visitFindingsInput = z
   .object({
+    overallOutcome: z.string().trim().max(4000).nullable().optional(),
     findings: z
       .array(visitFindingSchema)
       .max(100)
@@ -3511,9 +3525,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ['inspections.perform', 'inspections.review', 'inspections.approve'],
     );
     const service = new VisitService(prismaFor(environment));
-    const findings = await service.listFindings(organisationId, visitId);
+    const [findings, overallOutcome] = await Promise.all([
+      service.listFindings(organisationId, visitId),
+      service.findingOverallOutcome(organisationId, visitId),
+    ]);
     return context.json({
       findings,
+      overallOutcome,
       media: await service.listFindingMedia(organisationId, visitId, findings),
     });
   });
@@ -3528,9 +3546,15 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     );
     const input = visitFindingsInput.parse(await context.req.json());
     const service = new VisitService(prismaFor(environment));
-    const findings = await service.upsertFindings(organisationId, visitId, input.findings);
+    const findings = await service.upsertFindings(
+      organisationId,
+      visitId,
+      input.findings,
+      input.overallOutcome,
+    );
     return context.json({
       findings,
+      overallOutcome: await service.findingOverallOutcome(organisationId, visitId),
       media: await service.listFindingMedia(organisationId, visitId, findings),
     });
   });
@@ -6605,6 +6629,22 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       mediaImageForReport(environment, prisma, organisationId, siteHeroMedia?.id, 1_500_000),
     ]);
     const reportFindings = [
+      ...(visit.overallOutcome?.trim()
+        ? [
+            {
+              finding: {
+                id: visit.id,
+                category: 'CONDITION' as const,
+                severity: 'ADVISORY' as const,
+                status: 'OPEN' as const,
+                title: 'Overall outcome',
+                description: visit.overallOutcome.trim(),
+                photoMediaIds: [],
+              },
+              inspection: null,
+            },
+          ]
+        : []),
       ...visit.findings.map((finding) => ({ finding, inspection: null })),
       ...documents.flatMap((document) => {
         const inspection = document.inspectionRevision?.inspection;
@@ -8041,6 +8081,79 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const query = (context.req.query('q') ?? '').trim().slice(0, 100);
     return context.json({
       users: await new PlatformService(prismaFor(environment)).listUsers(query),
+    });
+  });
+  app.get('/api/v1/platform/emails', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    const status = emailAuditStatusInput.parse(context.req.query('status'));
+    const search = (context.req.query('search') ?? '').trim().slice(0, 200);
+    const page = z.coerce.number().int().min(1).default(1).parse(context.req.query('page'));
+    const pageSize = z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(25)
+      .parse(context.req.query('pageSize'));
+    const result = await new EmailAuditService(prismaFor(environment)).list(
+      status,
+      search,
+      page,
+      pageSize,
+    );
+    return context.json({
+      emails: result.items,
+      pagination: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        pageCount: result.totalPages,
+      },
+    });
+  });
+  app.post('/api/v1/platform/emails/test', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const actor = await identityService(environment, options).requirePlatformAdmin(
+      context.get('actor'),
+    );
+    const input = testEmailInput.parse(await readBoundedJson(context.req.raw, 700_000));
+    const audit = await new EmailAuditService(
+      prismaFor(environment),
+      environment.EMAIL === undefined
+        ? undefined
+        : {
+            binding: environment.EMAIL,
+            ...(environment.EMAIL_FROM_ADDRESS === undefined
+              ? {}
+              : { fromAddress: environment.EMAIL_FROM_ADDRESS }),
+            ...(environment.EMAIL_FROM_NAME === undefined
+              ? {}
+              : { fromName: environment.EMAIL_FROM_NAME }),
+          },
+    ).send({ ...input, actorUserId: actor.id });
+    return context.json({ email: audit }, 201);
+  });
+  app.get('/api/v1/platform/emails/:auditId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    await identityService(environment, options).requirePlatformAdmin(context.get('actor'));
+    const audit = await new EmailAuditService(prismaFor(environment)).detail(
+      z.uuid().parse(context.req.param('auditId')),
+    );
+    const cloudflare = await emailSendingMetadata(
+      environment.CLOUDFLARE_API_TOKEN,
+      environment.CLOUDFLARE_ZONE_ID,
+      audit.messageId,
+      audit.createdAt,
+    );
+    return context.json({
+      email: audit,
+      cloudflare,
+      previewAvailable: false,
+      previewExpiresAt: new Date(audit.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000),
+      content: null,
+      previewMessage:
+        'Cloudflare retains enabled message previews for about seven days, but does not expose their content through a public API.',
     });
   });
   app.patch('/api/v1/platform/users/:userId/role', async (context) => {

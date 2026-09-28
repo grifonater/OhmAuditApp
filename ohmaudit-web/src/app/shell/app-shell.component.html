@@ -89,6 +89,9 @@
             }}</span>
           </a>
           @if (currentAccount.user.platformRole === 'PLATFORM_ADMIN') {
+            <a routerLink="/app/platform/emails" routerLinkActive="active">
+              <span class="nav-icon">@</span><span>Email tracking</span>
+            </a>
             <a routerLink="/app/platform/testing" routerLinkActive="active">
               <span class="nav-icon">D</span><span>Feature testing</span>
             </a>

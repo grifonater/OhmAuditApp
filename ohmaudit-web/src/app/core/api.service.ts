@@ -520,6 +520,87 @@ export interface PlatformUser {
   createdAt: string;
   _count: { memberships: number };
 }
+export interface PlatformEmail {
+  id: string;
+  status: string;
+  subject: string;
+  toAddresses?: string[] | null;
+  fromAddress?: string | null;
+  fromName?: string | null;
+  statusReason?: string | null;
+  smtpStatusCode?: string | null;
+  smtpEnhancedStatus?: string | null;
+  smtpResponse?: string | null;
+  failedAt?: string | null;
+  lastEventAt?: string | null;
+  to?: string | string[] | null;
+  recipient?: string | null;
+  recipients?: string[] | null;
+  from?: string | null;
+  sender?: string | null;
+  messageId?: string | null;
+  datetime?: string | null;
+  createdAt?: string | null;
+  sentAt?: string | null;
+  updatedAt?: string | null;
+  deliveredAt?: string | null;
+  error?: string | null;
+  errorCause?: string | null;
+  errorDetail?: string | null;
+  eventType?: string | null;
+  sendingDomain?: string | null;
+  dkim?: string | null;
+  dmarc?: string | null;
+  spf?: string | null;
+  isSpam?: number | boolean | null;
+  events?: PlatformEmailAuditEvent[];
+}
+export interface PlatformEmailAuditEvent {
+  id: string;
+  eventType: string;
+  status: string;
+  reason?: string | null;
+  smtpStatusCode?: string | null;
+  smtpEnhancedStatus?: string | null;
+  smtpResponse?: string | null;
+  occurredAt: string;
+}
+export interface PlatformEmailPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+}
+export interface PlatformEmailCloudflareEvent {
+  id?: string | null;
+  messageId?: string | null;
+  status?: string | null;
+  createdAt?: string | null;
+  deliveredAt?: string | null;
+  lastEventAt?: string | null;
+  error?: string | null;
+  errorCause?: string | null;
+  errorDetail?: string | null;
+}
+export interface PlatformEmailCloudflare {
+  configured: boolean;
+  events: PlatformEmailCloudflareEvent[];
+  error?: string;
+}
+export interface PlatformEmailDetail {
+  email: PlatformEmail;
+  cloudflare: PlatformEmailCloudflare;
+  previewAvailable: boolean;
+  previewExpiresAt: string | null;
+  content: null;
+  previewMessage: string;
+}
+export interface PlatformTestEmailInput {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+}
 export interface EvStockModel {
   id: string;
   manufacturer: string;
@@ -639,6 +720,7 @@ export interface VisitSummary {
   guestEmail?: string;
   guestMobile?: string;
   engineerNotes?: string;
+  overallOutcome?: string | null;
   evDiscoveryEnabled: boolean;
   submittedAt?: string;
   completedAt?: string;
@@ -1600,6 +1682,26 @@ export class ApiService {
       `/platform/users?q=${encodeURIComponent(query)}`,
     );
   }
+  listPlatformEmails(input: { status?: string; search?: string; page: number; pageSize: number }) {
+    const query = new URLSearchParams({
+      status: input.status ?? '',
+      search: input.search ?? '',
+      page: String(input.page),
+      pageSize: String(input.pageSize),
+    });
+    return this.request<{ emails: PlatformEmail[]; pagination: PlatformEmailPagination }>(
+      `/platform/emails?${query.toString()}`,
+    );
+  }
+  platformEmail(emailId: string) {
+    return this.request<PlatformEmailDetail>(`/platform/emails/${encodeURIComponent(emailId)}`);
+  }
+  sendPlatformTestEmail(input: PlatformTestEmailInput) {
+    return this.request<{ email: PlatformEmail }>('/platform/emails/test', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
   setPlatformRole(userId: string, platformRole: 'USER' | 'PLATFORM_ADMIN') {
     return this.accountMutation(
       this.request(`/platform/users/${userId}/role`, {
@@ -2246,14 +2348,27 @@ export class ApiService {
     );
   }
   listVisitFindings(organisationId: string, visitId: string) {
-    return this.request<{ findings: VisitFinding[]; media: AssetMedia[] }>(
+    return this.request<{
+      findings: VisitFinding[];
+      overallOutcome: string | null;
+      media: AssetMedia[];
+    }>(
       `/visits/${encodeURIComponent(visitId)}/findings?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
-  upsertVisitFindings(organisationId: string, visitId: string, findings: VisitFindingInput[]) {
-    return this.request<{ findings: VisitFinding[]; media: AssetMedia[] }>(
+  upsertVisitFindings(
+    organisationId: string,
+    visitId: string,
+    findings: VisitFindingInput[],
+    overallOutcome: string | null,
+  ) {
+    return this.request<{
+      findings: VisitFinding[];
+      overallOutcome: string | null;
+      media: AssetMedia[];
+    }>(
       `/visits/${encodeURIComponent(visitId)}/findings?organisationId=${encodeURIComponent(organisationId)}`,
-      { method: 'PUT', body: JSON.stringify({ findings }) },
+      { method: 'PUT', body: JSON.stringify({ findings, overallOutcome }) },
     );
   }
   uploadVisitFindingImage(

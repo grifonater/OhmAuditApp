@@ -183,17 +183,6 @@
                       [readonly]="busy()"
                     />
                   </label>
-                  <label
-                    ><span>Overall outcome (optional)</span>
-                    <textarea
-                      rows="5"
-                      maxlength="4000"
-                      placeholder="Summarise the condition of the installation and recommended next steps…"
-                      [value]="overallOutcome()"
-                      (input)="setOverallOutcome($event)"
-                      [readonly]="busy()"
-                    ></textarea>
-                  </label>
                 </div>
                 @if (item.moduleKey === 'thermal-imaging') {
                   <button
@@ -888,6 +877,15 @@
                         <option>FAIL</option>
                       </select></label
                     >
+                    @if (draft.evData) {
+                      <label class="full"
+                        >Engineer observations<textarea
+                          rows="5"
+                          [value]="draft.evData.engineerObservations || ''"
+                          (input)="setObservation($event)"
+                        ></textarea>
+                      </label>
+                    }
                   </div>
                 } @else {
                   <dl class="detail-grid">
@@ -1114,6 +1112,21 @@
                           <strong>Connector {{ display(connector['label']) }}</strong
                           ><span>{{ display(connector['connectorType']) }}</span>
                         </header>
+                        <div class="editable-grid">
+                          <label class="full"
+                            >Connected supply<select
+                              [value]="selectedSupplyValue(connector['supplyIds'])"
+                              (change)="setConnectorSupply(index, $event)"
+                            >
+                              <option value="">Not mapped</option>
+                              @for (supply of overrideSupplies(draft); track supply['id']) {
+                                <option [value]="supply['id']">
+                                  {{ display(supply['label']) }}
+                                </option>
+                              }
+                            </select></label
+                          >
+                        </div>
                         <div class="editable-grid four checks">
                           @for (check of connectorChecks; track check.key) {
                             <label
@@ -1566,7 +1579,7 @@
                       <p>
                         {{
                           revision.validation['administratorOverride']
-                            ? display(revision.validation['administratorOverride'])
+                            ? correctionReason(revision.validation)
                             : 'Signed inspection record'
                         }}
                       </p>

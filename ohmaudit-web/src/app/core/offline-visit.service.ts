@@ -1649,9 +1649,15 @@ export class OfflineVisitService {
     if (
       typeof Notification !== 'undefined' &&
       Notification.permission === 'granted' &&
-      globalThis.matchMedia?.('(display-mode: standalone)').matches
-    )
-      new Notification('OhmAudit sync complete', { body: message });
+      globalThis.matchMedia?.('(display-mode: standalone)').matches &&
+      globalThis.navigator?.serviceWorker
+    ) {
+      void globalThis.navigator.serviceWorker.ready
+        .then((registration) =>
+          registration.showNotification('OhmAudit sync complete', { body: message }),
+        )
+        .catch(() => undefined);
+    }
   }
 
   withPhotoIds(

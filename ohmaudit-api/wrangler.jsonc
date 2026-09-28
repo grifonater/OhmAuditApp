@@ -19,6 +19,7 @@
     "enabled": true,
     "logs": { "head_sampling_rate": 1 },
   },
+  "send_email": [{ "name": "EMAIL" }],
   "r2_buckets": [
     {
       "binding": "MEDIA_BUCKET",
@@ -28,12 +29,15 @@
   "env": {
     "local": {
       "name": "ohmaudit-api-local",
+      "send_email": [{ "name": "EMAIL" }],
     },
     "development": {
       "name": "ohmaudit-api-development",
+      "send_email": [{ "name": "EMAIL" }],
     },
     "staging": {
       "name": "ohmaudit-api-staging",
+      "send_email": [{ "name": "EMAIL" }],
     },
     "production": {
       "name": "ohmaudit-api-production",
@@ -46,6 +50,20 @@
         "WEB_APP_URL": "https://ohmaudit.com",
         "PUBLIC_WEB_ORIGIN": "https://ohmaudit.com",
         "ALLOWED_ORIGINS": "https://ohmaudit-web.ohmaudit.workers.dev,https://ohmaudit.com",
+        "EMAIL_FROM_ADDRESS": "noreply@ohmaudit.com",
+        "EMAIL_FROM_NAME": "Ohm Audit",
+        "CLOUDFLARE_ZONE_ID": "17e3a3905cfc5cf133020189c47112d5",
+      },
+      "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["noreply@ohmaudit.com"] }],
+      "queues": {
+        "consumers": [
+          {
+            "queue": "ohmaudit-email-events-production",
+            "max_batch_size": 25,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+          },
+        ],
       },
       "hyperdrive": [
         {

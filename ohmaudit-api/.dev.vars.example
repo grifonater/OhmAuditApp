@@ -8,3 +8,8 @@ DIRECT_URL=postgresql://postgres:password@host:5432/postgres
 INTERNAL_SERVICE_TOKEN=replace-with-at-least-24-random-characters
 SUPERADMIN_BOOTSTRAP_TOKEN=qwertyuiop1234567890qwertyuiop
 PDF_WORKER_URL=http://127.0.0.1:8790
+EMAIL_FROM_ADDRESS=noreply@ohmaudit.com
+EMAIL_FROM_NAME=Ohm Audit
+# CLOUDFLARE_API_TOKEN requires Analytics Read permission.
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_ZONE_ID=

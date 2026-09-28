@@ -16,6 +16,8 @@ export function connectorSupplyIds(
   currentSupplyIds: readonly string[],
   supplies: ReadonlyArray<{ id: string }>,
 ): string[] {
-  if (currentSupplyIds.length > 0) return [...currentSupplyIds];
+  const availableSupplyIds = new Set(supplies.map(({ id }) => id));
+  const validSupplyIds = currentSupplyIds.filter((id) => availableSupplyIds.has(id));
+  if (validSupplyIds.length > 0) return [...new Set(validSupplyIds)];
   return supplies.length === 1 ? [supplies[0]!.id] : [];
 }

@@ -1073,6 +1073,15 @@ export class VisitService {
     });
   }
 
+  async findingOverallOutcome(organisationId: string, visitId: string) {
+    const visit = await this.prisma.visit.findFirst({
+      where: { id: visitId, organisationId },
+      select: { overallOutcome: true },
+    });
+    if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
+    return visit.overallOutcome;
+  }
+
   async listFindingMedia(
     organisationId: string,
     visitId: string,
@@ -1113,10 +1122,21 @@ export class VisitService {
     });
   }
 
-  async upsertFindings(organisationId: string, visitId: string, findings: VisitFindingInput[]) {
-    return this.prisma.$transaction((transaction) =>
-      this.replaceFindings(transaction, organisationId, visitId, findings),
-    );
+  async upsertFindings(
+    organisationId: string,
+    visitId: string,
+    findings: VisitFindingInput[],
+    overallOutcome?: string | null,
+  ) {
+    return this.prisma.$transaction(async (transaction) => {
+      const updated = await this.replaceFindings(transaction, organisationId, visitId, findings);
+      if (overallOutcome !== undefined)
+        await transaction.visit.update({
+          where: { id: visitId },
+          data: { overallOutcome: overallOutcome || null },
+        });
+      return updated;
+    });
   }
 
   async upsertFindingsSync(

@@ -52,6 +52,7 @@ function findingPrisma(mediaTags = [`finding:${firstFindingId}`]) {
   const transaction = {
     visit: {
       findFirst: vi.fn().mockResolvedValue({ id: visitId, organisationId, archivedAt: null }),
+      update: vi.fn().mockResolvedValue({ id: visitId }),
     },
     media: {
       findMany: vi.fn().mockResolvedValue([
@@ -106,7 +107,15 @@ describe('visit finding validation', () => {
   });
 
   it('accepts no more than 100 uniquely identified UUID findings', () => {
-    expect(visitFindingsInput.safeParse({ findings: [finding()] }).success).toBe(true);
+    expect(
+      visitFindingsInput.safeParse({
+        findings: [finding()],
+        overallOutcome: 'The installation remains satisfactory.',
+      }).success,
+    ).toBe(true);
+    expect(
+      visitFindingsInput.safeParse({ findings: [], overallOutcome: 'x'.repeat(4001) }).success,
+    ).toBe(false);
     expect(
       visitFindingsInput.safeParse({ findings: [finding(), finding(firstFindingId)] }).success,
     ).toBe(false);
@@ -300,6 +309,22 @@ describe('authoritative visit finding upsert', () => {
     expect(upsertQuery).toMatchObject({
       where: { visitId_clientFindingId: { visitId, clientFindingId: firstFindingId } },
       update: { title: 'Damaged enclosure', photoMediaIds: [mediaId] },
+    });
+  });
+
+  it('stores the overall outcome once on the visit alongside job findings', async () => {
+    const { prisma, transaction } = findingPrisma();
+
+    await new VisitService(prisma).upsertFindings(
+      organisationId,
+      visitId,
+      [finding()],
+      'The installation remains satisfactory.',
+    );
+
+    expect(transaction.visit.update).toHaveBeenCalledWith({
+      where: { id: visitId },
+      data: { overallOutcome: 'The installation remains satisfactory.' },
     });
   });
 

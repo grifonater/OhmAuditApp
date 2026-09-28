@@ -95,6 +95,17 @@ enum NotificationEventStatus {
   CANCELLED
 }
 
+enum EmailAuditStatus {
+  PENDING
+  SENT
+  DELIVERED
+  DEFERRED
+  BOUNCED
+  FAILED
+  REJECTED
+  COMPLAINED
+}
+
 enum VisitStatus {
   DRAFT
   SCHEDULED
@@ -178,8 +189,58 @@ model User {
   ramsReviewed            Rams[]                   @relation("RamsReviewedBy")
   ramsApproved            Rams[]                   @relation("RamsApprovedBy")
   ramsRevisionsCreated    RamsRevision[]           @relation("RamsRevisionCreatedBy")
+  emailAuditsCreated      EmailAudit[]              @relation("EmailAuditActor")
 
   @@map("users")
+}
+
+model EmailAudit {
+  id                 String            @id @default(uuid()) @db.Uuid
+  messageId          String?           @unique @map("message_id")
+  fromAddress        String            @map("from_address")
+  fromName           String?           @map("from_name")
+  toAddresses        String[]          @map("to_addresses")
+  subject            String
+  status             EmailAuditStatus  @default(PENDING)
+  statusReason       String?           @map("status_reason")
+  smtpStatusCode     String?           @map("smtp_status_code")
+  smtpEnhancedStatus String?           @map("smtp_enhanced_status")
+  smtpResponse       String?           @map("smtp_response")
+  actorUserId        String?           @map("actor_user_id") @db.Uuid
+  sentAt             DateTime?         @map("sent_at")
+  deliveredAt        DateTime?         @map("delivered_at")
+  failedAt           DateTime?         @map("failed_at")
+  lastEventAt        DateTime?         @map("last_event_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  actor              User?             @relation("EmailAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  events             EmailAuditEvent[]
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([actorUserId])
+  @@map("email_audits")
+}
+
+model EmailAuditEvent {
+  id                 String           @id @default(uuid()) @db.Uuid
+  emailAuditId       String           @map("email_audit_id") @db.Uuid
+  eventId            String           @unique @map("event_id")
+  messageId          String           @map("message_id")
+  eventType          String           @map("event_type")
+  status             EmailAuditStatus
+  reason             String?
+  smtpStatusCode     String?          @map("smtp_status_code")
+  smtpEnhancedStatus String?          @map("smtp_enhanced_status")
+  smtpResponse       String?          @map("smtp_response")
+  metadata           Json
+  occurredAt         DateTime         @map("occurred_at")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  emailAudit         EmailAudit       @relation(fields: [emailAuditId], references: [id], onDelete: Cascade)
+
+  @@index([emailAuditId, occurredAt])
+  @@index([messageId])
+  @@map("email_audit_events")
 }
 
 model Organisation {
@@ -682,6 +743,7 @@ model Visit {
   guestEmail           String?               @map("guest_email")
   guestMobile          String?               @map("guest_mobile")
   engineerNotes        String?               @map("engineer_notes")
+  overallOutcome       String?               @map("overall_outcome")
   evDiscoveryEnabled   Boolean               @default(false) @map("ev_discovery_enabled")
   archivedAt           DateTime?             @map("archived_at")
   submittedAt          DateTime?             @map("submitted_at")

@@ -53,6 +53,17 @@ import { AsyncButtonDirective } from './async-button.directive';
           <span class="editor-spinner"></span>Loading job findings…
         </div>
       } @else {
+        <label class="overall-outcome">
+          <span>Overall outcome</span>
+          <small>Summarise the condition of the whole job and any recommended next steps.</small>
+          <textarea
+            rows="5"
+            maxlength="4000"
+            placeholder="Overall condition and recommended next steps…"
+            [value]="overallOutcome()"
+            (input)="setOverallOutcome($event)"
+          ></textarea>
+        </label>
         <div class="findings-list">
           @for (finding of findings(); track finding.clientFindingId; let index = $index) {
             <article class="finding-entry">
@@ -211,21 +222,19 @@ import { AsyncButtonDirective } from './async-button.directive';
             <p class="findings-empty">No job findings have been recorded.</p>
           }
         </div>
-        @if (findings().length) {
-          <div class="findings-footer">
-            <button
-              oaAsyncButton
-              class="button primary"
-              type="button"
-              [oaAsyncPending]="saving()"
-              [oaAsyncError]="error()"
-              [disabled]="saving() || mediaBusy().size > 0"
-              (click)="save()"
-            >
-              {{ saving() ? 'Saving…' : 'Save findings' }}
-            </button>
-          </div>
-        }
+        <div class="findings-footer">
+          <button
+            oaAsyncButton
+            class="button primary"
+            type="button"
+            [oaAsyncPending]="saving()"
+            [oaAsyncError]="error()"
+            [disabled]="saving() || mediaBusy().size > 0"
+            (click)="save()"
+          >
+            {{ saving() ? 'Saving…' : 'Save job record' }}
+          </button>
+        </div>
       }
     </section>
   `,
@@ -259,6 +268,24 @@ import { AsyncButtonDirective } from './async-button.directive';
     .findings-list {
       display: grid;
       gap: 0.75rem;
+    }
+    .overall-outcome {
+      display: grid;
+      gap: 0.35rem;
+      padding: 0.9rem;
+      border: 1px solid var(--oa-line);
+      border-radius: 0.65rem;
+      background: var(--oa-canvas);
+      color: var(--oa-navy-950);
+      font-weight: 800;
+    }
+    .overall-outcome small {
+      color: var(--oa-ink-muted);
+      font-weight: 500;
+    }
+    .overall-outcome textarea {
+      width: 100%;
+      resize: vertical;
     }
     .finding-entry {
       padding: 0.9rem;
@@ -454,6 +481,7 @@ export class VisitFindingsEditorComponent implements OnDestroy {
   readonly organisationId = input.required<string>();
   readonly visitId = input.required<string>();
   protected readonly findings = signal<VisitFinding[]>([]);
+  protected readonly overallOutcome = signal('');
   protected readonly media = signal<AssetMedia[]>([]);
   protected readonly imageUrls = signal<Record<string, string>>({});
   protected readonly captionDrafts = signal<Record<string, string>>({});
@@ -514,6 +542,11 @@ export class VisitFindingsEditorComponent implements OnDestroy {
 
   protected updateStatus(id: string, event: Event): void {
     this.update(id, { status: this.controlValue(event) as VisitFinding['status'] });
+  }
+
+  protected setOverallOutcome(event: Event): void {
+    this.overallOutcome.set(this.controlValue(event));
+    this.success.set('');
   }
 
   protected async deleteFinding(id: string): Promise<void> {
@@ -686,6 +719,7 @@ export class VisitFindingsEditorComponent implements OnDestroy {
     try {
       const result = await this.api.listVisitFindings(this.organisationId(), visitId);
       this.findings.set(result.findings);
+      this.overallOutcome.set(result.overallOutcome ?? '');
       await this.loadMedia(result.media);
     } catch (error: unknown) {
       this.loadedVisitId = '';
@@ -725,8 +759,10 @@ export class VisitFindingsEditorComponent implements OnDestroy {
         this.organisationId(),
         this.visitId(),
         input,
+        this.overallOutcome().trim() || null,
       );
       this.findings.set(result.findings);
+      this.overallOutcome.set(result.overallOutcome ?? '');
       await this.loadMedia(result.media);
       if (success) this.success.set(success);
       return true;

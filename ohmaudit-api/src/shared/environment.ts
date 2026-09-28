@@ -29,6 +29,11 @@ const environmentSchema = z.object({
   PDF_WORKER: z.custom<Fetcher>().optional(),
   PDF_WORKER_URL: z.url().optional(),
   AI_WORKER: z.custom<Fetcher>().optional(),
+  EMAIL: z.custom<SendEmail>().optional(),
+  EMAIL_FROM_ADDRESS: z.email().optional(),
+  EMAIL_FROM_NAME: z.string().min(1).max(200).optional(),
+  CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
+  CLOUDFLARE_ZONE_ID: z.string().min(1).optional(),
 });
 
 export type ApiBindings = z.infer<typeof environmentSchema>;
