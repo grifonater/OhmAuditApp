@@ -741,23 +741,27 @@ describe('EV administrator inspection corrections', () => {
   });
 });
 
-describe('revision-scoped report defects', () => {
-  it('uses revision media as the authoritative main report image', () => {
+describe('revision-scoped report data', () => {
+  it('uses revision media first, then an asset image not reclassified in the revision', () => {
     expect(
       inspectionRevisionAssetPhotoId(
         [{ mediaId: 'revision-photo', category: 'asset-image' }],
-        [],
-        'legacy-photo',
+        ['asset-photo'],
       ),
     ).toBe('revision-photo');
     expect(
       inspectionRevisionAssetPhotoId(
         [{ mediaId: 'supporting-photo', category: 'inspection-review-evidence' }],
-        [],
-        'legacy-photo',
+        ['supporting-photo', 'asset-photo'],
+      ),
+    ).toBe('asset-photo');
+    expect(
+      inspectionRevisionAssetPhotoId(
+        [{ mediaId: 'supporting-photo', category: 'inspection-review-evidence' }],
+        ['supporting-photo'],
       ),
     ).toBeUndefined();
-    expect(inspectionRevisionAssetPhotoId([], null, 'legacy-photo')).toBe('legacy-photo');
+    expect(inspectionRevisionAssetPhotoId([], ['asset-photo'])).toBe('asset-photo');
   });
 
   it('uses an available revision snapshot instead of mutable current defects', () => {

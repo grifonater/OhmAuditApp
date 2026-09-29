@@ -1443,11 +1443,12 @@ export function inspectionRevisionDefects<T extends RevisionDefectSnapshot>(
 
 export function inspectionRevisionAssetPhotoId(
   revisionMedia: Array<{ mediaId: string; category: string }>,
-  defectSnapshot: unknown,
-  legacyAssetPhotoId?: string,
+  assetPhotoIds: string[],
 ): string | undefined {
   const revisionPhotoId = revisionMedia.find(({ category }) => category === 'asset-image')?.mediaId;
-  return revisionPhotoId ?? (Array.isArray(defectSnapshot) ? undefined : legacyAssetPhotoId);
+  if (revisionPhotoId !== undefined) return revisionPhotoId;
+  const revisionMediaIds = new Set(revisionMedia.map(({ mediaId }) => mediaId));
+  return assetPhotoIds.find((mediaId) => !revisionMediaIds.has(mediaId));
 }
 
 function reportLogoFields(image: ReportMediaImage | undefined) {
@@ -6647,9 +6648,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             },
             orderBy: { createdAt: 'asc' },
           });
-    const firstPhotoByAsset = new Map<string, (typeof assetPhotos)[number]>();
+    const photoIdsByAsset = new Map<string, string[]>();
     for (const photo of assetPhotos)
-      if (!firstPhotoByAsset.has(photo.entityId)) firstPhotoByAsset.set(photo.entityId, photo);
+      photoIdsByAsset.set(photo.entityId, [
+        ...(photoIdsByAsset.get(photo.entityId) ?? []),
+        photo.id,
+      ]);
     const siteHeroMedia =
       visit.site.mainPhotoMediaId === null
         ? null
@@ -6770,10 +6774,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             });
             const assetPhotoId = inspectionRevisionAssetPhotoId(
               revision.media,
-              revision.defectSnapshot,
-              inspection.asset === null
-                ? undefined
-                : firstPhotoByAsset.get(inspection.asset.id)?.id,
+              inspection.asset === null ? [] : (photoIdsByAsset.get(inspection.asset.id) ?? []),
             );
             const [chargerPhotoJpegBase64, evPhotos] = await Promise.all([
               jpegMediaForReport(environment, prisma, organisationId, assetPhotoId),
@@ -7003,10 +7004,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       inspectionId: inspection.id,
       ...(visitInspectionIds === undefined ? {} : { orderedInspectionIds: visitInspectionIds }),
     });
-    const legacyAssetPhoto =
-      Array.isArray(revision.defectSnapshot) || inspection.asset === null
-        ? null
-        : await prisma.media.findFirst({
+    const revisionAssetPhotoId = revision.media.find(
+      ({ category }) => category === 'asset-image',
+    )?.mediaId;
+    const fallbackAssetPhotos =
+      revisionAssetPhotoId !== undefined || inspection.asset === null
+        ? []
+        : await prisma.media.findMany({
             where: {
               organisationId,
               entityType: 'Asset',
@@ -7020,8 +7024,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           });
     const assetPhotoId = inspectionRevisionAssetPhotoId(
       revision.media,
-      revision.defectSnapshot,
-      legacyAssetPhoto?.id,
+      fallbackAssetPhotos.map(({ id }) => id),
     );
     const thermalPdfCacheKey =
       documentFormat === 'pdf' &&
