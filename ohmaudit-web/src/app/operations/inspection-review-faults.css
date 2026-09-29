@@ -170,7 +170,7 @@
   font-size: 0.72rem;
 }
 
-.fault-image-grid > article > button {
+.fault-image-grid > article > .text-button {
   margin: 0 0.55rem 0.55rem;
 }
 
@@ -178,17 +178,20 @@
   margin-top: 0.8rem;
 }
 
-.fault-image-grid.readonly a {
+.fault-image-grid.readonly .image-link {
+  width: 100%;
   display: grid;
   overflow: hidden;
+  padding: 0;
   border: 1px solid var(--oa-line);
   border-radius: 0.6rem;
   color: inherit;
   background: var(--oa-canvas);
-  text-decoration: none;
+  text-align: left;
+  cursor: zoom-in;
 }
 
-.fault-image-grid.readonly a span {
+.fault-image-grid.readonly .image-link span {
   padding: 0.5rem;
   color: var(--oa-ink-muted);
   font-size: 0.68rem;

@@ -96,6 +96,30 @@ describe('Thermal inspection media isolation', () => {
     });
   });
 
+  it('does not mutate metadata after media is captured by an inspection revision', async () => {
+    const update = vi.fn();
+    const prisma = {
+      media: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'media-a',
+          organisationId: 'organisation-a',
+          entityType: 'Inspection',
+        }),
+        update,
+      },
+      inspectionRevisionMedia: {
+        findFirst: vi.fn().mockResolvedValue({ mediaId: 'media-a' }),
+      },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new PortfolioService(prisma).updateInspectionMedia('organisation-a', 'media-a', {
+        caption: 'Replacement caption',
+      }),
+    ).rejects.toMatchObject({ code: 'MEDIA_HISTORY_PROTECTED', status: 409 });
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('prevalidates the full scoped batch and returns updated media in request order', async () => {
     const media = [
       { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', caption: 'Second' },

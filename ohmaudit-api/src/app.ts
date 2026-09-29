@@ -482,19 +482,41 @@ function parseByteRange(
   if (!Number.isInteger(end) || end < start) return null;
   return { range: { offset: start, length: end - start + 1 }, start, end };
 }
-const inspectionOverrideInput = z.object({
+const inspectionLocalEntityId = z.union([
+  z.uuid(),
+  z
+    .string()
+    .trim()
+    .min(5)
+    .max(200)
+    .regex(/^new-[A-Za-z0-9._:-]+$/u),
+]);
+const inspectionOverrideEvDataInput = z
+  .object({
+    stableDetails: z.record(z.string(), z.unknown()),
+    supplyTests: z.array(z.object({ id: inspectionLocalEntityId }).passthrough()).max(100),
+    connectorTests: z
+      .array(z.object({ supplyIds: z.array(inspectionLocalEntityId).max(1) }).passthrough())
+      .max(200),
+    functionalChecks: z.record(z.string(), z.unknown()),
+    engineerObservations: z.string().max(5000).optional(),
+  })
+  .superRefine(({ supplyTests, connectorTests }, context) => {
+    const supplyIds = new Set(supplyTests.map(({ id }) => id));
+    for (const [index, connector] of connectorTests.entries())
+      for (const supplyId of connector.supplyIds)
+        if (!supplyIds.has(supplyId))
+          context.addIssue({
+            code: 'custom',
+            path: ['connectorTests', index, 'supplyIds'],
+            message: 'Connector supply IDs must refer to a supplied test.',
+          });
+  });
+export const inspectionOverrideInput = z.object({
   reason: z.string().trim().min(3).max(1000),
   expectedRevisionNumber: z.number().int().nonnegative(),
   data: z.record(z.string(), z.unknown()),
-  evData: z
-    .object({
-      stableDetails: z.record(z.string(), z.unknown()),
-      supplyTests: z.array(z.unknown()).max(100),
-      connectorTests: z.array(z.unknown()).max(200),
-      functionalChecks: z.record(z.string(), z.unknown()),
-      engineerObservations: z.string().max(5000).optional(),
-    })
-    .optional(),
+  evData: inspectionOverrideEvDataInput.optional(),
   defects: z.object({
     upsert: z
       .array(
@@ -513,7 +535,7 @@ const inspectionOverrideInput = z.object({
   }),
   generalPhotoMediaIds: z.array(z.uuid()).max(500),
   media: z
-    .array(z.object({ mediaId: z.uuid(), caption: z.string().trim().max(500).optional() }).strict())
+    .array(z.object({ mediaId: z.uuid(), caption: z.string().trim().max(500).nullable() }).strict())
     .max(500),
 });
 const scheduleInput = z.object({
@@ -1527,8 +1549,9 @@ async function evInspectionPhotosForReport(
         1_500_000,
       );
       if (image === undefined) return undefined;
+      const revisionImage = { base64: image.base64, mimeType: image.mimeType };
       return {
-        ...image,
+        ...revisionImage,
         title:
           item.category === 'asset-nameplate'
             ? 'Data plate / serial information'
@@ -2956,6 +2979,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         'asset-manage',
       );
     }
+    await portfolio.assertMediaMutable(organisationId, media.id);
     const contentType = context.req.header('content-type') ?? '';
     if (contentType !== media.mimeType)
       throw new DomainError(

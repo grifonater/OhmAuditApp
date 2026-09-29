@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   administratorCorrectionReason,
   connectorSupplySelection,
+  hasReachedRevision,
 } from '../src/app/operations/inspection-review.helpers';
 
 describe('inspection review helpers', () => {
@@ -17,5 +18,11 @@ describe('inspection review helpers', () => {
       }),
     ).toBe('Connector was assigned to the wrong supply.');
     expect(administratorCorrectionReason({ administratorOverride: {} })).toBeUndefined();
+  });
+
+  it('identifies stale inspection reads after an override', () => {
+    expect(hasReachedRevision(4, 5)).toBe(false);
+    expect(hasReachedRevision(5, 5)).toBe(true);
+    expect(hasReachedRevision(6, 5)).toBe(true);
   });
 });

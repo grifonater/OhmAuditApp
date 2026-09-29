@@ -11,10 +11,12 @@ import { ApiService, type AssetMedia, type InspectionSummary } from '../core/api
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
+import { ImageViewerComponent } from '../shared/image-viewer.component';
 import { VisitFindingsEditorComponent } from '../shared/visit-findings-editor.component';
 import {
   administratorCorrectionReason,
   connectorSupplySelection,
+  hasReachedRevision,
 } from './inspection-review.helpers';
 
 type ProposedChange = NonNullable<InspectionSummary['proposedAssetChanges']>[number];
@@ -65,7 +67,7 @@ interface OverrideDraft {
 
 @Component({
   selector: 'oa-inspection-review',
-  imports: [RouterLink, VisitFindingsEditorComponent, AsyncButtonDirective],
+  imports: [RouterLink, VisitFindingsEditorComponent, AsyncButtonDirective, ImageViewerComponent],
   templateUrl: './inspection-review.component.html',
   styleUrls: [
     './operations.css',
@@ -113,6 +115,9 @@ export class InspectionReviewComponent {
   protected readonly reportReference = signal('');
   protected readonly decisions = signal<Record<string, ChangeDecision>>({});
   protected readonly imageUrls = signal<Record<string, string>>({});
+  protected readonly viewedImage = signal<{ src: string; caption: string | null } | undefined>(
+    undefined,
+  );
   protected readonly busy = signal(false);
   protected readonly loadingDetail = signal(false);
   protected readonly error = signal('');
@@ -184,6 +189,7 @@ export class InspectionReviewComponent {
     this.loadingDetail.set(true);
     this.error.set('');
     this.overrideDraft.set(undefined);
+    this.viewedImage.set(undefined);
     this.revokeImages();
     try {
       const detail = (await this.api.getInspection(this.organisationId, id)).inspection;
@@ -347,8 +353,30 @@ export class InspectionReviewComponent {
     this.activeSection.set(section);
   }
 
-  protected cancelOverride(): void {
-    this.overrideDraft.set(undefined);
+  protected async cancelOverride(): Promise<void> {
+    const item = this.inspection();
+    const staged = this.overrideDraft()?.media.filter(({ staged }) => staged) ?? [];
+    if (item === undefined || staged.length === 0) {
+      this.overrideDraft.set(undefined);
+      return;
+    }
+    await this.run(async () => {
+      await Promise.all(
+        staged.map(({ id }) =>
+          this.api.deleteInspectionReviewPhoto(this.organisationId, item.id, id),
+        ),
+      );
+      for (const { id } of staged) {
+        const url = this.imageUrls()[id];
+        if (url) URL.revokeObjectURL(url);
+      }
+      this.imageUrls.update((urls) =>
+        Object.fromEntries(
+          Object.entries(urls).filter(([id]) => !staged.some((media) => media.id === id)),
+        ),
+      );
+      this.overrideDraft.set(undefined);
+    });
   }
 
   protected setOverrideReason(event: Event): void {
@@ -556,7 +584,7 @@ export class InspectionReviewComponent {
       return;
     }
     await this.run(async () => {
-      await this.api.overrideInspection(this.organisationId, item.id, {
+      const result = await this.api.overrideInspection(this.organisationId, item.id, {
         reason: draft.reason.trim(),
         expectedRevisionNumber: item.currentRevisionNumber,
         data: draft.data,
@@ -578,14 +606,14 @@ export class InspectionReviewComponent {
         generalPhotoMediaIds: draft.generalPhotoMediaIds,
         media: draft.media.map((media) => ({
           mediaId: media.id,
-          ...(media.caption?.trim() ? { caption: media.caption.trim() } : {}),
+          caption: media.caption?.trim() || null,
         })),
       });
       this.success.set('Administrator correction saved as a new audited revision.');
       this.overrideDraft.set(undefined);
       this.reportReference.set('');
-      await this.refreshSelected();
-      await this.refreshSummaries();
+      await this.refreshSelected(result.revision, draft);
+      await this.refreshSummaries(item.id, result.revision.revisionNumber);
     });
   }
 
@@ -1011,6 +1039,11 @@ export class InspectionReviewComponent {
     return this.imageUrls()[mediaId] ?? '';
   }
 
+  protected openImage(mediaId: string, caption?: string | null): void {
+    const src = this.imageUrl(mediaId);
+    if (src) this.viewedImage.set({ src, caption: caption?.trim() || null });
+  }
+
   protected canAddReviewPhoto(item: InspectionSummary): boolean {
     return (
       this.overrideDraft() !== undefined && this.canCorrectInspections() && this.canCorrect(item)
@@ -1138,8 +1171,33 @@ export class InspectionReviewComponent {
     });
   }
 
-  private async refreshSummaries(): Promise<void> {
-    const all = (await this.api.listInspections(this.organisationId)).inspections;
+  private async refreshSummaries(inspectionId?: string, expectedRevisionNumber = 0): Promise<void> {
+    let all: InspectionSummary[] = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      all = (await this.api.listInspections(this.organisationId)).inspections;
+      const selected = all.find(({ id }) => id === inspectionId);
+      if (
+        inspectionId === undefined ||
+        (selected !== undefined &&
+          hasReachedRevision(selected.currentRevisionNumber, expectedRevisionNumber)) ||
+        attempt === 2
+      )
+        break;
+      await this.waitForFreshRead(attempt);
+    }
+    if (inspectionId !== undefined) {
+      const selected = all.find(({ id }) => id === inspectionId);
+      if (
+        selected !== undefined &&
+        !hasReachedRevision(selected.currentRevisionNumber, expectedRevisionNumber)
+      ) {
+        all = all.map((item) =>
+          item.id === inspectionId
+            ? { ...item, currentRevisionNumber: expectedRevisionNumber }
+            : item,
+        );
+      }
+    }
     this.inspections.set(
       all
         .filter((item) => item.visit?.id === this.reviewId || item.id === this.reviewId)
@@ -1153,10 +1211,71 @@ export class InspectionReviewComponent {
     );
   }
 
-  private async refreshSelected(): Promise<void> {
+  private async refreshSelected(
+    expectedRevision?: { id: string; revisionNumber: number },
+    savedDraft?: OverrideDraft,
+  ): Promise<void> {
     const id = this.selectedId();
     this.selectedId.set('');
-    await this.selectInspection(id);
+    let detail: InspectionSummary | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      detail = (await this.api.getInspection(this.organisationId, id)).inspection;
+      if (
+        expectedRevision === undefined ||
+        hasReachedRevision(detail.currentRevisionNumber, expectedRevision.revisionNumber) ||
+        attempt === 2
+      )
+        break;
+      await this.waitForFreshRead(attempt);
+    }
+    if (detail === undefined) throw new Error('The updated inspection could not be loaded.');
+    if (
+      expectedRevision !== undefined &&
+      savedDraft !== undefined &&
+      !hasReachedRevision(detail.currentRevisionNumber, expectedRevision.revisionNumber)
+    )
+      detail = this.applySavedOverride(detail, expectedRevision, savedDraft);
+    this.selectedId.set(id);
+    this.inspection.set(detail);
+    this.initialiseDecisions(detail);
+    this.revokeImages();
+    await this.loadEvidence(detail);
+  }
+
+  private applySavedOverride(
+    item: InspectionSummary,
+    revision: { id: string; revisionNumber: number },
+    draft: OverrideDraft,
+  ): InspectionSummary {
+    const source = item.revisions[0];
+    return {
+      ...item,
+      currentRevisionNumber: revision.revisionNumber,
+      revisions: [
+        {
+          id: revision.id,
+          revisionNumber: revision.revisionNumber,
+          data: structuredClone(draft.data),
+          validation: {
+            ...(source?.validation ?? {}),
+            administratorOverride: { reason: draft.reason.trim() },
+          },
+          createdAt: new Date().toISOString(),
+          ...(draft.evData === undefined ? {} : { evData: structuredClone(draft.evData) }),
+        },
+        ...item.revisions,
+      ],
+      defects: draft.defects.map((defect) => ({ ...defect })),
+      evidenceMedia: draft.media.map((media) => {
+        const persisted = Object.fromEntries(
+          Object.entries(media).filter(([key]) => key !== 'staged'),
+        ) as unknown as AssetMedia;
+        const caption = media.caption?.trim();
+        if (caption) persisted.caption = caption;
+        else delete persisted.caption;
+        return persisted;
+      }),
+    };
   }
 
   private async reconcileReviewState(inspectionId: string): Promise<void> {
@@ -1273,6 +1392,10 @@ export class InspectionReviewComponent {
   private revokeImages(): void {
     for (const url of Object.values(this.imageUrls())) URL.revokeObjectURL(url);
     this.imageUrls.set({});
+  }
+
+  private waitForFreshRead(attempt: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)));
   }
 
   private saveBlob(blob: Blob, fileName: string): void {

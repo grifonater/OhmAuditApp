@@ -723,6 +723,23 @@ export class PortfolioService {
     return this.prisma.media.update({ where: { id: mediaId }, data: { status: 'AVAILABLE' } });
   }
 
+  async assertMediaMutable(organisationId: string, mediaIds: string | string[]) {
+    const ids = Array.isArray(mediaIds) ? mediaIds : [mediaIds];
+    const historicalReference =
+      typeof this.prisma.inspectionRevisionMedia?.findFirst === 'function'
+        ? await this.prisma.inspectionRevisionMedia.findFirst({
+            where: { organisationId, mediaId: { in: ids } },
+            select: { mediaId: true },
+          })
+        : null;
+    if (historicalReference !== null)
+      throw new DomainError(
+        'MEDIA_HISTORY_PROTECTED',
+        'This image is part of an inspection revision and cannot be changed.',
+        409,
+      );
+  }
+
   async updateInspectionMedia(
     organisationId: string,
     mediaId: string,
@@ -740,6 +757,7 @@ export class PortfolioService {
         'Only inspection images can be edited here.',
         422,
       );
+    await this.assertMediaMutable(organisationId, media.id);
     return this.prisma.media.update({
       where: { id: media.id },
       data: inspectionMediaUpdateData(input),
@@ -752,6 +770,10 @@ export class PortfolioService {
     updates: InspectionMediaUpdate[],
     requireAvailable = false,
   ) {
+    await this.assertMediaMutable(
+      organisationId,
+      updates.map(({ mediaId }) => mediaId),
+    );
     return this.prisma.$transaction(async (transaction) => {
       const ids = updates.map(({ mediaId }) => mediaId);
       const scope = {

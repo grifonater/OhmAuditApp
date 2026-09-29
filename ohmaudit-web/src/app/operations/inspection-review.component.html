@@ -678,11 +678,20 @@
                         <div class="fault-image-grid">
                           @for (media of draftMediaForDefect(draft, defect); track media.id) {
                             <article>
-                              <img
-                                [src]="imageUrl(media.id)"
-                                [alt]="media.caption || defect.title || 'Fault evidence'"
-                                loading="lazy"
-                              />
+                              <button
+                                class="image-preview-button"
+                                type="button"
+                                (click)="openImage(media.id, media.caption || defect.title)"
+                                [attr.aria-label]="
+                                  'View ' + (media.caption || defect.title || 'fault evidence')
+                                "
+                              >
+                                <img
+                                  [src]="imageUrl(media.id)"
+                                  [alt]="media.caption || defect.title || 'Fault evidence'"
+                                  loading="lazy"
+                                />
+                              </button>
                               <label
                                 >Caption<input
                                   [value]="media.caption || ''"
@@ -796,12 +805,21 @@
                       <div class="fault-image-grid readonly">
                         @for (mediaId of defect.photoMediaIds || []; track mediaId) {
                           @if (imageUrl(mediaId)) {
-                            <a [href]="imageUrl(mediaId)" target="_blank" rel="noopener noreferrer">
+                            <button
+                              class="image-link"
+                              type="button"
+                              (click)="
+                                openImage(
+                                  mediaId,
+                                  inspectionMedia(mediaId)?.caption || defect.title + ' evidence'
+                                )
+                              "
+                            >
                               <img [src]="imageUrl(mediaId)" [alt]="defect.title + ' evidence'" />
                               <span>{{
                                 inspectionMedia(mediaId)?.caption || 'Fault evidence'
                               }}</span>
-                            </a>
+                            </button>
                           }
                         } @empty {
                           <small>No image linked to this item.</small>
@@ -1236,6 +1254,52 @@
             }
 
             @if (activeSection() === 'evidence') {
+              @if (overrideDraft(); as draft) {
+                <section class="override-banner">
+                  <div>
+                    <strong>Administrator correction mode</strong>
+                    <span
+                      >Evidence changes will be saved as a new audited revision. The engineer's
+                      original submission and media history remain available.</span
+                    >
+                  </div>
+                  <button
+                    class="button ghost compact"
+                    type="button"
+                    [disabled]="busy()"
+                    (click)="cancelOverride()"
+                  >
+                    Cancel corrections
+                  </button>
+                </section>
+                <section class="review-card override-reason">
+                  <label
+                    >Reason for correction <span>Required for the audit trail</span>
+                    <textarea
+                      [value]="draft.reason"
+                      (input)="setOverrideReason($event)"
+                      placeholder="Explain what photographic evidence was corrected and why…"
+                    ></textarea>
+                  </label>
+                </section>
+              } @else if (canCorrect(item)) {
+                <section class="correction-callout">
+                  <div>
+                    <strong>Edit photographic evidence</strong>
+                    <span
+                      >Add or remove images, update captions, and correct finding links in a new
+                      audited revision.</span
+                    >
+                  </div>
+                  <button
+                    class="button secondary"
+                    type="button"
+                    (click)="startOverride('evidence')"
+                  >
+                    Edit photographic evidence
+                  </button>
+                </section>
+              }
               @if (canAddReviewPhoto(item)) {
                 <section class="review-card review-upload-card">
                   <div class="card-heading">
@@ -1301,11 +1365,18 @@
                     ) {
                       @if (overrideDraft(); as draft) {
                         <article>
-                          <img
-                            [src]="imageUrl(media.id)"
-                            [alt]="media.caption || 'Inspection evidence'"
-                            loading="lazy"
-                          />
+                          <button
+                            class="image-preview-button"
+                            type="button"
+                            (click)="openImage(media.id, media.caption)"
+                            [attr.aria-label]="'View ' + (media.caption || 'inspection evidence')"
+                          >
+                            <img
+                              [src]="imageUrl(media.id)"
+                              [alt]="media.caption || 'Inspection evidence'"
+                              loading="lazy"
+                            />
+                          </button>
                           <label
                             >Caption<input
                               [value]="media.caption || ''"
@@ -1333,7 +1404,11 @@
                           </button>
                         </article>
                       } @else {
-                        <a [href]="imageUrl(media.id)" target="_blank" rel="noopener noreferrer">
+                        <button
+                          class="image-link"
+                          type="button"
+                          (click)="openImage(media.id, media.caption)"
+                        >
                           <img
                             [src]="imageUrl(media.id)"
                             [alt]="media.caption || 'Inspection evidence'"
@@ -1343,7 +1418,7 @@
                             ><strong>{{ media.caption || 'Inspection evidence' }}</strong
                             ><small>{{ display(media.category) }}</small></span
                           >
-                        </a>
+                        </button>
                       }
                     }
                   </div>
@@ -1373,12 +1448,19 @@
                         <div class="mini-gallery">
                           @for (mediaId of defect.photoMediaIds || []; track mediaId) {
                             @if (imageUrl(mediaId)) {
-                              <a
-                                [href]="imageUrl(mediaId)"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                ><img [src]="imageUrl(mediaId)" alt="Fault evidence"
-                              /></a>
+                              <button
+                                class="image-link"
+                                type="button"
+                                (click)="
+                                  openImage(
+                                    mediaId,
+                                    inspectionMedia(mediaId)?.caption || defect.title + ' evidence'
+                                  )
+                                "
+                                [attr.aria-label]="'View evidence for ' + defect.title"
+                              >
+                                <img [src]="imageUrl(mediaId)" alt="Fault evidence" />
+                              </button>
                             }
                           } @empty {
                             <small>No photo linked directly to this fault.</small>
@@ -1388,6 +1470,38 @@
                     }
                   </div>
                 </section>
+              }
+              @if (overrideDraft(); as draft) {
+                <div class="save-corrections">
+                  <div>
+                    <strong>Save photographic evidence?</strong>
+                    <span
+                      >This creates revision {{ item.currentRevisionNumber + 1 }} and preserves the
+                      signed source revision.</span
+                    >
+                  </div>
+                  <div class="correction-actions">
+                    <button
+                      class="button ghost"
+                      type="button"
+                      [disabled]="busy()"
+                      (click)="cancelOverride()"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      oaAsyncButton
+                      class="button primary"
+                      type="button"
+                      [oaAsyncPending]="busy()"
+                      [oaAsyncError]="error()"
+                      [disabled]="busy() || draft.reason.trim().length < 3"
+                      (click)="saveOverride()"
+                    >
+                      {{ busy() ? 'Saving revision…' : 'Save photographic evidence' }}
+                    </button>
+                  </div>
+                </div>
               }
             }
 
@@ -1636,3 +1750,11 @@
     </section>
   }
 </main>
+
+@if (viewedImage(); as image) {
+  <oa-image-viewer
+    [src]="image.src"
+    [caption]="image.caption"
+    (closed)="viewedImage.set(undefined)"
+  />
+}

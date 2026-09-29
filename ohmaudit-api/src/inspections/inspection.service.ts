@@ -23,6 +23,7 @@ function nonBlankString(value: unknown): string | undefined {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const inspectionLocalIdPattern = /^new-[A-Za-z0-9._:-]+$/u;
 
 type SubmittedDefect = {
   assetId?: string | undefined;
@@ -44,7 +45,33 @@ type CorrectedDefect = {
   photoMediaIds: string[];
 };
 
-type RevisionMediaInput = { mediaId: string; caption?: string | undefined };
+type RevisionMediaInput = { mediaId: string; caption: string | null };
+
+type EvSupplyTestInput = Record<string, unknown> & { id: string };
+type EvConnectorTestInput = Record<string, unknown> & { supplyIds: string[] };
+
+function validateEvSupplyMappings(evData: {
+  supplyTests: EvSupplyTestInput[];
+  connectorTests: EvConnectorTestInput[];
+}): void {
+  const supplyIds = new Set(evData.supplyTests.map(({ id }) => id));
+  const validId = (id: unknown): id is string =>
+    typeof id === 'string' && (uuidPattern.test(id) || inspectionLocalIdPattern.test(id));
+  if (
+    evData.supplyTests.some(({ id }) => !validId(id)) ||
+    evData.connectorTests.some(
+      (connector) =>
+        !Array.isArray(connector.supplyIds) ||
+        connector.supplyIds.length > 1 ||
+        connector.supplyIds.some((id) => !validId(id) || !supplyIds.has(id)),
+    )
+  )
+    throw new DomainError(
+      'EV_CONNECTOR_SUPPLY_INVALID',
+      'Each connector supply ID must refer to an effective supply test, with at most one supply per connector.',
+      422,
+    );
+}
 
 function defectSnapshot(defects: Array<Record<string, unknown>>): Prisma.InputJsonValue {
   return defects.map((defect) => ({
@@ -313,8 +340,8 @@ export class InspectionService {
       evData?:
         | {
             stableDetails: Record<string, unknown>;
-            supplyTests: unknown[];
-            connectorTests: unknown[];
+            supplyTests: EvSupplyTestInput[];
+            connectorTests: EvConnectorTestInput[];
             functionalChecks: Record<string, unknown>;
             engineerObservations?: string | undefined;
           }
@@ -341,6 +368,7 @@ export class InspectionService {
         'This inspection has changed. Reload it before saving corrections.',
         409,
       );
+    if (input.evData !== undefined) validateEvSupplyMappings(input.evData);
     const source = inspection.revisions[0];
     if (source === undefined)
       throw new DomainError(
@@ -441,15 +469,19 @@ export class InspectionService {
         422,
       );
     const captions = new Map(
-      input.media.map((item) => [item.mediaId, item.caption?.trim() || null]),
+      input.media.map((item) => [
+        item.mediaId,
+        item.caption === null ? null : item.caption.trim() || null,
+      ]),
     );
     if (
       captions.size !== input.media.length ||
+      input.media.length !== allMediaIds.length ||
       input.media.some(({ mediaId }) => !allMediaIds.includes(mediaId))
     )
       throw new DomainError(
         'INSPECTION_MEDIA_INVALID',
-        'Image metadata must refer to each selected inspection image at most once.',
+        'Image metadata must refer to each selected inspection image exactly once.',
         422,
       );
     const mediaById = new Map(mediaRows.map((media) => [media.id, media]));
@@ -461,7 +493,7 @@ export class InspectionService {
         mediaId,
         ...(defectId === undefined ? {} : { defectId }),
         category: defectId === undefined ? media.category : 'inspection-fault',
-        caption: captions.has(mediaId) ? (captions.get(mediaId) ?? null) : media.caption,
+        caption: captions.get(mediaId) ?? null,
         sortOrder,
       };
     });

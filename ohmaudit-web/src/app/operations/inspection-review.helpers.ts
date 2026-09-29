@@ -2,6 +2,13 @@ export function connectorSupplySelection(value: string): string[] {
   return value === '' ? [] : [value];
 }
 
+export function hasReachedRevision(
+  currentRevisionNumber: number,
+  expectedRevisionNumber: number,
+): boolean {
+  return currentRevisionNumber >= expectedRevisionNumber;
+}
+
 export function administratorCorrectionReason(
   validation: Record<string, unknown>,
 ): string | undefined {

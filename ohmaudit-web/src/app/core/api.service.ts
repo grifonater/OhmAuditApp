@@ -2933,10 +2933,10 @@ export class ApiService {
         remove: string[];
       };
       generalPhotoMediaIds: string[];
-      media: Array<{ mediaId: string; caption?: string }>;
+      media: Array<{ mediaId: string; caption: string | null }>;
     },
   ) {
-    return this.request(
+    return this.request<{ revision: { id: string; revisionNumber: number } }>(
       '/inspections/' +
         inspectionId +
         '/override?organisationId=' +
