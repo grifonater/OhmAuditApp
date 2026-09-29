@@ -535,7 +535,15 @@ export const inspectionOverrideInput = z.object({
   }),
   generalPhotoMediaIds: z.array(z.uuid()).max(500),
   media: z
-    .array(z.object({ mediaId: z.uuid(), caption: z.string().trim().max(500).nullable() }).strict())
+    .array(
+      z
+        .object({
+          mediaId: z.uuid(),
+          caption: z.string().trim().max(500).nullable(),
+          category: z.literal('inspection-review-evidence').optional(),
+        })
+        .strict(),
+    )
     .max(500),
 });
 const scheduleInput = z.object({
@@ -1431,6 +1439,15 @@ export function inspectionRevisionDefects<T extends RevisionDefectSnapshot>(
       },
     ];
   });
+}
+
+export function inspectionRevisionAssetPhotoId(
+  revisionMedia: Array<{ mediaId: string; category: string }>,
+  defectSnapshot: unknown,
+  legacyAssetPhotoId?: string,
+): string | undefined {
+  const revisionPhotoId = revisionMedia.find(({ category }) => category === 'asset-image')?.mediaId;
+  return revisionPhotoId ?? (Array.isArray(defectSnapshot) ? undefined : legacyAssetPhotoId);
 }
 
 function reportLogoFields(image: ReportMediaImage | undefined) {
@@ -6570,7 +6587,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
               },
               signatures: true,
               signatureSourceRevision: { include: { signatures: true } },
-              media: true,
+              media: { orderBy: { sortOrder: 'asc' } },
               evData: true,
             },
           },
@@ -6751,14 +6768,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
               inspectionId: inspection.id,
               orderedInspectionIds: visitInspectionIds,
             });
-            const snapshotAssetPhotoId = revision.media.find(
-              ({ category }) => category === 'asset-image',
-            )?.mediaId;
-            const assetPhotoId =
-              snapshotAssetPhotoId ??
-              (inspection.asset === null
+            const assetPhotoId = inspectionRevisionAssetPhotoId(
+              revision.media,
+              revision.defectSnapshot,
+              inspection.asset === null
                 ? undefined
-                : firstPhotoByAsset.get(inspection.asset.id)?.id);
+                : firstPhotoByAsset.get(inspection.asset.id)?.id,
+            );
             const [chargerPhotoJpegBase64, evPhotos] = await Promise.all([
               jpegMediaForReport(environment, prisma, organisationId, assetPhotoId),
               inspection.moduleKey === 'ev-charging'
@@ -6954,7 +6970,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             },
             signatures: true,
             signatureSourceRevision: { include: { signatures: true } },
-            media: true,
+            media: { orderBy: { sortOrder: 'asc' } },
             evData: true,
           },
         },
@@ -6987,9 +7003,26 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       inspectionId: inspection.id,
       ...(visitInspectionIds === undefined ? {} : { orderedInspectionIds: visitInspectionIds }),
     });
-    const snapshotAssetPhotoId = revision.media.find(
-      ({ category }) => category === 'asset-image',
-    )?.mediaId;
+    const legacyAssetPhoto =
+      Array.isArray(revision.defectSnapshot) || inspection.asset === null
+        ? null
+        : await prisma.media.findFirst({
+            where: {
+              organisationId,
+              entityType: 'Asset',
+              entityId: inspection.asset.id,
+              category: 'asset-image',
+              mimeType: 'image/jpeg',
+              status: 'AVAILABLE',
+            },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true },
+          });
+    const assetPhotoId = inspectionRevisionAssetPhotoId(
+      revision.media,
+      revision.defectSnapshot,
+      legacyAssetPhoto?.id,
+    );
     const thermalPdfCacheKey =
       documentFormat === 'pdf' &&
       inspection.moduleKey === 'thermal-imaging' &&
@@ -7016,21 +7049,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         where: { organisationId },
         orderBy: { createdAt: 'asc' },
       }),
-      snapshotAssetPhotoId !== undefined
-        ? prisma.media.findFirst({ where: { id: snapshotAssetPhotoId, organisationId } })
-        : inspection.asset === null
-          ? Promise.resolve(null)
-          : prisma.media.findFirst({
-              where: {
-                organisationId,
-                entityType: 'Asset',
-                entityId: inspection.asset.id,
-                category: 'asset-image',
-                mimeType: 'image/jpeg',
-                status: 'AVAILABLE',
-              },
-              orderBy: { createdAt: 'asc' },
-            }),
+      assetPhotoId === undefined
+        ? Promise.resolve(null)
+        : prisma.media.findFirst({ where: { id: assetPhotoId, organisationId } }),
       inspection.moduleKey === 'ev-charging'
         ? evInspectionPhotosForReport(
             environment,

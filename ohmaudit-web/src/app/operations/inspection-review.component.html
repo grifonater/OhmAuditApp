@@ -1395,6 +1395,25 @@
                               }
                             </select></label
                           >
+                          @if (media.category === 'asset-image') {
+                            <div class="evidence-category-action">
+                              <small
+                                >Currently used as the main unit photograph in the report.</small
+                              >
+                              <button
+                                class="text-button"
+                                type="button"
+                                (click)="useAsSupportingEvidence(media.id)"
+                              >
+                                Use as supporting evidence instead
+                              </button>
+                            </div>
+                          } @else if (media.category === 'inspection-review-evidence') {
+                            <small class="evidence-category-status"
+                              >Supporting evidence only. This image will not replace the main unit
+                              photograph.</small
+                            >
+                          }
                           <button
                             class="text-button"
                             type="button"

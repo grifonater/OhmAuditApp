@@ -770,6 +770,20 @@ blockquote,
 .evidence-grid small {
   color: var(--oa-ink-muted);
 }
+.evidence-category-action {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0 0.65rem;
+}
+.evidence-category-action .text-button {
+  padding: 0;
+  text-align: left;
+}
+.evidence-category-status {
+  display: block;
+  padding: 0 0.65rem;
+  color: var(--oa-teal-700) !important;
+}
 .fault-evidence-list {
   display: grid;
   gap: 0.7rem;

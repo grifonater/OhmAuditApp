@@ -2933,7 +2933,11 @@ export class ApiService {
         remove: string[];
       };
       generalPhotoMediaIds: string[];
-      media: Array<{ mediaId: string; caption: string | null }>;
+      media: Array<{
+        mediaId: string;
+        caption: string | null;
+        category?: 'inspection-review-evidence';
+      }>;
     },
   ) {
     return this.request<{ revision: { id: string; revisionNumber: number } }>(

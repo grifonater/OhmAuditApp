@@ -45,7 +45,11 @@ type CorrectedDefect = {
   photoMediaIds: string[];
 };
 
-type RevisionMediaInput = { mediaId: string; caption: string | null };
+type RevisionMediaInput = {
+  mediaId: string;
+  caption: string | null;
+  category?: 'inspection-review-evidence' | undefined;
+};
 
 type EvSupplyTestInput = Record<string, unknown> & { id: string };
 type EvConnectorTestInput = Record<string, unknown> & { supplyIds: string[] };
@@ -468,14 +472,17 @@ export class InspectionService {
         'Every image must be available and belong to this inspection and organisation.',
         422,
       );
-    const captions = new Map(
+    const metadata = new Map(
       input.media.map((item) => [
         item.mediaId,
-        item.caption === null ? null : item.caption.trim() || null,
+        {
+          caption: item.caption === null ? null : item.caption.trim() || null,
+          category: item.category,
+        },
       ]),
     );
     if (
-      captions.size !== input.media.length ||
+      metadata.size !== input.media.length ||
       input.media.length !== allMediaIds.length ||
       input.media.some(({ mediaId }) => !allMediaIds.includes(mediaId))
     )
@@ -487,13 +494,14 @@ export class InspectionService {
     const mediaById = new Map(mediaRows.map((media) => [media.id, media]));
     const revisionMedia = allMediaIds.map((mediaId, sortOrder) => {
       const media = mediaById.get(mediaId)!;
+      const item = metadata.get(mediaId)!;
       const defectId = defectPhotoOwner.get(mediaId);
       return {
         organisationId,
         mediaId,
         ...(defectId === undefined ? {} : { defectId }),
-        category: defectId === undefined ? media.category : 'inspection-fault',
-        caption: captions.get(mediaId) ?? null,
+        category: defectId === undefined ? (item.category ?? media.category) : 'inspection-fault',
+        caption: item.caption,
         sortOrder,
       };
     });

@@ -512,6 +512,19 @@ export class InspectionReviewComponent {
     );
   }
 
+  protected useAsSupportingEvidence(mediaId: string): void {
+    this.overrideDraft.update((draft) =>
+      draft === undefined
+        ? draft
+        : {
+            ...draft,
+            media: draft.media.map((media) =>
+              media.id === mediaId ? { ...media, category: 'inspection-review-evidence' } : media,
+            ),
+          },
+    );
+  }
+
   protected setDraftMediaOwner(mediaId: string, event: Event): void {
     const defectId = this.eventValue(event);
     this.overrideDraft.update((draft) => {
@@ -607,6 +620,9 @@ export class InspectionReviewComponent {
         media: draft.media.map((media) => ({
           mediaId: media.id,
           caption: media.caption?.trim() || null,
+          ...(media.category === 'inspection-review-evidence'
+            ? { category: 'inspection-review-evidence' as const }
+            : {}),
         })),
       });
       this.success.set('Administrator correction saved as a new audited revision.');

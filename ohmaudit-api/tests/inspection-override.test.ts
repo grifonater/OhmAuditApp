@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '../src/generated/prisma/client';
-import { inspectionOverrideInput, inspectionRevisionDefects } from '../src/app';
+import {
+  inspectionOverrideInput,
+  inspectionRevisionAssetPhotoId,
+  inspectionRevisionDefects,
+} from '../src/app';
 import { InspectionService } from '../src/inspections/inspection.service';
 
 describe('administrator inspection corrections', () => {
@@ -425,7 +429,7 @@ describe('administrator inspection corrections', () => {
           .mockResolvedValueOnce([
             {
               id: 'edited-photo',
-              category: 'inspection-review-evidence',
+              category: 'asset-image',
               caption: 'Mutable old caption',
             },
             { id: 'added-photo', category: 'inspection-review-evidence', caption: 'Must not leak' },
@@ -460,7 +464,11 @@ describe('administrator inspection corrections', () => {
         },
         generalPhotoMediaIds: ['edited-photo'],
         media: [
-          { mediaId: 'edited-photo', caption: 'Edited revision caption' },
+          {
+            mediaId: 'edited-photo',
+            caption: 'Edited revision caption',
+            category: 'inspection-review-evidence',
+          },
           { mediaId: 'added-photo', caption: null },
         ],
       },
@@ -470,7 +478,11 @@ describe('administrator inspection corrections', () => {
       data: { media: { createMany: { data: unknown[] } } };
     };
     expect(createInput.data.media.createMany.data).toEqual([
-      expect.objectContaining({ mediaId: 'edited-photo', caption: 'Edited revision caption' }),
+      expect.objectContaining({
+        mediaId: 'edited-photo',
+        caption: 'Edited revision caption',
+        category: 'inspection-review-evidence',
+      }),
       expect.objectContaining({ mediaId: 'added-photo', defectId: 'defect-a', caption: null }),
     ]);
     expect(createInput.data.media.createMany.data).not.toEqual(
@@ -693,6 +705,18 @@ describe('EV administrator inspection corrections', () => {
     };
 
     expect(inspectionOverrideInput.safeParse(base).success).toBe(true);
+    expect(
+      inspectionOverrideInput.safeParse({
+        ...base,
+        media: [{ mediaId, caption: null, category: 'inspection-review-evidence' }],
+      }).success,
+    ).toBe(true);
+    expect(
+      inspectionOverrideInput.safeParse({
+        ...base,
+        media: [{ mediaId, caption: null, category: 'asset-image' }],
+      }).success,
+    ).toBe(false);
     expect(inspectionOverrideInput.safeParse({ ...base, media: [{ mediaId }] }).success).toBe(
       false,
     );
@@ -718,6 +742,24 @@ describe('EV administrator inspection corrections', () => {
 });
 
 describe('revision-scoped report defects', () => {
+  it('uses revision media as the authoritative main report image', () => {
+    expect(
+      inspectionRevisionAssetPhotoId(
+        [{ mediaId: 'revision-photo', category: 'asset-image' }],
+        [],
+        'legacy-photo',
+      ),
+    ).toBe('revision-photo');
+    expect(
+      inspectionRevisionAssetPhotoId(
+        [{ mediaId: 'supporting-photo', category: 'inspection-review-evidence' }],
+        [],
+        'legacy-photo',
+      ),
+    ).toBeUndefined();
+    expect(inspectionRevisionAssetPhotoId([], null, 'legacy-photo')).toBe('legacy-photo');
+  });
+
   it('uses an available revision snapshot instead of mutable current defects', () => {
     const current = [
       {
