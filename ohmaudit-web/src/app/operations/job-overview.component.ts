@@ -25,6 +25,7 @@ import { AsyncButtonDirective } from '../shared/async-button.directive';
 import {
   buildVisitTaskInputs,
   eligibleTaskAssets,
+  orderedVisitTasks,
   type InspectionModuleKey,
 } from './visit-task-helpers';
 import { visitReadyForCompletion } from './visit-completion';
@@ -149,6 +150,7 @@ export class JobOverviewComponent {
   protected readonly thermalTaskExists = computed(() =>
     (this.job()?.tasks ?? []).some((task) => task.moduleKey === 'thermal-imaging'),
   );
+  protected readonly orderedTasks = computed(() => orderedVisitTasks(this.job()?.tasks ?? []));
   protected readonly ramsCandidates = computed(() => {
     const linkedIds = new Set(this.ramsRecords().map(({ id }) => id));
     const siteId = this.job()?.site.id;
@@ -162,7 +164,7 @@ export class JobOverviewComponent {
   });
   protected readonly linkedAssets = computed(() => {
     const assets = new Map<string, AssetSummary>();
-    for (const task of this.job()?.tasks ?? []) {
+    for (const task of this.orderedTasks()) {
       if (task.asset) assets.set(task.asset.id, task.asset);
     }
     return [...assets.values()];
@@ -171,7 +173,7 @@ export class JobOverviewComponent {
     type JobAsset = NonNullable<VisitTask['asset']>;
     const tasks = new Map<string, VisitTask[]>();
     const assets = new Map<string, JobAsset>();
-    for (const task of this.job()?.tasks ?? []) {
+    for (const task of this.orderedTasks()) {
       if (task.asset === undefined) continue;
       tasks.set(task.asset.id, [...(tasks.get(task.asset.id) ?? []), task]);
       assets.set(task.asset.id, task.asset);

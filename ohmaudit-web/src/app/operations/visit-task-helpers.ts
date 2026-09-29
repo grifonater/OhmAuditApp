@@ -1,4 +1,5 @@
 import type { AssetSummary, VisitTask, VisitTaskInput } from '../core/api.service';
+import { naturalCompare } from '../shared/natural-order';
 
 export type InspectionModuleKey = 'core' | 'ev-charging' | 'thermal-imaging' | 'emergency-lighting';
 
@@ -15,23 +16,46 @@ export function eligibleTaskAssets(
   );
   const search = query.trim().toLocaleLowerCase('en-GB');
 
-  return assets.filter(
-    (asset) =>
-      asset.status === 'ACTIVE' &&
-      !linkedAssetIds.has(asset.id) &&
-      (moduleKey !== 'ev-charging' || asset.assetType.toLocaleLowerCase('en-GB').includes('ev')) &&
-      (moduleKey !== 'emergency-lighting' ||
-        asset.assetType.toLocaleLowerCase('en-GB').includes('emergency')) &&
-      (!search ||
-        [
-          asset.displayName,
-          asset.assetReference,
-          asset.manufacturer,
-          asset.model,
-          asset.serialNumber,
-        ]
-          .filter((value): value is string => Boolean(value))
-          .some((value) => value.toLocaleLowerCase('en-GB').includes(search))),
+  return assets
+    .filter(
+      (asset) =>
+        asset.status === 'ACTIVE' &&
+        !linkedAssetIds.has(asset.id) &&
+        (moduleKey !== 'ev-charging' ||
+          asset.assetType.toLocaleLowerCase('en-GB').includes('ev')) &&
+        (moduleKey !== 'emergency-lighting' ||
+          asset.assetType.toLocaleLowerCase('en-GB').includes('emergency')) &&
+        (!search ||
+          [
+            asset.displayName,
+            asset.assetReference,
+            asset.manufacturer,
+            asset.model,
+            asset.serialNumber,
+          ]
+            .filter((value): value is string => Boolean(value))
+            .some((value) => value.toLocaleLowerCase('en-GB').includes(search))),
+    )
+    .sort(compareAssets);
+}
+
+export function compareAssets(left: AssetSummary, right: AssetSummary): number {
+  return (
+    naturalCompare(left.assetReference, right.assetReference) ||
+    naturalCompare(left.displayName, right.displayName) ||
+    naturalCompare(left.id, right.id)
+  );
+}
+
+export function orderedVisitTasks(tasks: readonly VisitTask[]): VisitTask[] {
+  return [...tasks].sort(
+    (left, right) =>
+      naturalCompare(
+        left.asset?.assetReference ?? left.title,
+        right.asset?.assetReference ?? right.title,
+      ) ||
+      naturalCompare(left.title, right.title) ||
+      naturalCompare(left.id, right.id),
   );
 }
 

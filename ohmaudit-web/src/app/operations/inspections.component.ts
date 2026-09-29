@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { ApiService, type InspectionSummary } from '../core/api.service';
 import { GenerationProgressService } from '../core/generation-progress.service';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
+import { naturalCompare } from '../shared/natural-order';
 
 interface ChangeRow {
   label: string;
@@ -76,7 +77,16 @@ export class InspectionsComponent {
         0;
       grouped.set(id, existing);
     }
-    return [...grouped.values()];
+    return [...grouped.values()].map((session) => ({
+      ...session,
+      inspections: [...session.inspections].sort(
+        (left, right) =>
+          naturalCompare(
+            left.asset?.assetReference ?? left.inspectionType,
+            right.asset?.assetReference ?? right.inspectionType,
+          ) || naturalCompare(left.id, right.id),
+      ),
+    }));
   });
   constructor() {
     void this.load();

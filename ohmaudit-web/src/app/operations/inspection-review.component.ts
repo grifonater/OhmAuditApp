@@ -12,6 +12,7 @@ import { GenerationProgressService } from '../core/generation-progress.service';
 import { compressPhoto } from '../core/image-compression';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
 import { ImageViewerComponent } from '../shared/image-viewer.component';
+import { naturalCompare } from '../shared/natural-order';
 import { VisitFindingsEditorComponent } from '../shared/visit-findings-editor.component';
 import {
   administratorCorrectionReason,
@@ -1170,10 +1171,9 @@ export class InspectionReviewComponent {
       const session = all.inspections
         .filter((item) => item.visit?.id === this.reviewId || item.id === this.reviewId)
         .sort((left, right) =>
-          (left.asset?.assetReference ?? left.inspectionType).localeCompare(
+          naturalCompare(
+            left.asset?.assetReference ?? left.inspectionType,
             right.asset?.assetReference ?? right.inspectionType,
-            'en-GB',
-            { numeric: true },
           ),
         );
       this.inspections.set(session);
@@ -1218,10 +1218,9 @@ export class InspectionReviewComponent {
       all
         .filter((item) => item.visit?.id === this.reviewId || item.id === this.reviewId)
         .sort((left, right) =>
-          (left.asset?.assetReference ?? left.inspectionType).localeCompare(
+          naturalCompare(
+            left.asset?.assetReference ?? left.inspectionType,
             right.asset?.assetReference ?? right.inspectionType,
-            'en-GB',
-            { numeric: true },
           ),
         ),
     );
@@ -1302,10 +1301,9 @@ export class InspectionReviewComponent {
     const session = all.inspections
       .filter((item) => item.visit?.id === this.reviewId || item.id === this.reviewId)
       .sort((left, right) =>
-        (left.asset?.assetReference ?? left.inspectionType).localeCompare(
+        naturalCompare(
+          left.asset?.assetReference ?? left.inspectionType,
           right.asset?.assetReference ?? right.inspectionType,
-          'en-GB',
-          { numeric: true },
         ),
       );
     this.inspections.set(session);

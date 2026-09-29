@@ -5602,11 +5602,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             include: {
               tasks: {
                 orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-                select: { inspection: { select: { id: true } } },
+                select: {
+                  inspection: {
+                    select: {
+                      id: true,
+                      inspectionType: true,
+                      asset: { select: { assetReference: true } },
+                    },
+                  },
+                },
               },
               inspections: {
                 orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-                select: { id: true },
+                select: {
+                  id: true,
+                  inspectionType: true,
+                  asset: { select: { assetReference: true } },
+                },
               },
             },
           },
@@ -5658,8 +5670,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       inspection.visit === null
         ? undefined
         : orderedInspectionIds(
-            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection?.id),
-            inspection.visit.inspections.map(({ id }) => id),
+            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection),
+            inspection.visit.inspections,
           );
     const draftReportReference = inspectionReportReference({
       jobReference: inspection.visit?.reference,
@@ -5849,11 +5861,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             include: {
               tasks: {
                 orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-                select: { inspection: { select: { id: true } } },
+                select: {
+                  inspection: {
+                    select: {
+                      id: true,
+                      inspectionType: true,
+                      asset: { select: { assetReference: true } },
+                    },
+                  },
+                },
               },
               inspections: {
                 orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-                select: { id: true },
+                select: {
+                  id: true,
+                  inspectionType: true,
+                  asset: { select: { assetReference: true } },
+                },
               },
             },
           },
@@ -5877,8 +5901,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       inspection.visit === null
         ? undefined
         : orderedInspectionIds(
-            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection?.id),
-            inspection.visit.inspections.map(({ id }) => id),
+            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection),
+            inspection.visit.inspections,
           );
     const previewReportReference = inspectionReportReference({
       jobReference: inspection.visit?.reference,
@@ -6561,11 +6585,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
           findings: true,
           tasks: {
             orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-            select: { inspection: { select: { id: true } } },
+            select: {
+              inspection: {
+                select: {
+                  id: true,
+                  inspectionType: true,
+                  asset: { select: { assetReference: true } },
+                },
+              },
+            },
           },
           inspections: {
             orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            select: { id: true },
+            select: {
+              id: true,
+              inspectionType: true,
+              asset: { select: { assetReference: true } },
+            },
           },
         },
       }),
@@ -6613,8 +6649,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         currentDocumentByInspection.set(revision.inspection.id, document);
     }
     const visitInspectionIds = orderedInspectionIds(
-      visit.tasks.map(({ inspection }) => inspection?.id),
-      visit.inspections.map(({ id }) => id),
+      visit.tasks.map(({ inspection }) => inspection),
+      visit.inspections,
     );
     const inspectionOrder = new Map(visitInspectionIds.map((id, index) => [id, index]));
     const documents = [...currentDocumentByInspection.values()].sort((left, right) => {
@@ -6959,11 +6995,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
                   include: {
                     tasks: {
                       orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-                      select: { inspection: { select: { id: true } } },
+                      select: {
+                        inspection: {
+                          select: {
+                            id: true,
+                            inspectionType: true,
+                            asset: { select: { assetReference: true } },
+                          },
+                        },
+                      },
                     },
                     inspections: {
                       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-                      select: { id: true },
+                      select: {
+                        id: true,
+                        inspectionType: true,
+                        asset: { select: { assetReference: true } },
+                      },
                     },
                   },
                 },
@@ -6991,8 +7039,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       inspection.visit === null
         ? undefined
         : orderedInspectionIds(
-            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection?.id),
-            inspection.visit.inspections.map(({ id }) => id),
+            inspection.visit.tasks.map(({ inspection: taskInspection }) => taskInspection),
+            inspection.visit.inspections,
           );
     const reportReference = inspectionReportReference({
       jobReference: inspection.visit?.reference,

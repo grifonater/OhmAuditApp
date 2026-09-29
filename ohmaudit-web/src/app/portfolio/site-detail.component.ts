@@ -26,6 +26,7 @@ import { compressPhoto } from '../core/image-compression';
 import { AssetIconComponent } from '../shared/asset-icon.component';
 import { assetIconOptions, defaultAssetIconKey, resolvedAssetIconKey } from '../shared/asset-icons';
 import { AsyncButtonDirective } from '../shared/async-button.directive';
+import { naturalCompare } from '../shared/natural-order';
 import { DeferredLoadDirective } from '../shared/deferred-load.directive';
 import {
   createSchedulesForGroup,
@@ -105,19 +106,26 @@ export class SiteDetailComponent {
     const assets = this.site()?.assets ?? [];
     const q = this.assetQuery().trim().toLowerCase();
     const status = this.assetStatus();
-    return assets.filter(
-      (asset) =>
-        (status === 'ALL' || asset.status === status) &&
-        (!q ||
-          [
-            asset.displayName,
-            asset.assetReference,
-            asset.assetType,
-            asset.manufacturer,
-            asset.model,
-            asset.serialNumber,
-          ].some((value) => value?.toLowerCase().includes(q))),
-    );
+    return assets
+      .filter(
+        (asset) =>
+          (status === 'ALL' || asset.status === status) &&
+          (!q ||
+            [
+              asset.displayName,
+              asset.assetReference,
+              asset.assetType,
+              asset.manufacturer,
+              asset.model,
+              asset.serialNumber,
+            ].some((value) => value?.toLowerCase().includes(q))),
+      )
+      .sort(
+        (left, right) =>
+          naturalCompare(left.assetReference, right.assetReference) ||
+          naturalCompare(left.displayName, right.displayName) ||
+          naturalCompare(left.id, right.id),
+      );
   });
   protected readonly reminders = computed(() => {
     const site = this.site();

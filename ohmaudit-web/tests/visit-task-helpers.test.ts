@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AssetSummary, VisitTask } from '../src/app/core/api.service';
-import { buildVisitTaskInputs, eligibleTaskAssets } from '../src/app/operations/visit-task-helpers';
+import {
+  buildVisitTaskInputs,
+  eligibleTaskAssets,
+  orderedVisitTasks,
+} from '../src/app/operations/visit-task-helpers';
 
 const evAsset: AssetSummary = {
   id: 'ev-1',
@@ -72,6 +76,32 @@ describe('visit task helpers', () => {
         moduleKey: 'emergency-lighting',
         title: 'Emergency lighting register inspection',
       },
+    ]);
+  });
+
+  it('orders eligible assets and visit tasks by natural asset reference', () => {
+    const numberedAssets = ['10', '2', '1'].map((assetReference): AssetSummary => ({
+      id: `asset-${assetReference}`,
+      assetType: 'EV Charger',
+      assetReference,
+      displayName: `Charger ${assetReference}`,
+      status: 'ACTIVE',
+    }));
+    const numberedTasks = numberedAssets.map((asset, index): VisitTask => ({
+      id: `task-${index}`,
+      title: `${asset.displayName} inspection`,
+      moduleKey: 'core',
+      status: 'PENDING',
+      asset,
+    }));
+
+    expect(
+      eligibleTaskAssets(numberedAssets, [], 'core').map(({ assetReference }) => assetReference),
+    ).toEqual(['1', '2', '10']);
+    expect(orderedVisitTasks(numberedTasks).map(({ asset }) => asset?.assetReference)).toEqual([
+      '1',
+      '2',
+      '10',
     ]);
   });
 });

@@ -636,7 +636,7 @@
           </div>
         } @else {
           <div class="task-list card-body">
-            @for (task of currentJob.tasks; track task.id) {
+            @for (task of orderedTasks(); track task.id) {
               <div class="inspection-task">
                 <div class="task-main">
                   <strong>{{ task.title }}</strong>

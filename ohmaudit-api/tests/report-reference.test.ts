@@ -30,19 +30,42 @@ describe('report references', () => {
     ).toBe('CURRENT-3');
   });
 
-  it('numbers job inspections in task order without duplicating fallback inspections', () => {
+  it('numbers job inspections by natural asset reference without duplicating fallbacks', () => {
     const orderedIds = orderedInspectionIds(
-      ['inspection-b', undefined, 'inspection-a'],
-      ['inspection-a', 'inspection-c'],
+      [
+        {
+          id: 'inspection-10',
+          inspectionType: 'EV inspection',
+          asset: { assetReference: '10' },
+        },
+        undefined,
+        {
+          id: 'inspection-2',
+          inspectionType: 'EV inspection',
+          asset: { assetReference: '2' },
+        },
+      ],
+      [
+        {
+          id: 'inspection-2',
+          inspectionType: 'EV inspection',
+          asset: { assetReference: '2' },
+        },
+        {
+          id: 'inspection-1',
+          inspectionType: 'EV inspection',
+          asset: { assetReference: '1' },
+        },
+      ],
     );
 
-    expect(orderedIds).toEqual(['inspection-b', 'inspection-a', 'inspection-c']);
+    expect(orderedIds).toEqual(['inspection-1', 'inspection-2', 'inspection-10']);
     expect(
       inspectionReportReference({
         jobReference: '101',
         externalReference: 'PO-7',
         currentReference: 'CURRENT-3',
-        inspectionId: 'inspection-a',
+        inspectionId: 'inspection-2',
         orderedInspectionIds: orderedIds,
       }),
     ).toBe('101-2');

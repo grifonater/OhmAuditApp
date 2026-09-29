@@ -481,7 +481,7 @@
             </section>
           }
           <div class="record-list">
-            @for (task of currentVisit.tasks; track task.id) {
+            @for (task of orderedTasks(); track task.id) {
               <article
                 class="card task-card"
                 [class.recent-task]="recentlySubmittedTaskId() === task.id"

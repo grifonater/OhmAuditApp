@@ -8,18 +8,37 @@ export function preferredReportReference(input: {
   );
 }
 
+interface InspectionOrderItem {
+  id: string;
+  inspectionType: string;
+  asset?: { assetReference: string } | null | undefined;
+}
+
+const naturalCollator = new Intl.Collator('en-GB', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
 export function orderedInspectionIds(
-  taskInspectionIds: ReadonlyArray<string | null | undefined>,
-  fallbackInspectionIds: readonly string[],
+  taskInspections: ReadonlyArray<InspectionOrderItem | null | undefined>,
+  fallbackInspections: readonly InspectionOrderItem[],
 ): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const id of [...taskInspectionIds, ...fallbackInspectionIds]) {
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    result.push(id);
+  const inspections = new Map<string, InspectionOrderItem>();
+  for (const inspection of [...taskInspections, ...fallbackInspections]) {
+    if (inspection === null || inspection === undefined || inspections.has(inspection.id)) continue;
+    inspections.set(inspection.id, inspection);
   }
-  return result;
+  return [...inspections.values()]
+    .sort(
+      (left, right) =>
+        naturalCollator.compare(
+          left.asset?.assetReference ?? left.inspectionType,
+          right.asset?.assetReference ?? right.inspectionType,
+        ) ||
+        naturalCollator.compare(left.inspectionType, right.inspectionType) ||
+        naturalCollator.compare(left.id, right.id),
+    )
+    .map(({ id }) => id);
 }
 
 export function inspectionReportReference(input: {

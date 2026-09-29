@@ -45,6 +45,7 @@ import {
 } from '../core/emergency-lighting-routes';
 import { RamsReadOnlyComponent } from '../shared/rams-read-only.component';
 import { SignaturePadComponent } from '../shared/signature-pad.component';
+import { orderedVisitTasks } from './visit-task-helpers';
 import {
   connectorSupplyIds,
   engineerWorkspaceStep,
@@ -148,6 +149,7 @@ export class EngineerVisitComponent {
     engineerWorkspaceStep(this.route.snapshot.queryParamMap.get('step')),
   );
   protected readonly visit = signal<VisitSummary | undefined>(undefined);
+  protected readonly orderedTasks = computed(() => orderedVisitTasks(this.visit()?.tasks ?? []));
   protected readonly linkedRams = signal<EngineerRamsRecord[]>([]);
   protected readonly currentSignerName = signal('your account');
   private readonly currentUserId = signal('');
