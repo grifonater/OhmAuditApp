@@ -1,6 +1,7 @@
 import { renderThermalReportHtml } from './thermal-report-html';
 import { renderRamsReportHtml, type RamsRenderPayload } from './rams-report-html';
 import { renderJobSheetReportHtml, type JobSheetRenderPayload } from './job-sheet-report-html';
+import { renderAssetRegisterHtml, type AssetRegisterRenderPayload } from './asset-register-html';
 import { renderEvCertificateHtml } from './ev-certificate-html';
 import { renderVisitReportHtml } from './visit-report-html';
 
@@ -2082,6 +2083,81 @@ function jobSheetJsonError(status: 413 | 422 | 502 | 503, code: string, message:
   );
 }
 
+function isAssetRegisterPayload(value: unknown): value is AssetRegisterRenderPayload {
+  if (typeof value !== 'object' || value === null) return false;
+  const payload = value as Record<string, unknown>;
+  return (
+    payload['templateVersion'] === 'asset-register-a4-v1' &&
+    typeof payload['generatedAt'] === 'string' &&
+    typeof payload['customerName'] === 'string' &&
+    typeof payload['siteName'] === 'string' &&
+    typeof payload['filterDescription'] === 'string' &&
+    Array.isArray(payload['assets']) &&
+    payload['assets'].every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as Record<string, unknown>)['assetReference'] === 'string' &&
+        typeof (item as Record<string, unknown>)['displayName'] === 'string' &&
+        typeof (item as Record<string, unknown>)['assetType'] === 'string' &&
+        typeof (item as Record<string, unknown>)['status'] === 'string',
+    )
+  );
+}
+
+async function renderAssetRegisterWithBrowser(
+  environment: PdfBindings,
+  payload: AssetRegisterRenderPayload,
+): Promise<Response> {
+  if (environment.BROWSER === undefined)
+    return jobSheetJsonError(
+      503,
+      'ASSET_REGISTER_RENDERER_UNAVAILABLE',
+      'The asset report renderer is unavailable.',
+    );
+  const configuredTimeout = Number.parseInt(environment.RENDER_TIMEOUT_MS, 10);
+  const timeout = Number.isFinite(configuredTimeout)
+    ? Math.min(Math.max(configuredTimeout, 5_000), 120_000)
+    : 30_000;
+  try {
+    const rendered = await environment.BROWSER.quickAction('pdf', {
+      html: renderAssetRegisterHtml(payload),
+      emulateMediaType: 'print',
+      setJavaScriptEnabled: false,
+      actionTimeout: timeout,
+      pdfOptions: {
+        format: 'a4',
+        landscape: true,
+        printBackground: true,
+        preferCSSPageSize: true,
+        tagged: true,
+        outline: true,
+        timeout,
+      },
+    });
+    if (!rendered.ok)
+      return jobSheetJsonError(
+        502,
+        'ASSET_REGISTER_RENDER_FAILED',
+        'The asset report PDF could not be rendered.',
+      );
+    return new Response(rendered.body, {
+      headers: {
+        'content-type': 'application/pdf',
+        'content-disposition': 'attachment; filename="asset-register.pdf"',
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  } catch {
+    return jobSheetJsonError(
+      503,
+      'ASSET_REGISTER_RENDERER_UNAVAILABLE',
+      'The asset report renderer is unavailable.',
+    );
+  }
+}
+
 function jobSheetFooterTemplate(payload: JobSheetRenderPayload): string {
   return `<div style="box-sizing:border-box;width:100%;height:14mm;padding:0 12mm 2mm;color:#53647b;font-family:Arial,Helvetica,sans-serif;font-size:7pt;line-height:1.2;overflow:hidden">
     <div style="box-sizing:border-box;display:grid;grid-template-columns:1fr auto;width:100%;height:100%;gap:5mm;padding-top:2mm;border-top:1px solid #9ba9ba;overflow:hidden">
@@ -2568,6 +2644,17 @@ export default {
       const ramsPayload = await readRamsPayload(request);
       if (ramsPayload instanceof Response) return ramsPayload;
       return renderRamsReportWithBrowser(env, ramsPayload);
+    }
+    if (templateId === 'asset-register-a4-v1') {
+      const documentPayload = await readDocumentPayload(request);
+      if ('response' in documentPayload) return documentPayload.response;
+      if (!isAssetRegisterPayload(documentPayload.payload))
+        return jobSheetJsonError(
+          422,
+          'INVALID_ASSET_REGISTER_PAYLOAD',
+          'The asset report payload is incomplete or invalid.',
+        );
+      return renderAssetRegisterWithBrowser(env, documentPayload.payload);
     }
     if (templateId === 'job-sheet-a4-v1' || templateId === 'job-sheet-with-rams-a4-v1') {
       if (!request.headers.get('content-type')?.toLowerCase().includes('application/json'))

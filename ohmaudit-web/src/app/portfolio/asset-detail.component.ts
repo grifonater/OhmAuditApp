@@ -23,6 +23,11 @@ interface GalleryImage {
   context: string;
 }
 
+interface DocumentGroup {
+  key: string;
+  revisions: AssetDocument[];
+}
+
 @Component({
   selector: 'oa-asset-detail',
   imports: [AssetIconComponent, DeferredLoadDirective, ImageViewerComponent, RouterLink],
@@ -43,6 +48,9 @@ export class AssetDetailComponent {
   protected readonly error = signal('');
   protected readonly imageUrls = signal<Record<string, string>>({});
   protected readonly selectedImage = signal<GalleryImage | undefined>(undefined);
+  protected readonly detailTab = signal<'overview' | 'ev'>('overview');
+  protected readonly inspectionPage = signal(1);
+  protected readonly selectedDocumentIds = signal<Record<string, string>>({});
   protected readonly resolvedAssetIconKey = resolvedAssetIconKey;
   protected readonly isEvAsset = computed(() =>
     this.asset()?.assetType.toLowerCase().includes('ev'),
@@ -83,6 +91,32 @@ export class AssetDetailComponent {
       left.localeCompare(right),
     ),
   );
+  protected readonly inspectionPageCount = computed(() =>
+    Math.max(1, Math.ceil((this.asset()?.inspections.length ?? 0) / 3)),
+  );
+  protected readonly visibleInspections = computed(() => {
+    const start = (this.inspectionPage() - 1) * 3;
+    return this.asset()?.inspections.slice(start, start + 3) ?? [];
+  });
+  protected readonly documentGroups = computed<DocumentGroup[]>(() => {
+    const groups = new Map<string, AssetDocument[]>();
+    for (const document of this.asset()?.documents ?? []) {
+      const inspectionId = document.inspectionRevision?.inspection.id;
+      const key = inspectionId
+        ? `inspection:${inspectionId}:${document.category}:${document.title}`
+        : `document:${document.id}`;
+      groups.set(key, [...(groups.get(key) ?? []), document]);
+    }
+    return [...groups].map(([key, revisions]) => ({
+      key,
+      revisions: revisions.sort(
+        (left, right) =>
+          (right.inspectionRevision?.revisionNumber ?? 0) -
+            (left.inspectionRevision?.revisionNumber ?? 0) ||
+          new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+      ),
+    }));
+  });
 
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -128,6 +162,39 @@ export class AssetDetailComponent {
       this.error.set(error instanceof Error ? error.message : 'The document could not be opened.');
     } finally {
       this.busyDocumentId.set(undefined);
+    }
+  }
+
+  protected selectedDocument(group: DocumentGroup): AssetDocument {
+    const selectedId = this.selectedDocumentIds()[group.key];
+    return group.revisions.find(({ id }) => id === selectedId) ?? group.revisions[0]!;
+  }
+
+  protected selectDocumentRevision(groupKey: string, event: Event): void {
+    const documentId = (event.target as HTMLSelectElement).value;
+    this.selectedDocumentIds.update((selection) => ({ ...selection, [groupKey]: documentId }));
+  }
+
+  protected setInspectionPage(page: number): void {
+    this.inspectionPage.set(Math.min(Math.max(page, 1), this.inspectionPageCount()));
+  }
+
+  protected async setMainImage(mediaId: string): Promise<void> {
+    this.error.set('');
+    try {
+      await this.api.setAssetPhotoPrimary(this.organisationId, this.assetId, mediaId);
+      this.asset.update((asset) =>
+        asset === undefined
+          ? asset
+          : {
+              ...asset,
+              media: asset.media
+                .map((media) => ({ ...media, isPrimary: media.id === mediaId }))
+                .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary)),
+            },
+      );
+    } catch (error: unknown) {
+      this.error.set(error instanceof Error ? error.message : 'The main image could not be set.');
     }
   }
 

@@ -82,7 +82,22 @@
       <p class="error" role="alert">{{ error() }}</p>
     }
 
-    <section class="detail-grid">
+    @if (isEvAsset()) {
+      <nav class="detail-tabs" aria-label="Asset detail sections">
+        <button
+          type="button"
+          [class.active]="detailTab() === 'overview'"
+          (click)="detailTab.set('overview')"
+        >
+          Asset overview
+        </button>
+        <button type="button" [class.active]="detailTab() === 'ev'" (click)="detailTab.set('ev')">
+          EV charger details
+        </button>
+      </nav>
+    }
+
+    <section class="detail-grid" [hidden]="detailTab() !== 'overview'">
       <article class="card detail-card identity-card">
         <header>
           <p class="eyebrow">Identity</p>
@@ -276,7 +291,7 @@
       </article>
     </section>
 
-    <section class="card content-section">
+    <section class="card content-section" [hidden]="detailTab() !== 'overview'">
       <header>
         <div>
           <p class="eyebrow">Evidence</p>
@@ -287,30 +302,41 @@
       </header>
       <div class="gallery">
         @for (image of gallery(); track image.media.id) {
-          <button
-            type="button"
-            oaDeferredLoad
-            (oaDeferredLoad)="loadImage(image.media.id)"
-            (click)="selectedImage.set(image)"
-            [disabled]="!imageUrls()[image.media.id]"
-          >
-            @if (imageUrls()[image.media.id]; as source) {
-              <img
-                [src]="source"
-                [alt]="image.media.caption || image.context"
-                loading="lazy"
-                decoding="async"
-              />
-            } @else {
-              <span class="image-placeholder">Loading image...</span>
-            }
-            <span
-              ><strong>{{
-                image.media.caption || image.media.originalFilename || 'Inspection image'
-              }}</strong
-              ><small>{{ image.context }}</small></span
+          <div class="gallery-card" [class.primary]="image.media.isPrimary">
+            <button
+              type="button"
+              oaDeferredLoad
+              (oaDeferredLoad)="loadImage(image.media.id)"
+              (click)="selectedImage.set(image)"
+              [disabled]="!imageUrls()[image.media.id]"
             >
-          </button>
+              @if (imageUrls()[image.media.id]; as source) {
+                <img
+                  [src]="source"
+                  [alt]="image.media.caption || image.context"
+                  loading="lazy"
+                  decoding="async"
+                />
+              } @else {
+                <span class="image-placeholder">Loading image...</span>
+              }
+              <span
+                ><strong>{{
+                  image.media.caption || image.media.originalFilename || 'Inspection image'
+                }}</strong
+                ><small>{{ image.media.isPrimary ? 'Main image' : image.context }}</small></span
+              >
+            </button>
+            @if (image.context === 'Asset image' && !image.media.isPrimary) {
+              <button
+                class="main-image-action"
+                type="button"
+                (click)="setMainImage(image.media.id)"
+              >
+                Set as main image
+              </button>
+            }
+          </div>
         } @empty {
           <div class="empty-state">
             <h3>No asset images</h3>
@@ -320,7 +346,7 @@
       </div>
     </section>
 
-    <section class="two-column">
+    <section class="two-column" [hidden]="detailTab() !== 'overview'">
       <article class="card content-section">
         <header>
           <div>
@@ -330,7 +356,7 @@
           <span>{{ currentAsset.inspections.length }}</span>
         </header>
         <div class="timeline">
-          @for (inspection of currentAsset.inspections; track inspection.id) {
+          @for (inspection of visibleInspections(); track inspection.id) {
             <article>
               <div class="timeline-marker"></div>
               <div>
@@ -379,6 +405,29 @@
             </div>
           }
         </div>
+        @if (currentAsset.inspections.length > 3) {
+          <nav class="compact-pagination" aria-label="Inspection pages">
+            <button
+              class="button secondary compact"
+              type="button"
+              [disabled]="inspectionPage() === 1"
+              (click)="setInspectionPage(inspectionPage() - 1)"
+              aria-label="Previous inspections"
+            >
+              &larr;
+            </button>
+            <span>Page {{ inspectionPage() }} of {{ inspectionPageCount() }}</span>
+            <button
+              class="button secondary compact"
+              type="button"
+              [disabled]="inspectionPage() === inspectionPageCount()"
+              (click)="setInspectionPage(inspectionPage() + 1)"
+              aria-label="Next inspections"
+            >
+              &rarr;
+            </button>
+          </nav>
+        }
       </article>
 
       <article class="card content-section">
@@ -417,17 +466,18 @@
       </article>
     </section>
 
-    <section class="card content-section documents-section">
+    <section class="card content-section documents-section" [hidden]="detailTab() !== 'overview'">
       <header>
         <div>
           <p class="eyebrow">Documents</p>
           <h2>Reports and certificates</h2>
           <p>Uploaded records and reports generated from inspections.</p>
         </div>
-        <span>{{ currentAsset.documents.length }}</span>
+        <span>{{ documentGroups().length }}</span>
       </header>
       <div class="document-list">
-        @for (document of currentAsset.documents; track document.id) {
+        @for (group of documentGroups(); track group.key) {
+          @let document = selectedDocument(group);
           <article>
             <span class="document-icon">PDF</span>
             <span
@@ -444,7 +494,23 @@
             @if (document.expiresAt) {
               <span class="document-expiry">Expires {{ formatDate(document.expiresAt) }}</span>
             }
-            <div>
+            <div class="document-actions">
+              @if (group.revisions.length > 1) {
+                <label class="revision-picker">
+                  <span>Revision</span>
+                  <select
+                    [value]="document.id"
+                    (change)="selectDocumentRevision(group.key, $event)"
+                  >
+                    @for (revision of group.revisions; track revision.id) {
+                      <option [value]="revision.id">
+                        {{ revision.inspectionRevision?.revisionNumber || 'Original' }} -
+                        {{ formatDate(revision.issuedAt || revision.createdAt) }}
+                      </option>
+                    }
+                  </select>
+                </label>
+              }
               <button
                 class="button secondary compact"
                 type="button"
@@ -476,6 +542,129 @@
         }
       </div>
     </section>
+
+    @if (isEvAsset()) {
+      <section class="ev-detail" [hidden]="detailTab() !== 'ev'">
+        @if (currentAsset.evChargePoint; as charger) {
+          <div class="detail-grid">
+            <article class="card detail-card">
+              <header>
+                <p class="eyebrow">Charge point</p>
+                <h2>Installation details</h2>
+              </header>
+              <dl>
+                <div>
+                  <dt>Charge point ID</dt>
+                  <dd>{{ charger.chargePointId || 'Not recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Operator</dt>
+                  <dd>{{ charger.operatorName || 'Not recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Firmware</dt>
+                  <dd>{{ charger.firmwareVersion || 'Not recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Installed</dt>
+                  <dd>{{ formatDate(charger.installationDate) }}</dd>
+                </div>
+                <div>
+                  <dt>Voltage</dt>
+                  <dd>{{ charger.nominalVoltage || 'Not recorded' }} V</dd>
+                </div>
+                <div>
+                  <dt>Phases</dt>
+                  <dd>{{ charger.phaseCount || 'Not recorded' }}</dd>
+                </div>
+                <div>
+                  <dt>Maximum power</dt>
+                  <dd>{{ charger.maximumPowerKw || 'Not recorded' }} kW</dd>
+                </div>
+                <div>
+                  <dt>DC protection</dt>
+                  <dd>{{ charger.dcRcdType || 'Not recorded' }}</dd>
+                </div>
+              </dl>
+              <div class="note">
+                <strong>Location notes</strong>
+                <p>{{ charger.locationNotes || 'No location notes recorded.' }}</p>
+              </div>
+            </article>
+            <article class="card detail-card ev-list-card">
+              <header>
+                <p class="eyebrow">Electrical supplies</p>
+                <h2>{{ charger.supplies.length }} supplies</h2>
+              </header>
+              @for (supply of charger.supplies; track supply.id) {
+                <dl class="ev-item">
+                  <div class="wide">
+                    <dt>Label</dt>
+                    <dd>{{ supply.label }}</dd>
+                  </div>
+                  <div>
+                    <dt>Phases</dt>
+                    <dd>{{ supply.phaseCount }}</dd>
+                  </div>
+                  <div>
+                    <dt>Earthing</dt>
+                    <dd>{{ supply.earthingArrangement || 'Not recorded' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Protective device</dt>
+                    <dd>{{ supply.protectiveDeviceType || 'Not recorded' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Rating</dt>
+                    <dd>{{ supply.protectiveDeviceRating || 'Not recorded' }} A</dd>
+                  </div>
+                </dl>
+              } @empty {
+                <p class="empty-copy">No supplies recorded.</p>
+              }
+            </article>
+            <article class="card detail-card ev-list-card">
+              <header>
+                <p class="eyebrow">Connectors</p>
+                <h2>{{ charger.connectors.length }} connectors</h2>
+              </header>
+              @for (connector of charger.connectors; track connector.id) {
+                <dl class="ev-item">
+                  <div>
+                    <dt>Label</dt>
+                    <dd>{{ connector.label }}</dd>
+                  </div>
+                  <div>
+                    <dt>Type</dt>
+                    <dd>{{ connector.connectorType }}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{{ connector.status }}</dd>
+                  </div>
+                  <div>
+                    <dt>Supply</dt>
+                    <dd>{{ connector.supplyMappings[0]?.supply?.label || 'Not mapped' }}</dd>
+                  </div>
+                </dl>
+              } @empty {
+                <p class="empty-copy">No connectors recorded.</p>
+              }
+            </article>
+          </div>
+          <a
+            class="button primary ev-register-link"
+            [routerLink]="['/app/org', organisationId, 'assets', currentAsset.id, 'ev']"
+            >Manage EV charger details</a
+          >
+        } @else {
+          <section class="card empty-state">
+            <h2>No EV configuration</h2>
+            <p>Open the EV register to add charger, supply and connector details.</p>
+          </section>
+        }
+      </section>
+    }
 
     @if (selectedImage(); as image) {
       @if (imageUrls()[image.media.id]; as source) {

@@ -356,6 +356,23 @@
             >
               ☷
             </button>
+            <details class="asset-export-menu">
+              <summary class="button secondary compact">Export</summary>
+              <div role="menu">
+                <button type="button" role="menuitem" (click)="downloadAssetPdf(false)">
+                  PDF - all assets
+                </button>
+                <button type="button" role="menuitem" (click)="downloadAssetPdf(true)">
+                  PDF - current filters
+                </button>
+                <button type="button" role="menuitem" (click)="downloadAssetCsv(false)">
+                  CSV - all assets
+                </button>
+                <button type="button" role="menuitem" (click)="downloadAssetCsv(true)">
+                  CSV - current filters
+                </button>
+              </div>
+            </details>
             @if (canManageAssets()) {
               <button
                 class="button primary compact"
@@ -522,7 +539,13 @@
         }
         <div class="asset-collection" [class.list-view]="view() === 'list'">
           @for (asset of pagedAssets(); track asset.id) {
-            <article class="asset-card card">
+            <article
+              class="asset-card card"
+              role="link"
+              tabindex="0"
+              (click)="openAsset(asset.id, $event)"
+              (keydown.enter)="openAsset(asset.id, $event)"
+            >
               <div class="asset-title">
                 <span class="asset-symbol"
                   ><oa-asset-icon
@@ -549,11 +572,6 @@
                 </div>
               </dl>
               <div class="asset-card-actions">
-                <a
-                  class="button ghost compact"
-                  [routerLink]="['/app/org', organisationId, 'assets', asset.id]"
-                  >View details</a
-                >
                 @if (canManageAssets()) {
                   <select
                     #status
@@ -693,8 +711,8 @@
                   /><small>Must be unique at this site.</small></label
                 >
                 <p class="duplicate-copy-note">
-                  Copies asset type, icon, manufacturer, model, serial number and notes from
-                  &ldquo;{{ source.displayName }}&rdquo;.
+                  Copies the asset identity fields. EV chargers also retain all charger, supply,
+                  connector and supply mapping details.
                 </p>
                 <div class="form-actions full">
                   <button class="button secondary" type="button" (click)="closeDuplicate()">

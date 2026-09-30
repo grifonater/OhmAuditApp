@@ -207,6 +207,10 @@ const assetUpdateInput = assetInput
   .omit({ siteId: true })
   .partial()
   .refine((input) => Object.keys(input).length > 0);
+const assetDuplicateInput = z.object({
+  assetReference: z.string().trim().min(1).max(100),
+  displayName: z.string().trim().min(2).max(160),
+});
 const assetLifecycleInput = z.object({
   status: z.enum(['PROPOSED', 'ACTIVE', 'INACTIVE', 'REMOVED', 'DECOMMISSIONED', 'REPLACED']),
   replacementAssetId: z.uuid().optional(),
@@ -1444,7 +1448,9 @@ export function inspectionRevisionDefects<T extends RevisionDefectSnapshot>(
 export function inspectionRevisionAssetPhotoId(
   revisionMedia: Array<{ mediaId: string; category: string }>,
   assetPhotoIds: string[],
+  primaryAssetPhotoId?: string,
 ): string | undefined {
+  if (primaryAssetPhotoId !== undefined) return primaryAssetPhotoId;
   const revisionPhotoId = revisionMedia.find(({ category }) => category === 'asset-image')?.mediaId;
   if (revisionPhotoId !== undefined) return revisionPhotoId;
   const revisionMediaIds = new Set(revisionMedia.map(({ mediaId }) => mediaId));
@@ -2763,6 +2769,103 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ),
     });
   });
+  app.get('/api/v1/sites/:siteId/assets/report.pdf', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'assets.read',
+    );
+    if (environment.PDF_WORKER === undefined && environment.PDF_WORKER_URL === undefined)
+      throw new DomainError('PDF_RENDERER_UNAVAILABLE', 'PDF generation is not configured.', 503);
+    const siteId = z.uuid().parse(context.req.param('siteId'));
+    const query = (context.req.query('q') ?? '').trim();
+    const status = z
+      .enum(['ALL', 'ACTIVE', 'PROPOSED', 'INACTIVE', 'REMOVED', 'DECOMMISSIONED'])
+      .parse(context.req.query('status') ?? 'ALL');
+    const site = await prismaFor(environment).site.findFirst({
+      where: { id: siteId, organisationId },
+      select: {
+        name: true,
+        reference: true,
+        customer: { select: { name: true } },
+        assets: {
+          where: {
+            ...(status === 'ALL' ? { status: { not: 'REMOVED' as const } } : { status }),
+            ...(query === ''
+              ? {}
+              : {
+                  OR: [
+                    { displayName: { contains: query, mode: 'insensitive' as const } },
+                    { assetReference: { contains: query, mode: 'insensitive' as const } },
+                    { assetType: { contains: query, mode: 'insensitive' as const } },
+                    { manufacturer: { contains: query, mode: 'insensitive' as const } },
+                    { model: { contains: query, mode: 'insensitive' as const } },
+                    { serialNumber: { contains: query, mode: 'insensitive' as const } },
+                  ],
+                }),
+          },
+          select: {
+            assetReference: true,
+            displayName: true,
+            assetType: true,
+            manufacturer: true,
+            model: true,
+            serialNumber: true,
+            status: true,
+          },
+          orderBy: [{ assetReference: 'asc' }, { displayName: 'asc' }],
+        },
+      },
+    });
+    if (site === null) throw new DomainError('SITE_NOT_FOUND', 'The site was not found.', 404);
+    const filterDescription =
+      query === '' && status === 'ALL'
+        ? 'All site assets'
+        : `Current filters${status === 'ALL' ? '' : ` · ${status}`}${query === '' ? '' : ` · Search: ${query}`}`;
+    const rendered = await requestPdfRender(environment, '/render/asset-register-a4-v1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        templateVersion: 'asset-register-a4-v1',
+        generatedAt: new Intl.DateTimeFormat('en-GB', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Europe/London',
+        }).format(new Date()),
+        customerName: site.customer.name,
+        siteName: site.name,
+        ...(site.reference === null ? {} : { siteReference: site.reference }),
+        filterDescription,
+        assets: site.assets.map((asset) => ({
+          assetReference: asset.assetReference,
+          displayName: asset.displayName,
+          assetType: asset.assetType,
+          status: asset.status,
+          ...(asset.manufacturer === null ? {} : { manufacturer: asset.manufacturer }),
+          ...(asset.model === null ? {} : { model: asset.model }),
+          ...(asset.serialNumber === null ? {} : { serialNumber: asset.serialNumber }),
+        })),
+      }),
+    });
+    const filename = `${
+      site.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gu, '-')
+        .replace(/^-|-$/gu, '') || 'site'
+    }-asset-register.pdf`;
+    return new Response(rendered.body, {
+      headers: {
+        'content-type': rendered.headers.get('content-type') ?? 'application/pdf',
+        'content-disposition': `attachment; filename="${filename}"`,
+        'cache-control': 'private, no-store',
+      },
+    });
+  });
   app.post('/api/v1/assets', async (context) => {
     const environment = parseEnvironment(context.env);
     const input = assetInput.extend({ organisationId: z.uuid() }).parse(await context.req.json());
@@ -2807,6 +2910,40 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         z.uuid().parse(context.req.param('assetId')),
       ),
     });
+  });
+  app.post('/api/v1/assets/:assetId/duplicate', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    const assetId = z.uuid().parse(context.req.param('assetId'));
+    const input = assetDuplicateInput.parse(await context.req.json());
+    const identity = identityService(environment, options);
+    const { user } = await identity.requireMembership(
+      context.get('actor'),
+      organisationId,
+      'assets.manage',
+    );
+    const prisma = prismaFor(environment);
+    const source = await prisma.asset.findFirst({
+      where: { id: assetId, organisationId },
+      select: { assetType: true },
+    });
+    if (source === null) throw new DomainError('ASSET_NOT_FOUND', 'The asset was not found.', 404);
+    if (isEvAssetType(source.assetType)) {
+      await new EntitlementService(prisma).requireModule(organisationId, 'ev-charging');
+      await identity.requireMembership(context.get('actor'), organisationId, 'ev.assets.manage');
+    }
+    return context.json(
+      {
+        asset: await new PortfolioService(prisma).duplicateAsset(
+          organisationId,
+          assetId,
+          user.id,
+          context.get('correlationId'),
+          input,
+        ),
+      },
+      201,
+    );
   });
   app.patch('/api/v1/assets/:assetId/lifecycle', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -3279,6 +3416,23 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       organisationId,
       siteId,
       body.mediaId ?? null,
+    );
+    return context.json({ updated: true });
+  });
+  app.patch('/api/v1/assets/:assetId/photos/primary', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    const assetId = z.uuid().parse(context.req.param('assetId'));
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'assets.manage',
+    );
+    const body = z.object({ mediaId: z.uuid().nullable() }).parse(await context.req.json());
+    await new PortfolioService(prismaFor(environment)).setAssetPhotoPrimary(
+      organisationId,
+      assetId,
+      body.mediaId,
     );
     return context.json({ updated: true });
   });
@@ -6748,9 +6902,12 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
               mimeType: 'image/jpeg',
               status: 'AVAILABLE',
             },
-            orderBy: { createdAt: 'asc' },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
           });
     const photoIdsByAsset = new Map<string, string[]>();
+    const primaryPhotoIdByAsset = new Map<string, string>();
+    for (const photo of assetPhotos)
+      if (photo.isPrimary) primaryPhotoIdByAsset.set(photo.entityId, photo.id);
     for (const photo of assetPhotos)
       photoIdsByAsset.set(photo.entityId, [
         ...(photoIdsByAsset.get(photo.entityId) ?? []),
@@ -6877,6 +7034,9 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
             const assetPhotoId = inspectionRevisionAssetPhotoId(
               revision.media,
               inspection.asset === null ? [] : (photoIdsByAsset.get(inspection.asset.id) ?? []),
+              inspection.asset === null
+                ? undefined
+                : primaryPhotoIdByAsset.get(inspection.asset.id),
             );
             const [chargerPhotoJpegBase64, evPhotos] = await Promise.all([
               jpegMediaForReport(environment, prisma, organisationId, assetPhotoId),
@@ -7133,12 +7293,13 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
               mimeType: 'image/jpeg',
               status: 'AVAILABLE',
             },
-            orderBy: { createdAt: 'asc' },
-            select: { id: true },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            select: { id: true, isPrimary: true },
           });
     const assetPhotoId = inspectionRevisionAssetPhotoId(
       revision.media,
       fallbackAssetPhotos.map(({ id }) => id),
+      fallbackAssetPhotos.find(({ isPrimary }) => isPrimary)?.id,
     );
     const thermalPdfCacheKey =
       documentFormat === 'pdf' &&
@@ -8657,7 +8818,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     const assetId = z.uuid().parse(context.req.param('assetId'));
     const custom = await prisma.media.findFirst({
       where: { organisationId, entityType: 'Asset', entityId: assetId, status: 'AVAILABLE' },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
     });
     const media =
       custom ?? (await new PlatformService(prisma).stockImageForAsset(assetId, organisationId));

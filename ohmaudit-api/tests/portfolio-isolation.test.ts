@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '../src/generated/prisma/client';
 import { PortfolioService } from '../src/portfolio/portfolio.service';
 
@@ -200,6 +200,126 @@ describe('Portfolio tenant isolation', () => {
       status: 409,
       message:
         'This asset reference is already used by another asset at this site. Enter a different reference.',
+    });
+  });
+
+  it('duplicates complete EV charger supplies, connectors, and mappings', async () => {
+    const assetInputs: unknown[] = [];
+    const chargerInputs: unknown[] = [];
+    const connectorInputs: unknown[] = [];
+    const assetCreate = vi.fn((input: unknown) => {
+      assetInputs.push(input);
+      return Promise.resolve({
+        id: 'asset-copy',
+        siteId: 'site-a',
+        assetReference: 'EV-002',
+      });
+    });
+    const chargerCreate = vi.fn((input: unknown) => {
+      chargerInputs.push(input);
+      return Promise.resolve({ id: 'charger-copy' });
+    });
+    const supplyCreate = vi
+      .fn()
+      .mockResolvedValueOnce({ id: 'supply-copy-a' })
+      .mockResolvedValueOnce({ id: 'supply-copy-b' });
+    const connectorCreate = vi.fn((input: unknown) => {
+      connectorInputs.push(input);
+      return Promise.resolve({ id: 'connector-copy' });
+    });
+    const transaction = {
+      asset: { create: assetCreate },
+      evChargePoint: { create: chargerCreate },
+      evSupply: { create: supplyCreate },
+      evConnector: { create: connectorCreate },
+      auditEvent: { create: vi.fn() },
+    };
+    const prisma = {
+      asset: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'asset-source',
+          organisationId: 'organisation-a',
+          customerId: 'customer-a',
+          siteId: 'site-a',
+          assetModelId: null,
+          assetType: 'EV Charger',
+          iconKey: 'ev-charger',
+          manufacturer: null,
+          model: null,
+          serialNumber: null,
+          notes: null,
+          evChargePoint: {
+            id: 'charger-source',
+            chargePointId: 'CP-1',
+            operatorName: 'Operator',
+            firmwareVersion: '1.2.3',
+            installationDate: new Date('2026-01-01'),
+            nominalVoltage: 230,
+            phaseCount: 1,
+            maximumPowerKw: 7.4,
+            dcRcdType: 'RDC_DD',
+            locationNotes: 'Front bay',
+            supplies: [
+              {
+                id: 'supply-source-a',
+                label: 'Supply A',
+                phaseCount: 1,
+                protectiveDeviceType: 'RCBO',
+                protectiveDeviceRating: 32,
+                earthingArrangement: 'TNCS',
+              },
+              {
+                id: 'supply-source-b',
+                label: 'Supply B',
+                phaseCount: 3,
+                protectiveDeviceType: 'MCB',
+                protectiveDeviceRating: 40,
+                earthingArrangement: 'TNS',
+              },
+            ],
+            connectors: [
+              {
+                id: 'connector-source',
+                label: 'Connector 1',
+                connectorType: 'Type 2',
+                status: 'ACTIVE',
+                displayOrder: 2,
+                supplyMappings: [{ supplyId: 'supply-source-b' }],
+              },
+            ],
+          },
+        }),
+      },
+      $transaction: (operation: (client: typeof transaction) => unknown) => operation(transaction),
+    } as unknown as PrismaClient;
+
+    await new PortfolioService(prisma).duplicateAsset(
+      'organisation-a',
+      'asset-source',
+      'user-a',
+      'correlation-a',
+      { displayName: 'Copied charger', assetReference: 'EV-002' },
+    );
+
+    expect(assetInputs[0]).toMatchObject({
+      data: {
+        displayName: 'Copied charger',
+        assetReference: 'EV-002',
+        manufacturer: null,
+      },
+    });
+    expect(chargerInputs[0]).toMatchObject({
+      data: { assetId: 'asset-copy', chargePointId: 'CP-1' },
+    });
+    expect(supplyCreate).toHaveBeenCalledTimes(2);
+    expect(connectorInputs[0]).toMatchObject({
+      data: {
+        chargePointId: 'charger-copy',
+        label: 'Connector 1',
+        status: 'ACTIVE',
+        displayOrder: 2,
+        supplyMappings: { create: [{ supplyId: 'supply-copy-b' }] },
+      },
     });
   });
 

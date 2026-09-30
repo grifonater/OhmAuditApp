@@ -310,7 +310,7 @@ export class VisitService {
         },
         status: 'AVAILABLE',
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
     });
     const { siteContacts, ...site } = visit.site;
     return {
@@ -923,7 +923,7 @@ export class VisitService {
         },
         status: 'AVAILABLE',
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
     });
     return {
       ...access.visit,

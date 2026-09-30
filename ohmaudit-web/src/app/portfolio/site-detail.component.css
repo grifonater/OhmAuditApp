@@ -339,6 +339,43 @@ dd {
   display: flex;
   gap: 0.35rem;
 }
+.asset-export-menu {
+  position: relative;
+}
+.asset-export-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+.asset-export-menu summary::-webkit-details-marker {
+  display: none;
+}
+.asset-export-menu[open] > div {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 20;
+  width: 13rem;
+  display: grid;
+  padding: 0.35rem;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.55rem;
+  background: white;
+  box-shadow: var(--oa-shadow-md);
+}
+.asset-export-menu div button {
+  padding: 0.55rem 0.65rem;
+  border: 0;
+  border-radius: 0.35rem;
+  color: var(--oa-ink-secondary);
+  background: transparent;
+  font-size: 0.7rem;
+  text-align: left;
+  cursor: pointer;
+}
+.asset-export-menu div button:hover {
+  color: var(--oa-teal-700);
+  background: var(--oa-teal-50);
+}
 .view-button {
   width: 2.25rem;
   border: 1px solid var(--oa-line);
@@ -477,6 +514,16 @@ dd {
 }
 .asset-card {
   padding: 0.8rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.asset-card:hover,
+.asset-card:focus-visible {
+  border-color: var(--oa-teal-500);
+  box-shadow: var(--oa-shadow-md);
+  outline: none;
 }
 .asset-title {
   display: grid;

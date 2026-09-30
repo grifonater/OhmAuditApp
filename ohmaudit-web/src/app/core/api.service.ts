@@ -288,6 +288,7 @@ export interface AssetDetail extends AssetSummary {
     createdAt?: string;
     updatedAt?: string;
   } | null;
+  evChargePoint?: EvChargePoint | null;
   replacementAsset?: AssetRelationship | null;
   replacedAssets: AssetRelationship[];
   createdDuringVisit?: AssetVisit | null;
@@ -1744,6 +1745,16 @@ export class ApiService {
       body: JSON.stringify({ organisationId, ...input }),
     });
   }
+  duplicateAsset(
+    organisationId: string,
+    assetId: string,
+    input: { assetReference: string; displayName: string },
+  ) {
+    return this.request<{ asset: AssetSummary }>(
+      `/assets/${assetId}/duplicate?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST', body: JSON.stringify(input) },
+    );
+  }
   getAsset(organisationId: string, assetId: string) {
     return this.request<{ asset: AssetDetail }>(
       `/assets/${assetId}?organisationId=${encodeURIComponent(organisationId)}`,
@@ -1826,6 +1837,31 @@ export class ApiService {
   setSitePhotoPrimary(organisationId: string, siteId: string, mediaId: string | null) {
     return this.request(
       `/sites/${siteId}/photos/primary?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'PATCH', body: JSON.stringify({ mediaId }) },
+    );
+  }
+  async downloadSiteAssetReport(
+    organisationId: string,
+    siteId: string,
+    query = '',
+    status = 'ALL',
+  ): Promise<Blob> {
+    const accessToken = this.auth.session()?.access_token;
+    if (accessToken === undefined) throw new Error('Sign in to continue.');
+    const parameters = new URLSearchParams({ organisationId, q: query, status });
+    const response = await fetch(
+      `${this.config.config.apiBaseUrl}/sites/${siteId}/assets/report.pdf?${parameters}`,
+      { headers: this.authenticatedHeaders(accessToken) },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      throw new Error(body.message ?? 'The asset report could not be generated.');
+    }
+    return response.blob();
+  }
+  setAssetPhotoPrimary(organisationId: string, assetId: string, mediaId: string | null) {
+    return this.request(
+      `/assets/${assetId}/photos/primary?organisationId=${encodeURIComponent(organisationId)}`,
       { method: 'PATCH', body: JSON.stringify({ mediaId }) },
     );
   }

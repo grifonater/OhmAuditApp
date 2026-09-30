@@ -558,6 +558,121 @@ export class PortfolioService {
     }
   }
 
+  async duplicateAsset(
+    organisationId: string,
+    sourceAssetId: string,
+    actorUserId: string,
+    correlationId: string,
+    input: { assetReference: string; displayName: string },
+  ) {
+    const source = await this.prisma.asset.findFirst({
+      where: { id: sourceAssetId, organisationId },
+      include: {
+        evChargePoint: {
+          include: {
+            supplies: { orderBy: { createdAt: 'asc' } },
+            connectors: {
+              include: { supplyMappings: true },
+              orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
+        },
+      },
+    });
+    if (source === null) throw new DomainError('ASSET_NOT_FOUND', 'The asset was not found.', 404);
+
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const asset = await transaction.asset.create({
+          data: {
+            organisationId,
+            customerId: source.customerId,
+            siteId: source.siteId,
+            assetType: source.assetType,
+            assetReference: input.assetReference,
+            displayName: input.displayName,
+            iconKey: source.iconKey,
+            manufacturer: source.manufacturer,
+            model: source.model,
+            serialNumber: source.serialNumber,
+            notes: source.notes,
+            assetModelId: source.assetModelId,
+            ...(/emergency\s*lighting/iu.test(source.assetType)
+              ? { emergencyLightingSystem: { create: { organisationId } } }
+              : {}),
+          },
+        });
+
+        if (source.evChargePoint !== null) {
+          const charger = await transaction.evChargePoint.create({
+            data: {
+              organisationId,
+              assetId: asset.id,
+              chargePointId: source.evChargePoint.chargePointId,
+              operatorName: source.evChargePoint.operatorName,
+              firmwareVersion: source.evChargePoint.firmwareVersion,
+              installationDate: source.evChargePoint.installationDate,
+              nominalVoltage: source.evChargePoint.nominalVoltage,
+              phaseCount: source.evChargePoint.phaseCount,
+              maximumPowerKw: source.evChargePoint.maximumPowerKw,
+              dcRcdType: source.evChargePoint.dcRcdType,
+              locationNotes: source.evChargePoint.locationNotes,
+            },
+          });
+          const supplyIds = new Map<string, string>();
+          for (const supply of source.evChargePoint.supplies) {
+            const copy = await transaction.evSupply.create({
+              data: {
+                organisationId,
+                chargePointId: charger.id,
+                label: supply.label,
+                phaseCount: supply.phaseCount,
+                protectiveDeviceType: supply.protectiveDeviceType,
+                protectiveDeviceRating: supply.protectiveDeviceRating,
+                earthingArrangement: supply.earthingArrangement,
+              },
+            });
+            supplyIds.set(supply.id, copy.id);
+          }
+          for (const connector of source.evChargePoint.connectors) {
+            await transaction.evConnector.create({
+              data: {
+                organisationId,
+                chargePointId: charger.id,
+                label: connector.label,
+                connectorType: connector.connectorType,
+                status: connector.status,
+                displayOrder: connector.displayOrder,
+                supplyMappings: {
+                  create: connector.supplyMappings.flatMap(({ supplyId }) => {
+                    const copiedSupplyId = supplyIds.get(supplyId);
+                    return copiedSupplyId === undefined ? [] : [{ supplyId: copiedSupplyId }];
+                  }),
+                },
+              },
+            });
+          }
+        }
+
+        await transaction.auditEvent.create({
+          data: {
+            organisationId,
+            actorUserId,
+            correlationId,
+            eventType: 'AssetDuplicated',
+            entityType: 'Asset',
+            entityId: asset.id,
+            data: { sourceAssetId, assetReference: asset.assetReference, siteId: asset.siteId },
+          },
+        });
+        return asset;
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) throw assetReferenceExists();
+      throw error;
+    }
+  }
+
   async updateAssetStatus(
     organisationId: string,
     assetId: string,
@@ -682,6 +797,15 @@ export class PortfolioService {
           },
         },
         assetModel: true,
+        evChargePoint: {
+          include: {
+            supplies: { orderBy: { createdAt: 'asc' } },
+            connectors: {
+              include: { supplyMappings: { include: { supply: { select: { label: true } } } } },
+              orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+            },
+          },
+        },
         replacementAsset: {
           select: {
             id: true,
@@ -770,7 +894,7 @@ export class PortfolioService {
     const [media, documents] = await Promise.all([
       this.prisma.media.findMany({
         where: { organisationId, entityType: 'Asset', entityId: assetId, status: 'AVAILABLE' },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.document.findMany({
         where: {
@@ -1234,6 +1358,31 @@ export class PortfolioService {
         where: { id: siteId },
         data: { mainPhotoMediaId: mediaId },
       });
+    });
+  }
+
+  async setAssetPhotoPrimary(organisationId: string, assetId: string, mediaId: string | null) {
+    await this.requireAsset(organisationId, assetId);
+    if (mediaId !== null) {
+      const media = await this.prisma.media.findFirst({
+        where: {
+          id: mediaId,
+          organisationId,
+          entityType: 'Asset',
+          entityId: assetId,
+          status: 'AVAILABLE',
+          mimeType: { startsWith: 'image/' },
+        },
+      });
+      if (media === null) throw new DomainError('MEDIA_NOT_FOUND', 'The image was not found.', 404);
+    }
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.media.updateMany({
+        where: { organisationId, entityType: 'Asset', entityId: assetId, isPrimary: true },
+        data: { isPrimary: false },
+      });
+      if (mediaId !== null)
+        await transaction.media.update({ where: { id: mediaId }, data: { isPrimary: true } });
     });
   }
 

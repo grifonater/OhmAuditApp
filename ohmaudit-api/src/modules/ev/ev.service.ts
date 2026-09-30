@@ -24,7 +24,7 @@ export class EvService {
       }),
       this.prisma.media.findMany({
         where: { organisationId, entityType: 'Asset', entityId: assetId, status: 'AVAILABLE' },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
       }),
     ]);
     if (asset === null)

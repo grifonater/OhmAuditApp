@@ -742,7 +742,14 @@ describe('EV administrator inspection corrections', () => {
 });
 
 describe('revision-scoped report data', () => {
-  it('uses revision media first, then an asset image not reclassified in the revision', () => {
+  it('uses the selected main image, then revision media, then another asset image', () => {
+    expect(
+      inspectionRevisionAssetPhotoId(
+        [{ mediaId: 'revision-photo', category: 'asset-image' }],
+        ['main-photo', 'revision-photo'],
+        'main-photo',
+      ),
+    ).toBe('main-photo');
     expect(
       inspectionRevisionAssetPhotoId(
         [{ mediaId: 'revision-photo', category: 'asset-image' }],

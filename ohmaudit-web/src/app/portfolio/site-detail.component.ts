@@ -9,7 +9,7 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   ApiService,
   type AssetMedia,
@@ -63,6 +63,7 @@ export class SiteDetailComponent {
   private readonly auth = inject(AuthService);
   private readonly generationProgress = inject(GenerationProgressService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly pendingSiteImages = new Set<string>();
   protected readonly organisationId = this.route.snapshot.paramMap.get('organisationId') ?? '';
@@ -421,21 +422,62 @@ export class SiteDetailComponent {
     const source = this.duplicateSource();
     if (!source || this.duplicateForm.invalid) return;
     await this.run(async () => {
-      await this.api.createAsset(this.organisationId, {
-        siteId: this.siteId,
-        assetType: source.assetType,
+      await this.api.duplicateAsset(this.organisationId, source.id, {
         assetReference: this.duplicateForm.controls.assetReference.value,
         displayName: this.duplicateForm.controls.displayName.value,
-        ...(source.iconKey === undefined ? {} : { iconKey: source.iconKey }),
-        ...(source.manufacturer === undefined ? {} : { manufacturer: source.manufacturer }),
-        ...(source.model === undefined ? {} : { model: source.model }),
-        ...(source.serialNumber === undefined ? {} : { serialNumber: source.serialNumber }),
-        ...(source.notes === undefined ? {} : { notes: source.notes }),
       });
       this.closeDuplicate();
       await this.load();
       this.error.set('');
     });
+  }
+  protected openAsset(assetId: string, event: Event): void {
+    if ((event.target as HTMLElement).closest('a, button, select, input, textarea, label')) return;
+    void this.router.navigate(['/app/org', this.organisationId, 'assets', assetId]);
+  }
+
+  protected async downloadAssetPdf(filtered: boolean): Promise<void> {
+    await this.run(async () => {
+      await this.generationProgress.run(
+        'Generating asset report',
+        async () => {
+          const blob = await this.api.downloadSiteAssetReport(
+            this.organisationId,
+            this.siteId,
+            filtered ? this.assetSearch.value.trim() : '',
+            filtered ? this.statusFilter.value : 'ALL',
+          );
+          this.downloadBlob(
+            blob,
+            `${this.assetExportFilename()}-${filtered ? 'filtered-' : ''}assets.pdf`,
+          );
+        },
+        'Preparing the site asset register PDF.',
+      );
+    });
+  }
+
+  protected downloadAssetCsv(filtered: boolean): void {
+    const assets = filtered ? this.filteredAssets() : (this.site()?.assets ?? []);
+    const rows = [
+      ['Reference', 'Name', 'Type', 'Manufacturer', 'Model', 'Serial number', 'Status'],
+      ...assets.map((asset) => [
+        asset.assetReference,
+        asset.displayName,
+        asset.assetType,
+        asset.manufacturer ?? '',
+        asset.model ?? '',
+        asset.serialNumber ?? '',
+        asset.status,
+      ]),
+    ];
+    const csv = rows
+      .map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(','))
+      .join('\r\n');
+    this.downloadBlob(
+      new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }),
+      `${this.assetExportFilename()}-${filtered ? 'filtered-' : ''}assets.csv`,
+    );
   }
   protected async saveAsset(): Promise<void> {
     const id = this.editingAssetId();
@@ -634,6 +676,20 @@ export class SiteDetailComponent {
       assetType: this.evEnabled() ? 'EV Charger' : 'General Asset',
       iconKey: null,
     });
+  }
+  private assetExportFilename(): string {
+    return (this.site()?.name ?? 'site')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, '-')
+      .replace(/^-|-$/gu, '');
+  }
+  private downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   private async run(operation: () => Promise<unknown>): Promise<void> {
     this.busy.set(true);
