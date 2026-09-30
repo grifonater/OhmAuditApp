@@ -290,6 +290,7 @@
   color: var(--oa-ink);
   background: transparent;
   text-align: left;
+  text-decoration: none;
 }
 .client-identity > span:last-child {
   min-width: 0;
@@ -306,6 +307,14 @@
 .reference-value {
   color: var(--oa-ink-muted);
   font-size: 0.68rem;
+}
+.reference-value {
+  text-decoration: none;
+}
+.client-identity:hover strong,
+.reference-value:hover {
+  color: var(--oa-teal-600);
+  text-decoration: underline;
 }
 .client-avatar {
   width: 2.15rem;
@@ -532,6 +541,14 @@
   border-top: 1px solid var(--oa-line);
   background: #fafbfc;
 }
+.client-pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.client-pagination > span {
+  font-weight: 700;
+}
 .directory-empty {
   padding: 2.5rem;
 }
@@ -597,6 +614,10 @@
     grid-template-columns: 1fr;
   }
   .directory-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .directory-footer {
     align-items: flex-start;
     flex-direction: column;
   }

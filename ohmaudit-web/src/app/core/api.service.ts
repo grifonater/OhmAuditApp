@@ -1597,9 +1597,19 @@ export class ApiService {
   listCustomers(
     organisationId: string,
     query = '',
-  ): Promise<{ items: CustomerSummary[]; total: number }> {
+    page = 1,
+    pageSize = 25,
+    status: 'ALL' | 'ACTIVE' | 'INACTIVE' = 'ALL',
+    sort: 'ASC' | 'DESC' = 'ASC',
+  ): Promise<{
+    items: CustomerSummary[];
+    page: number;
+    pageSize: number;
+    total: number;
+    pageCount: number;
+  }> {
     return this.request(
-      `/customers?organisationId=${encodeURIComponent(organisationId)}&q=${encodeURIComponent(query)}`,
+      `/customers?organisationId=${encodeURIComponent(organisationId)}&q=${encodeURIComponent(query)}&page=${page}&pageSize=${pageSize}&status=${status}&sort=${sort}`,
     );
   }
   createCustomer(

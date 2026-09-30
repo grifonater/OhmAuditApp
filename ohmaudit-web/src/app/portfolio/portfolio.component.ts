@@ -46,27 +46,25 @@ export class PortfolioComponent {
   protected readonly searching = signal(false);
   protected readonly logoUrls = signal<Record<string, string>>({});
   protected readonly sitePhotoUrls = signal<Record<string, string>>({});
-  protected readonly capabilities = signal<string[]>([]);
-  protected readonly canManageClients = computed(() =>
-    this.capabilities().includes('customers.manage'),
-  );
+  protected readonly pagination = signal({ page: 1, pageSize: 25, total: 0, pageCount: 1 });
+  protected readonly pageStart = computed(() => {
+    const pagination = this.pagination();
+    return pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+  });
+  protected readonly pageEnd = computed(() => {
+    const pagination = this.pagination();
+    return Math.min(pagination.page * pagination.pageSize, pagination.total);
+  });
   protected readonly expandedCustomerId = signal('');
   protected readonly clientPreviews = signal<Record<string, CustomerDetail>>({});
   protected readonly previewLoadingId = signal('');
   protected readonly previewErrors = signal<Record<string, string>>({});
   protected readonly searchControl = new FormControl('', { nonNullable: true });
-  protected readonly statusControl = new FormControl('ALL', { nonNullable: true });
-  protected readonly sortControl = new FormControl<'ASC' | 'DESC'>('ASC', { nonNullable: true });
-  protected readonly visibleCustomers = computed(() => {
-    const status = this.statusControl.value;
-    const direction = this.sortControl.value === 'DESC' ? -1 : 1;
-    return [...this.customers()]
-      .filter((customer) => status === 'ALL' || customer.status === status)
-      .sort((left, right) => left.name.localeCompare(right.name, 'en-GB') * direction);
+  protected readonly statusControl = new FormControl<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL', {
+    nonNullable: true,
   });
-  protected readonly activeShown = computed(
-    () => this.customers().filter(({ status }) => status === 'ACTIVE').length,
-  );
+  protected readonly sortControl = new FormControl<'ASC' | 'DESC'>('ASC', { nonNullable: true });
+  protected readonly visibleCustomers = this.customers.asReadonly();
   protected readonly customerForm = new FormGroup({
     name: new FormControl('', {
       nonNullable: true,
@@ -84,41 +82,41 @@ export class PortfolioComponent {
     });
     this.searchControl.valueChanges
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => void this.search());
+      .subscribe(() => void this.search(1));
     this.statusControl.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.customers.update((customers) => [...customers]));
+      .subscribe(() => void this.search(1));
     this.sortControl.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.customers.update((customers) => [...customers]));
+      .subscribe(() => void this.search(1));
     void this.loadSummary();
     void this.search();
   }
 
   private async loadSummary(): Promise<void> {
     try {
-      const [summaryResult, accountResult] = await Promise.all([
-        this.api.portfolioSummary(this.organisationId),
-        this.api.currentUser(),
-      ]);
+      const summaryResult = await this.api.portfolioSummary(this.organisationId);
       this.summary.set(summaryResult.summary);
-      const membership = accountResult.memberships.find(
-        (item) => item.organisation.id === this.organisationId,
-      );
-      this.capabilities.set(membership?.role.capabilities ?? []);
     } catch {
       // The directory remains usable if summary metrics are temporarily unavailable.
     }
   }
 
-  protected async search(): Promise<void> {
+  protected async search(page = 1): Promise<void> {
     const requestNumber = ++this.requestNumber;
     const query = this.searchControl.value.trim();
     this.searching.set(true);
     this.error.set('');
     try {
       const [customers, results] = await Promise.all([
-        this.api.listCustomers(this.organisationId, query),
+        this.api.listCustomers(
+          this.organisationId,
+          query,
+          page,
+          this.pagination().pageSize,
+          this.statusControl.value,
+          this.sortControl.value,
+        ),
         query.length >= 2
           ? this.api.search(this.organisationId, query)
           : Promise.resolve(undefined),
@@ -126,6 +124,12 @@ export class PortfolioComponent {
       if (requestNumber !== this.requestNumber) return;
       this.customers.set(customers.items);
       this.totalCustomers.set(customers.total);
+      this.pagination.set({
+        page: customers.page,
+        pageSize: customers.pageSize,
+        total: customers.total,
+        pageCount: customers.pageCount,
+      });
       if (!customers.items.some(({ id }) => id === this.expandedCustomerId())) {
         this.expandedCustomerId.set('');
       }
@@ -196,6 +200,13 @@ export class PortfolioComponent {
 
   protected clearSearch(): void {
     this.searchControl.setValue('');
+  }
+
+  protected goToPage(page: number): void {
+    const pagination = this.pagination();
+    if (this.searching() || page < 1 || page > pagination.pageCount || page === pagination.page)
+      return;
+    void this.search(page);
   }
 
   protected async toggleClientPreview(customerId: string): Promise<void> {
@@ -277,27 +288,6 @@ export class PortfolioComponent {
       ]);
     } catch (error: unknown) {
       this.error.set(error instanceof Error ? error.message : 'Unable to create the client.');
-    } finally {
-      this.busy.set(false);
-    }
-  }
-
-  protected async archiveCustomer(customer: CustomerSummary): Promise<void> {
-    if (
-      !confirm(
-        `Archive "${customer.name}"?\n\nIt will be removed from the client directory but existing sites, reports and certificates are retained.`,
-      )
-    )
-      return;
-    this.busy.set(true);
-    this.error.set('');
-    try {
-      await this.api.archiveCustomer(this.organisationId, customer.id);
-      this.customers.update((items) => items.filter((c) => c.id !== customer.id));
-      this.totalCustomers.update((n) => n - 1);
-      if (this.expandedCustomerId() === customer.id) this.expandedCustomerId.set('');
-    } catch (error: unknown) {
-      this.error.set(error instanceof Error ? error.message : 'Unable to archive the client.');
     } finally {
       this.busy.set(false);
     }

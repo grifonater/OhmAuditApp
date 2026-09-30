@@ -2575,6 +2575,8 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
         context.req.query('q') ?? '',
         Math.max(1, Number(context.req.query('page') ?? 1)),
         Math.min(100, Math.max(1, Number(context.req.query('pageSize') ?? 25))),
+        z.enum(['ALL', 'ACTIVE', 'INACTIVE']).parse(context.req.query('status') ?? 'ALL'),
+        z.enum(['ASC', 'DESC']).parse(context.req.query('sort') ?? 'ASC'),
       ),
     );
   });

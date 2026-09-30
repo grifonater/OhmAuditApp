@@ -17,7 +17,7 @@
     <div class="stat-item">
       <span class="stat-icon active" aria-hidden="true">✓</span>
       <span
-        ><small>Active shown</small><strong>{{ activeShown() }}</strong></span
+        ><small>Clients shown</small><strong>{{ visibleCustomers().length }}</strong></span
       >
     </div>
     <div class="stat-item">
@@ -157,14 +157,11 @@
           @for (customer of visibleCustomers(); track customer.id) {
             <tr class="client-row" [class.expanded]="expandedCustomerId() === customer.id">
               <td data-label="Client">
-                <button
-                  type="button"
+                <a
                   class="client-identity"
                   oaDeferredLoad
                   (oaDeferredLoad)="loadLogo(customer)"
-                  (click)="toggleClientPreview(customer.id)"
-                  [attr.aria-expanded]="expandedCustomerId() === customer.id"
-                  [attr.aria-controls]="'client-preview-' + customer.id"
+                  [routerLink]="['/app/org', organisationId, 'portfolio', 'clients', customer.id]"
                 >
                   @if (logoUrls()[customer.id]; as logoUrl) {
                     <img
@@ -183,7 +180,7 @@
                     ><strong>{{ customer.name }}</strong
                     ><small>{{ customer.reference || 'No reference' }}</small></span
                   >
-                </button>
+                </a>
               </td>
               <td data-label="Status">
                 <span class="status-badge" [class.inactive]="customer.status !== 'ACTIVE'">{{
@@ -197,7 +194,11 @@
                 <strong class="metric-value">{{ customer._count.assets }}</strong>
               </td>
               <td data-label="Reference">
-                <span class="reference-value">{{ customer.reference || '—' }}</span>
+                <a
+                  class="reference-value"
+                  [routerLink]="['/app/org', organisationId, 'portfolio', 'clients', customer.id]"
+                  >{{ customer.reference || '—' }}</a
+                >
               </td>
               <td class="row-action">
                 <button
@@ -357,15 +358,6 @@
                       </div>
 
                       <footer class="preview-footer">
-                        @if (canManageClients()) {
-                          <button
-                            class="button danger compact"
-                            type="button"
-                            (click)="archiveCustomer(customer)"
-                          >
-                            Archive client
-                          </button>
-                        }
                         <a
                           class="button primary compact"
                           [routerLink]="[
@@ -409,8 +401,26 @@
       </table>
     </div>
     <footer class="directory-footer">
-      <span>Showing {{ visibleCustomers().length }} of {{ totalCustomers() }}</span
-      ><span>Client directory</span>
+      <span>Showing {{ pageStart() }}-{{ pageEnd() }} of {{ totalCustomers() }}</span>
+      <nav class="client-pagination" aria-label="Client result pages">
+        <button
+          class="button secondary compact"
+          type="button"
+          [disabled]="pagination().page <= 1 || searching()"
+          (click)="goToPage(pagination().page - 1)"
+        >
+          Previous
+        </button>
+        <span>Page {{ pagination().page }} of {{ pagination().pageCount }}</span>
+        <button
+          class="button secondary compact"
+          type="button"
+          [disabled]="pagination().page >= pagination().pageCount || searching()"
+          (click)="goToPage(pagination().page + 1)"
+        >
+          Next
+        </button>
+      </nav>
     </footer>
   </section>
 

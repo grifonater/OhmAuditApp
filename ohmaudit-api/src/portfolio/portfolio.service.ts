@@ -56,10 +56,17 @@ export class PortfolioService {
     return { customers, sites, assets };
   }
 
-  async listCustomers(organisationId: string, query: string, page: number, pageSize: number) {
+  async listCustomers(
+    organisationId: string,
+    query: string,
+    page: number,
+    pageSize: number,
+    status: 'ALL' | 'ACTIVE' | 'INACTIVE' = 'ALL',
+    sort: 'ASC' | 'DESC' = 'ASC',
+  ) {
     const where = {
       organisationId,
-      status: { not: 'ARCHIVED' as const },
+      status: status === 'ALL' ? { not: 'ARCHIVED' as const } : status,
       ...(query === '' ? {} : { name: { contains: query, mode: 'insensitive' as const } }),
     };
     const [items, total] = await Promise.all([
@@ -73,7 +80,7 @@ export class PortfolioService {
             },
           },
         },
-        orderBy: { name: 'asc' },
+        orderBy: { name: sort === 'DESC' ? 'desc' : 'asc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -95,6 +102,7 @@ export class PortfolioService {
       page,
       pageSize,
       total,
+      pageCount: Math.max(1, Math.ceil(total / pageSize)),
     };
   }
 

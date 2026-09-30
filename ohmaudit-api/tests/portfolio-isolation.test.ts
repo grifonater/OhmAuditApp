@@ -95,6 +95,40 @@ describe('Portfolio tenant isolation', () => {
     });
   });
 
+  it('paginates, filters, and sorts the client directory on the server', async () => {
+    let receivedQuery: unknown;
+    const prisma = {
+      customer: {
+        findMany: (input: unknown) => {
+          receivedQuery = input;
+          return Promise.resolve([]);
+        },
+        count: () => Promise.resolve(42),
+      },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new PortfolioService(prisma).listCustomers(
+        'organisation-a',
+        'energy',
+        2,
+        20,
+        'ACTIVE',
+        'DESC',
+      ),
+    ).resolves.toMatchObject({ page: 2, pageSize: 20, total: 42, pageCount: 3 });
+    expect(receivedQuery).toMatchObject({
+      where: {
+        organisationId: 'organisation-a',
+        status: 'ACTIVE',
+        name: { contains: 'energy', mode: 'insensitive' },
+      },
+      orderBy: { name: 'desc' },
+      skip: 20,
+      take: 20,
+    });
+  });
+
   it('always scopes customer retrieval by organisation and returns a non-disclosing 404', async () => {
     let receivedWhere: unknown;
     let receivedInclude: unknown;
