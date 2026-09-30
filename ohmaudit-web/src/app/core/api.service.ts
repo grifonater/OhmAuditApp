@@ -192,7 +192,8 @@ export interface SiteSummary {
 export interface SiteDetail extends SiteSummary {
   customer: { id: string; name: string };
   assets: AssetSummary[];
-  contacts: Array<{ id: string; name: string; role?: string }>;
+  contacts: SiteContact[];
+  jobs: SiteJob[];
   reference?: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -207,6 +208,44 @@ export interface SiteDetail extends SiteSummary {
   reports: ReportSummary[];
   media?: AssetMedia[];
 }
+export interface Contact {
+  id: string;
+  organisationId: string;
+  customerId?: string | null;
+  name: string;
+  role?: string | null;
+  email?: string | null;
+  telephone?: string | null;
+  mobile?: string | null;
+  primary?: boolean;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  customer?: { id: string; name: string; reference?: string | null } | null;
+  sites: Array<{
+    id: string;
+    customerId?: string;
+    name: string;
+    reference?: string | null;
+    status?: string;
+    primary?: boolean;
+    createdAt?: string;
+  }>;
+}
+export interface SiteContact extends Omit<Contact, 'sites'> {
+  associationCreatedAt?: string;
+  sites?: Contact['sites'];
+}
+export interface SiteJob {
+  id: string;
+  reference?: string | null;
+  title: string;
+  status: string;
+  scheduledStart: string;
+  scheduledEnd?: string | null;
+  assignedEngineerName?: string | null;
+  taskCount: number;
+}
 export interface AssetSummary {
   id: string;
   assetType: string;
@@ -220,6 +259,113 @@ export interface AssetSummary {
   createdDuringVisitId?: string | null;
   notes?: string;
   media?: AssetMedia[];
+}
+export interface AssetDetail extends AssetSummary {
+  organisationId: string;
+  customerId: string;
+  siteId: string;
+  assetModelId?: string | null;
+  commissionedAt?: string | null;
+  decommissionedAt?: string | null;
+  replacementAssetId?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  locationAccuracy?: string | number | null;
+  locationCapturedAt?: string | null;
+  locationSource?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customer: { id: string; name: string; reference?: string | null; status: string };
+  site: SiteSummary;
+  assetModel?: {
+    id: string;
+    manufacturer: string;
+    model: string;
+    category: string;
+    status: string;
+    technicalNotes?: string | null;
+    metadata?: Record<string, unknown> | null;
+    createdAt?: string;
+    updatedAt?: string;
+  } | null;
+  replacementAsset?: AssetRelationship | null;
+  replacedAssets: AssetRelationship[];
+  createdDuringVisit?: AssetVisit | null;
+  inspections: AssetInspection[];
+  defects: AssetDefect[];
+  media: AssetMedia[];
+  documents: AssetDocument[];
+}
+export interface AssetRelationship {
+  id: string;
+  assetReference: string;
+  displayName: string;
+  assetType: string;
+  status: string;
+}
+export interface AssetVisit {
+  id: string;
+  reference?: string | null;
+  title: string;
+  status: string;
+  scheduledStart: string;
+  scheduledEnd?: string | null;
+}
+export interface AssetInspection {
+  id: string;
+  visitId?: string | null;
+  visitTaskId?: string | null;
+  moduleKey: string;
+  inspectionType: string;
+  status: string;
+  currentRevisionNumber: number;
+  effectiveDate?: string | null;
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
+  approvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  visit?: AssetVisit | null;
+  revisions: Array<{
+    id: string;
+    revisionNumber: number;
+    createdAt: string;
+    createdByUserId?: string | null;
+    media: Array<{
+      mediaId: string;
+      category: string;
+      caption?: string | null;
+      sortOrder: number;
+      createdAt: string;
+      media: AssetMedia;
+    }>;
+  }>;
+}
+export interface AssetDefect {
+  id: string;
+  inspectionId: string;
+  assetId?: string | null;
+  title: string;
+  description?: string | null;
+  category: 'ADVICE' | 'NOTE' | 'FAULT' | 'CONDITION';
+  severity: string;
+  status: string;
+  photoMediaIds?: string[];
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AssetDocument extends ReportSummary {
+  status: string;
+  updatedAt: string;
+  templateKey?: string | null;
+  templateVersion?: number | null;
+  reportReference?: string | null;
+  overallOutcome?: string | null;
+  inspectionRevision?: {
+    revisionNumber: number;
+    inspection: { id: string; moduleKey: string; inspectionType: string; status: string };
+  } | null;
 }
 export type AssetIconKey =
   | 'ev-charger'
@@ -1515,6 +1661,41 @@ export class ApiService {
       `/sites/${siteId}?organisationId=${encodeURIComponent(organisationId)}`,
     );
   }
+  listContacts(organisationId: string, query = '') {
+    return this.request<{ contacts: Contact[] }>(
+      `/contacts?organisationId=${encodeURIComponent(organisationId)}&query=${encodeURIComponent(query)}`,
+    );
+  }
+  createContact(
+    organisationId: string,
+    input: {
+      name: string;
+      role?: string;
+      email?: string;
+      telephone?: string;
+      mobile?: string;
+      notes?: string;
+      customerId?: string;
+      siteId?: string;
+    },
+  ) {
+    return this.request<{ contact: Contact }>('/contacts', {
+      method: 'POST',
+      body: JSON.stringify({ organisationId, ...input }),
+    });
+  }
+  linkSiteContact(organisationId: string, siteId: string, contactId: string) {
+    return this.request(
+      `/sites/${siteId}/contacts/${contactId}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'POST' },
+    );
+  }
+  unlinkSiteContact(organisationId: string, siteId: string, contactId: string) {
+    return this.request(
+      `/sites/${siteId}/contacts/${contactId}?organisationId=${encodeURIComponent(organisationId)}`,
+      { method: 'DELETE' },
+    );
+  }
   updateSite(
     organisationId: string,
     siteId: string,
@@ -1552,6 +1733,11 @@ export class ApiService {
       method: 'POST',
       body: JSON.stringify({ organisationId, ...input }),
     });
+  }
+  getAsset(organisationId: string, assetId: string) {
+    return this.request<{ asset: AssetDetail }>(
+      `/assets/${assetId}?organisationId=${encodeURIComponent(organisationId)}`,
+    );
   }
   updateAssetLifecycle(organisationId: string, assetId: string, status: string) {
     return this.request(

@@ -7,6 +7,7 @@ import {
 } from './core/rams-routes';
 import { authGuard } from './core/auth.guard';
 import { authorizationGuard } from './core/authorization.guard';
+import { assetDetailRoute } from './core/asset-routes';
 import {
   emergencyLightingAssetRoute,
   emergencyLightingFittingRoute,
@@ -337,6 +338,15 @@ export const routes: Routes = [
         data: { capabilities: ['assets.read'], module: 'ev-charging' },
         loadComponent: () =>
           import('./operations/ev-asset.component').then((module) => module.EvAssetComponent),
+      },
+      {
+        path: assetDetailRoute.path,
+        canActivate: [authorizationGuard],
+        data: { capabilities: [...assetDetailRoute.capabilities] },
+        loadComponent: () =>
+          import('./portfolio/asset-detail.component').then(
+            (module) => module.AssetDetailComponent,
+          ),
       },
     ],
   },

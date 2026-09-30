@@ -1,0 +1,500 @@
+<main class="page asset-detail-page">
+  @if (asset(); as currentAsset) {
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a [routerLink]="['/app/org', organisationId, 'portfolio']">Clients</a><span>&rsaquo;</span>
+      <a
+        [routerLink]="[
+          '/app/org',
+          organisationId,
+          'portfolio',
+          'clients',
+          currentAsset.customer.id,
+        ]"
+        >{{ currentAsset.customer.name }}</a
+      ><span>&rsaquo;</span>
+      <a
+        [routerLink]="[
+          '/app/org',
+          organisationId,
+          'portfolio',
+          'clients',
+          currentAsset.customer.id,
+          'sites',
+          currentAsset.site.id,
+        ]"
+        >{{ currentAsset.site.name }}</a
+      ><span>&rsaquo;</span>
+      <strong>{{ currentAsset.displayName }}</strong>
+    </nav>
+
+    <header class="asset-hero card">
+      <span class="asset-mark"
+        ><oa-asset-icon
+          [iconKey]="resolvedAssetIconKey(currentAsset.assetType, currentAsset.iconKey)"
+          [size]="38"
+      /></span>
+      <div class="asset-heading">
+        <p class="eyebrow">{{ currentAsset.assetType }}</p>
+        <h1>{{ currentAsset.displayName }}</h1>
+        <p>{{ currentAsset.assetReference }}<span> &middot; </span>{{ currentAsset.site.name }}</p>
+      </div>
+      <span class="status-badge" [class.active]="currentAsset.status === 'ACTIVE'">{{
+        currentAsset.status
+      }}</span>
+      <div class="hero-actions">
+        @if (isEvAsset()) {
+          <a
+            class="button ghost"
+            [routerLink]="['/app/org', organisationId, 'assets', currentAsset.id, 'ev']"
+            >Open EV register</a
+          >
+        }
+        @if (isEmergencyLightingAsset()) {
+          <a
+            class="button ghost"
+            [routerLink]="[
+              '/app/org',
+              organisationId,
+              'assets',
+              currentAsset.id,
+              'emergency-lighting',
+            ]"
+            >Open emergency lighting register</a
+          >
+        }
+        <a
+          class="button secondary"
+          [routerLink]="[
+            '/app/org',
+            organisationId,
+            'portfolio',
+            'clients',
+            currentAsset.customer.id,
+            'sites',
+            currentAsset.site.id,
+          ]"
+          >Back to site</a
+        >
+      </div>
+    </header>
+
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+
+    <section class="detail-grid">
+      <article class="card detail-card identity-card">
+        <header>
+          <p class="eyebrow">Identity</p>
+          <h2>Asset record</h2>
+        </header>
+        <dl>
+          <div>
+            <dt>Reference</dt>
+            <dd>{{ currentAsset.assetReference }}</dd>
+          </div>
+          <div>
+            <dt>Type</dt>
+            <dd>{{ currentAsset.assetType }}</dd>
+          </div>
+          <div>
+            <dt>Manufacturer</dt>
+            <dd>
+              {{
+                currentAsset.manufacturer || currentAsset.assetModel?.manufacturer || 'Not recorded'
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt>Model</dt>
+            <dd>{{ currentAsset.model || currentAsset.assetModel?.model || 'Not recorded' }}</dd>
+          </div>
+          <div>
+            <dt>Serial number</dt>
+            <dd>{{ currentAsset.serialNumber || 'Not recorded' }}</dd>
+          </div>
+          <div>
+            <dt>Catalogue status</dt>
+            <dd>{{ currentAsset.assetModel?.status || 'Not linked' }}</dd>
+          </div>
+        </dl>
+        @if (currentAsset.assetModel?.technicalNotes; as technicalNotes) {
+          <div class="note">
+            <strong>Technical notes</strong>
+            <p>{{ technicalNotes }}</p>
+          </div>
+        }
+        @if (modelMetadata().length) {
+          <dl class="metadata">
+            @for (item of modelMetadata(); track item[0]) {
+              <div>
+                <dt>{{ item[0] }}</dt>
+                <dd>{{ displayValue(item[1]) }}</dd>
+              </div>
+            }
+          </dl>
+        }
+      </article>
+
+      <article class="card detail-card">
+        <header>
+          <p class="eyebrow">Location</p>
+          <h2>Client and site</h2>
+        </header>
+        <dl>
+          <div>
+            <dt>Client</dt>
+            <dd>
+              {{ currentAsset.customer.name
+              }}{{ currentAsset.customer.reference ? ' - ' + currentAsset.customer.reference : '' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Site</dt>
+            <dd>
+              <a
+                [routerLink]="[
+                  '/app/org',
+                  organisationId,
+                  'portfolio',
+                  'clients',
+                  currentAsset.customer.id,
+                  'sites',
+                  currentAsset.site.id,
+                ]"
+                >{{ currentAsset.site.name }}</a
+              >
+            </dd>
+          </div>
+          <div class="wide">
+            <dt>Address</dt>
+            <dd>
+              {{ currentAsset.site.addressLine1 || 'Not recorded'
+              }}{{ currentAsset.site.addressLine2 ? ', ' + currentAsset.site.addressLine2 : ''
+              }}{{ currentAsset.site.city ? ', ' + currentAsset.site.city : ''
+              }}{{ currentAsset.site.postcode ? ', ' + currentAsset.site.postcode : '' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Coordinates</dt>
+            <dd>
+              {{ displayValue(currentAsset.latitude) }},
+              {{ displayValue(currentAsset.longitude) }}
+            </dd>
+          </div>
+          <div>
+            <dt>Accuracy</dt>
+            <dd>
+              {{ displayValue(currentAsset.locationAccuracy) }}
+              @if (
+                currentAsset.locationAccuracy !== null &&
+                currentAsset.locationAccuracy !== undefined
+              ) {
+                m
+              }
+            </dd>
+          </div>
+          <div>
+            <dt>Location source</dt>
+            <dd>{{ currentAsset.locationSource || 'Not recorded' }}</dd>
+          </div>
+          <div>
+            <dt>Captured</dt>
+            <dd>{{ formatDate(currentAsset.locationCapturedAt, true) }}</dd>
+          </div>
+        </dl>
+      </article>
+
+      <article class="card detail-card lifecycle-card">
+        <header>
+          <p class="eyebrow">Lifecycle</p>
+          <h2>History and provenance</h2>
+        </header>
+        <dl>
+          <div>
+            <dt>Status</dt>
+            <dd>{{ currentAsset.status }}</dd>
+          </div>
+          <div>
+            <dt>Commissioned</dt>
+            <dd>{{ formatDate(currentAsset.commissionedAt) }}</dd>
+          </div>
+          <div>
+            <dt>Decommissioned</dt>
+            <dd>{{ formatDate(currentAsset.decommissionedAt) }}</dd>
+          </div>
+          <div>
+            <dt>Record created</dt>
+            <dd>{{ formatDate(currentAsset.createdAt, true) }}</dd>
+          </div>
+          <div>
+            <dt>Last updated</dt>
+            <dd>{{ formatDate(currentAsset.updatedAt, true) }}</dd>
+          </div>
+          <div>
+            <dt>Created during job</dt>
+            <dd>
+              @if (currentAsset.createdDuringVisit; as job) {
+                <a [routerLink]="['/app/org', organisationId, 'visits', job.id, 'overview']">{{
+                  job.reference || job.title
+                }}</a>
+              } @else {
+                Not recorded
+              }
+            </dd>
+          </div>
+        </dl>
+        @if (currentAsset.replacementAsset) {
+          <div class="relationship">
+            <span>Replaced by</span
+            ><a
+              [routerLink]="[
+                '/app/org',
+                organisationId,
+                'assets',
+                currentAsset.replacementAsset.id,
+              ]"
+              >{{ currentAsset.replacementAsset.displayName }} &middot;
+              {{ currentAsset.replacementAsset.assetReference }}</a
+            >
+          </div>
+        }
+        @if (currentAsset.replacedAssets.length) {
+          <div class="relationship">
+            <span>Assets replaced by this asset</span>
+            @for (item of currentAsset.replacedAssets; track item.id) {
+              <a [routerLink]="['/app/org', organisationId, 'assets', item.id]"
+                >{{ item.displayName }} &middot; {{ item.assetReference }}</a
+              >
+            }
+          </div>
+        }
+        <div class="note">
+          <strong>Notes</strong>
+          <p>{{ currentAsset.notes || 'No asset notes have been recorded.' }}</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="card content-section">
+      <header>
+        <div>
+          <p class="eyebrow">Evidence</p>
+          <h2>Image gallery</h2>
+          <p>Asset photos and evidence retained with inspection revisions.</p>
+        </div>
+        <span>{{ gallery().length }} images</span>
+      </header>
+      <div class="gallery">
+        @for (image of gallery(); track image.media.id) {
+          <button
+            type="button"
+            oaDeferredLoad
+            (oaDeferredLoad)="loadImage(image.media.id)"
+            (click)="selectedImage.set(image)"
+            [disabled]="!imageUrls()[image.media.id]"
+          >
+            @if (imageUrls()[image.media.id]; as source) {
+              <img
+                [src]="source"
+                [alt]="image.media.caption || image.context"
+                loading="lazy"
+                decoding="async"
+              />
+            } @else {
+              <span class="image-placeholder">Loading image...</span>
+            }
+            <span
+              ><strong>{{
+                image.media.caption || image.media.originalFilename || 'Inspection image'
+              }}</strong
+              ><small>{{ image.context }}</small></span
+            >
+          </button>
+        } @empty {
+          <div class="empty-state">
+            <h3>No asset images</h3>
+            <p>Direct asset photos and inspection evidence will appear here.</p>
+          </div>
+        }
+      </div>
+    </section>
+
+    <section class="two-column">
+      <article class="card content-section">
+        <header>
+          <div>
+            <p class="eyebrow">Inspection history</p>
+            <h2>Inspections</h2>
+          </div>
+          <span>{{ currentAsset.inspections.length }}</span>
+        </header>
+        <div class="timeline">
+          @for (inspection of currentAsset.inspections; track inspection.id) {
+            <article>
+              <div class="timeline-marker"></div>
+              <div>
+                <div class="row-heading">
+                  <strong>{{ inspection.inspectionType }}</strong
+                  ><span class="badge" [class.success]="inspection.status === 'APPROVED'">{{
+                    inspection.status
+                  }}</span>
+                </div>
+                <p>
+                  {{ inspection.moduleKey }} &middot; Revision
+                  {{ inspection.currentRevisionNumber }}
+                </p>
+                <dl>
+                  <div>
+                    <dt>Effective</dt>
+                    <dd>{{ formatDate(inspection.effectiveDate) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Submitted</dt>
+                    <dd>{{ formatDate(inspection.submittedAt) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Approved</dt>
+                    <dd>{{ formatDate(inspection.approvedAt) }}</dd>
+                  </div>
+                </dl>
+                @if (inspection.visit; as job) {
+                  <a [routerLink]="['/app/org', organisationId, 'visits', job.id, 'overview']"
+                    >Open job {{ job.reference || job.title }} &rsaquo;</a
+                  >
+                }
+                @if (inspection.revisions.length) {
+                  <small
+                    >{{ inspection.revisions.length }} retained revision{{
+                      inspection.revisions.length === 1 ? '' : 's'
+                    }}</small
+                  >
+                }
+              </div>
+            </article>
+          } @empty {
+            <div class="empty-state">
+              <h3>No inspections</h3>
+              <p>This asset has no inspection history.</p>
+            </div>
+          }
+        </div>
+      </article>
+
+      <article class="card content-section">
+        <header>
+          <div>
+            <p class="eyebrow">Issues</p>
+            <h2>Defects, faults and advice</h2>
+          </div>
+          <span>{{ currentAsset.defects.length }}</span>
+        </header>
+        <div class="defect-list">
+          @for (defect of currentAsset.defects; track defect.id) {
+            <article
+              [class.resolved]="defect.status === 'RESOLVED' || defect.status === 'DISMISSED'"
+            >
+              <div class="row-heading">
+                <strong>{{ defect.title }}</strong
+                ><span class="badge">{{ defect.status }}</span>
+              </div>
+              <p>{{ defect.description || 'No description recorded.' }}</p>
+              <small
+                >{{ defect.category }} &middot; {{ defect.severity }} &middot; Raised
+                {{ formatDate(defect.createdAt) }}
+                @if (defect.resolvedAt) {
+                  &middot; Resolved {{ formatDate(defect.resolvedAt) }}
+                }
+              </small>
+            </article>
+          } @empty {
+            <div class="empty-state">
+              <h3>No defects or issues</h3>
+              <p>No current or resolved findings are associated with this asset.</p>
+            </div>
+          }
+        </div>
+      </article>
+    </section>
+
+    <section class="card content-section documents-section">
+      <header>
+        <div>
+          <p class="eyebrow">Documents</p>
+          <h2>Reports and certificates</h2>
+          <p>Uploaded records and reports generated from inspections.</p>
+        </div>
+        <span>{{ currentAsset.documents.length }}</span>
+      </header>
+      <div class="document-list">
+        @for (document of currentAsset.documents; track document.id) {
+          <article>
+            <span class="document-icon">PDF</span>
+            <span
+              ><strong>{{ document.title }}</strong
+              ><small
+                >{{ document.category
+                }}{{ document.reportReference ? ' - ' + document.reportReference : '' }} &middot;
+                {{ formatDate(document.issuedAt || document.createdAt) }}
+                @if (document.inspectionRevision) {
+                  &middot; Revision {{ document.inspectionRevision.revisionNumber }}
+                }
+              </small></span
+            >
+            @if (document.expiresAt) {
+              <span class="document-expiry">Expires {{ formatDate(document.expiresAt) }}</span>
+            }
+            <div>
+              <button
+                class="button secondary compact"
+                type="button"
+                [disabled]="
+                  busyDocumentId() === document.id ||
+                  (!document.mediaId && !document.inspectionRevisionId)
+                "
+                (click)="openDocument(document, false)"
+              >
+                Open</button
+              ><button
+                class="button ghost compact"
+                type="button"
+                [disabled]="
+                  busyDocumentId() === document.id ||
+                  (!document.mediaId && !document.inspectionRevisionId)
+                "
+                (click)="openDocument(document, true)"
+              >
+                Download
+              </button>
+            </div>
+          </article>
+        } @empty {
+          <div class="empty-state">
+            <h3>No documents</h3>
+            <p>Reports and uploaded documents for this asset will appear here.</p>
+          </div>
+        }
+      </div>
+    </section>
+
+    @if (selectedImage(); as image) {
+      @if (imageUrls()[image.media.id]; as source) {
+        <oa-image-viewer
+          [src]="source"
+          [caption]="image.media.caption || image.context"
+          (closed)="selectedImage.set(undefined)"
+        />
+      }
+    }
+  } @else if (loading()) {
+    <section class="card loading-state" aria-live="polite">Loading asset details...</section>
+  } @else {
+    <section class="card empty-state">
+      <h1>Asset unavailable</h1>
+      <p>{{ error() }}</p>
+      <a class="button secondary" [routerLink]="['/app/org', organisationId, 'portfolio']"
+        >Back to clients</a
+      >
+    </section>
+  }
+</main>

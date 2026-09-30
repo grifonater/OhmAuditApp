@@ -457,13 +457,6 @@
               [class.warning]="visit.status === 'SUBMITTED'"
               >{{ visit.status === 'SUBMITTED' ? 'AWAITING REVIEW' : visit.status }}</span
             >
-            <a
-              class="button secondary compact"
-              [routerLink]="['/app/org', organisationId, 'visits', visit.id]"
-              (click)="prepareOfflineNotifications()"
-            >
-              Make available offline
-            </a>
             @if (canAssign()) {
               <button
                 class="button secondary compact"

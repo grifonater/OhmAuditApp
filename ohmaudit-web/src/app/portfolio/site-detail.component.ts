@@ -6,7 +6,8 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
@@ -14,6 +15,7 @@ import {
   type AssetMedia,
   type AssetIconKey,
   type AssetSummary,
+  type Contact,
   type Entitlement,
   type ReportSummary,
   type ScheduleOccurrence,
@@ -34,14 +36,21 @@ import {
   scheduleSuggestionHeading,
   type ScheduleSuggestionGroup,
 } from './site-schedule-suggestions';
+import {
+  initialAssetView,
+  nextScheduleOccurrences,
+  pageCount,
+  pageItems,
+} from './site-detail.helpers';
 
-type SiteTab = 'overview' | 'assets' | 'reports' | 'reminders';
+type SiteTab = 'overview' | 'assets' | 'jobs' | 'reports' | 'reminders';
 @Component({
   selector: 'oa-site-detail',
   imports: [
     AssetIconComponent,
     AsyncButtonDirective,
     DeferredLoadDirective,
+    NgTemplateOutlet,
     ReactiveFormsModule,
     RouterLink,
   ],
@@ -86,12 +95,16 @@ export class SiteDetailComponent {
   );
   protected readonly tab = signal<SiteTab>('overview');
   protected readonly view = signal<'grid' | 'list'>('grid');
+  private readonly viewChosenByUser = signal(false);
+  protected readonly assetPage = signal(1);
   protected readonly editingSite = signal(false);
   protected readonly editingAssetId = signal<string | undefined>(undefined);
   protected readonly addingAsset = signal(false);
   protected readonly iconPickerOpen = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly contactsModalOpen = signal(false);
+  protected readonly organisationContacts = signal<Contact[]>([]);
   protected readonly siteImageUrls = signal<Record<string, string>>({});
   protected readonly heroImage = computed(() => {
     const media = this.site()?.media;
@@ -127,6 +140,24 @@ export class SiteDetailComponent {
           naturalCompare(left.id, right.id),
       );
   });
+  protected readonly assetPageCount = computed(() => pageCount(this.filteredAssets().length));
+  protected readonly pagedAssets = computed(() =>
+    pageItems(this.filteredAssets(), this.assetPage()),
+  );
+  protected readonly contactSearch = new FormControl('', { nonNullable: true });
+  private readonly contactQuery = toSignal(this.contactSearch.valueChanges, { initialValue: '' });
+  protected readonly availableContacts = computed(() => {
+    const linkedIds = new Set((this.site()?.contacts ?? []).map(({ id }) => id));
+    const query = this.contactQuery().trim().toLowerCase();
+    return this.organisationContacts().filter(
+      (contact) =>
+        !linkedIds.has(contact.id) &&
+        (!query ||
+          [contact.name, contact.role, contact.email, contact.telephone, contact.mobile].some(
+            (value) => value?.toLowerCase().includes(query),
+          )),
+    );
+  });
   protected readonly reminders = computed(() => {
     const site = this.site();
     if (!site) return [];
@@ -150,18 +181,25 @@ export class SiteDetailComponent {
         title: `${asset.displayName} needs review`,
         detail: `${asset.assetReference} · ${asset.status.toLowerCase()}`,
       }));
-    const scheduleReminders = this.scheduleOccurrences()
-      .filter(
-        (occurrence) =>
-          occurrence.scheduleRule.site.id === this.siteId &&
-          ['UPCOMING', 'DUE', 'OVERDUE'].includes(occurrence.status),
-      )
-      .map((occurrence) => ({
+    const scheduleReminders = nextScheduleOccurrences(this.scheduleOccurrences(), this.siteId).map(
+      (occurrence) => ({
         id: occurrence.id,
-        level: occurrence.status === 'OVERDUE' ? 'danger' : 'warning',
+        level:
+          occurrence.status === 'OVERDUE'
+            ? 'danger'
+            : occurrence.status === 'DUE'
+              ? 'warning'
+              : 'info',
         title: occurrence.scheduleRule.title,
         detail: `${occurrence.scheduleRule.asset?.displayName ?? 'Whole site'} · Due ${this.formatDate(occurrence.dueDate)}`,
-      }));
+        label:
+          occurrence.status === 'OVERDUE'
+            ? 'Overdue'
+            : occurrence.status === 'DUE'
+              ? 'Due'
+              : 'Scheduled',
+      }),
+    );
     const suggestionReminders = this.scheduleSuggestions().map((suggestion) => ({
       id: `suggestion:${suggestion.inspectionId}`,
       level: 'info',
@@ -169,8 +207,14 @@ export class SiteDetailComponent {
         ? `${suggestion.asset.displayName} inspection reminder`
         : `${suggestion.title} reminder`,
       detail: `${suggestion.title} · Annual schedule suggested · Next due ${this.formatDate(suggestion.suggestedStartDate)}`,
+      label: 'Suggested',
     }));
-    return [...suggestionReminders, ...scheduleReminders, ...reportReminders, ...assetReminders];
+    return [
+      ...scheduleReminders,
+      ...suggestionReminders,
+      ...reportReminders.map((item) => ({ ...item, label: 'Needs attention' })),
+      ...assetReminders.map((item) => ({ ...item, label: 'Needs attention' })),
+    ];
   });
   protected readonly siteForm = new FormGroup({
     name: new FormControl('', {
@@ -203,8 +247,20 @@ export class SiteDetailComponent {
     displayName: new FormControl('', { nonNullable: true, validators: Validators.required }),
     assetReference: new FormControl('', { nonNullable: true, validators: Validators.required }),
   });
+  protected readonly contactForm = new FormGroup({
+    name: new FormControl('', { nonNullable: true, validators: Validators.required }),
+    role: new FormControl('', { nonNullable: true }),
+    telephone: new FormControl('', { nonNullable: true }),
+    mobile: new FormControl('', { nonNullable: true }),
+    email: new FormControl('', { nonNullable: true, validators: Validators.email }),
+    notes: new FormControl('', { nonNullable: true }),
+  });
   constructor() {
     this.destroyRef.onDestroy(() => this.revokeSiteImages());
+    this.assetSearch.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.assetPage.set(1));
+    this.statusFilter.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.assetPage.set(1));
     void this.load();
   }
   protected async uploadSiteImages(event: Event): Promise<void> {
@@ -265,6 +321,13 @@ export class SiteDetailComponent {
   }
   protected setTab(tab: SiteTab): void {
     this.tab.set(tab);
+  }
+  protected setAssetView(view: 'grid' | 'list'): void {
+    this.viewChosenByUser.set(true);
+    this.view.set(view);
+  }
+  protected setAssetPage(page: number): void {
+    this.assetPage.set(Math.min(Math.max(1, page), this.assetPageCount()));
   }
   protected startSiteEdit(): void {
     const site = this.site();
@@ -405,6 +468,55 @@ export class SiteDetailComponent {
       );
     });
   }
+  protected async openContactsModal(): Promise<void> {
+    this.contactsModalOpen.set(true);
+    this.contactSearch.setValue('');
+    await this.run(async () => {
+      const result = await this.api.listContacts(this.organisationId);
+      this.organisationContacts.set(result.contacts);
+    });
+  }
+  protected closeContactsModal(): void {
+    this.contactsModalOpen.set(false);
+    this.contactForm.reset();
+  }
+  protected closeContactsModalOnBackdrop(event: Event): void {
+    if (event.target === event.currentTarget) this.closeContactsModal();
+  }
+  protected async linkContact(contact: Contact): Promise<void> {
+    await this.run(async () => {
+      await this.api.linkSiteContact(this.organisationId, this.siteId, contact.id);
+      await this.reloadSite();
+    });
+  }
+  protected async createContact(): Promise<void> {
+    if (this.contactForm.invalid) return;
+    const value = this.contactForm.getRawValue();
+    await this.run(async () => {
+      await this.api.createContact(this.organisationId, {
+        name: value.name,
+        customerId: this.customerId,
+        siteId: this.siteId,
+        ...(value.role.trim() ? { role: value.role.trim() } : {}),
+        ...(value.telephone.trim() ? { telephone: value.telephone.trim() } : {}),
+        ...(value.mobile.trim() ? { mobile: value.mobile.trim() } : {}),
+        ...(value.email.trim() ? { email: value.email.trim() } : {}),
+        ...(value.notes.trim() ? { notes: value.notes.trim() } : {}),
+      });
+      this.contactForm.reset();
+      await this.reloadSite();
+      const result = await this.api.listContacts(this.organisationId);
+      this.organisationContacts.set(result.contacts);
+    });
+  }
+  protected async unlinkContact(contact: Contact | SiteDetail['contacts'][number]): Promise<void> {
+    if (!confirm(`Remove ${contact.name} from this site? The person record will be retained.`))
+      return;
+    await this.run(async () => {
+      await this.api.unlinkSiteContact(this.organisationId, this.siteId, contact.id);
+      await this.reloadSite();
+    });
+  }
   protected async openReport(report: ReportSummary): Promise<void> {
     if (!report.visitId && !report.mediaId && !report.inspectionRevisionId) return;
     await this.run(async () => {
@@ -472,10 +584,18 @@ export class SiteDetailComponent {
       if (!this.evEnabled() && this.assetForm.controls.assetType.value === 'EV Charger')
         this.assetForm.controls.assetType.setValue('General Asset');
       this.site.set(site);
+      if (!this.viewChosenByUser()) this.view.set(initialAssetView(site.assets.length));
+      this.setAssetPage(this.assetPage());
       this.revokeSiteImages();
       const hero = (site.media ?? []).find((media) => media.isPrimary) ?? site.media?.[0];
       if (hero) void this.loadSiteImage(hero.id);
     });
+  }
+  private async reloadSite(): Promise<void> {
+    const { site } = await this.api.getSite(this.organisationId, this.siteId);
+    this.site.set(site);
+    if (!this.viewChosenByUser()) this.view.set(initialAssetView(site.assets.length));
+    this.setAssetPage(this.assetPage());
   }
   protected async loadSiteImage(mediaId: string): Promise<void> {
     if (this.siteImageUrls()[mediaId] || this.pendingSiteImages.has(mediaId)) return;

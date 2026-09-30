@@ -168,4 +168,120 @@ describe('Portfolio tenant isolation', () => {
         'This asset reference is already used by another asset at this site. Enter a different reference.',
     });
   });
+
+  it('does not link a contact when either record is outside the active organisation', async () => {
+    const siteContact = { findUnique: () => Promise.resolve(null) };
+    const prisma = {
+      site: { findFirst: () => Promise.resolve({ id: 'site-a', customerId: 'customer-a' }) },
+      contact: { findFirst: () => Promise.resolve(null) },
+      siteContact,
+    } as unknown as PrismaClient;
+
+    await expect(
+      new PortfolioService(prisma).linkContact('organisation-b', 'site-a', 'contact-from-a'),
+    ).rejects.toMatchObject({ code: 'CONTACT_NOT_FOUND', status: 404 });
+  });
+
+  it('links an organisation contact to sites owned by different customers', async () => {
+    const linked = { siteId: 'site-a', contactId: 'contact-b' };
+    const prisma = {
+      site: { findFirst: () => Promise.resolve({ id: 'site-a', customerId: 'customer-a' }) },
+      contact: {
+        findFirst: () =>
+          Promise.resolve({
+            id: 'contact-b',
+            organisationId: 'organisation-a',
+            customerId: 'customer-b',
+          }),
+      },
+      siteContact: { findUnique: () => Promise.resolve(null) },
+      $transaction: (operation: (transaction: unknown) => Promise<unknown>) =>
+        operation({
+          contact: { update: () => Promise.resolve() },
+          siteContact: { create: () => Promise.resolve(linked) },
+        }),
+    } as unknown as PrismaClient;
+
+    await expect(
+      new PortfolioService(prisma).linkContact('organisation-a', 'site-a', 'contact-b'),
+    ).resolves.toEqual(linked);
+  });
+
+  it('loads asset detail with scoped lightweight revisions, media, and reports', async () => {
+    let assetWhere: unknown;
+    let revisionQuery: unknown;
+    let mediaQuery: unknown;
+    let documentQuery: unknown;
+    const prisma = {
+      asset: {
+        findFirst: (input: {
+          where: unknown;
+          include: { inspections: { select: { revisions: unknown } } };
+        }) => {
+          assetWhere = input.where;
+          revisionQuery = input.include.inspections.select.revisions;
+          return Promise.resolve({
+            id: 'asset-a',
+            inspections: [{ id: 'inspection-a', revisions: [{ id: 'revision-a' }] }],
+            defects: [],
+          });
+        },
+      },
+      media: {
+        findMany: (input: unknown) => {
+          mediaQuery = input;
+          return Promise.resolve([]);
+        },
+      },
+      document: {
+        findMany: (input: unknown) => {
+          documentQuery = input;
+          return Promise.resolve([]);
+        },
+      },
+    } as unknown as PrismaClient;
+
+    await new PortfolioService(prisma).getAsset('organisation-a', 'asset-a');
+
+    expect(assetWhere).toEqual({ id: 'asset-a', organisationId: 'organisation-a' });
+    expect(revisionQuery).not.toHaveProperty('select.data');
+    expect(revisionQuery).toMatchObject({
+      where: { organisationId: 'organisation-a' },
+      select: { media: { include: { media: true } } },
+    });
+    expect(mediaQuery).toMatchObject({
+      where: {
+        organisationId: 'organisation-a',
+        entityType: 'Asset',
+        entityId: 'asset-a',
+        status: 'AVAILABLE',
+      },
+    });
+    expect(documentQuery).toMatchObject({
+      where: {
+        organisationId: 'organisation-a',
+        OR: [
+          { entityType: 'Asset', entityId: 'asset-a' },
+          { inspectionRevisionId: { in: ['revision-a'] } },
+        ],
+      },
+    });
+  });
+
+  it('does not disclose an asset from another organisation', async () => {
+    let where: unknown;
+    const prisma = {
+      asset: {
+        findFirst: (input: { where: unknown }) => {
+          where = input.where;
+          return Promise.resolve(null);
+        },
+      },
+    } as unknown as PrismaClient;
+
+    await expect(
+      new PortfolioService(prisma).getAsset('organisation-b', 'asset-from-a'),
+    ).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND', status: 404 });
+    expect(where).toEqual({ id: 'asset-from-a', organisationId: 'organisation-b' });
+  });
 });

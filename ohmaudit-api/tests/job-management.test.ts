@@ -36,19 +36,27 @@ describe('Job management', () => {
       visit: {
         findFirst: (input: unknown) => {
           query = input;
-          return Promise.resolve({ id: 'visit-a' });
+          return Promise.resolve({ id: 'visit-a', site: { siteContacts: [] } });
         },
       },
     } as unknown as PrismaClient;
 
     await expect(
       new VisitService(prisma).jobSheetSource('organisation-a', 'visit-a'),
-    ).resolves.toEqual({ id: 'visit-a' });
+    ).resolves.toEqual({ id: 'visit-a', site: { contacts: [] } });
     expect(query).toMatchObject({
       where: { id: 'visit-a', organisationId: 'organisation-a', archivedAt: null },
       include: {
         organisation: { include: { brandProfile: true } },
-        site: { include: { contacts: { orderBy: [{ primary: 'desc' }, { name: 'asc' }] } } },
+        site: {
+          include: {
+            siteContacts: {
+              where: { contact: { organisationId: 'organisation-a' } },
+              include: { contact: true },
+              orderBy: [{ primary: 'desc' }, { contact: { name: 'asc' } }],
+            },
+          },
+        },
         tasks: { orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
         rams: { orderBy: { linkedAt: 'asc' } },
       },

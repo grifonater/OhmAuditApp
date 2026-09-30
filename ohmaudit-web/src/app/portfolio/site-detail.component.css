@@ -384,6 +384,7 @@ dd {
 }
 .asset-editor {
   margin-bottom: 0.8rem;
+  grid-column: 1 / -1;
 }
 .compact-icon-picker > span {
   color: var(--oa-ink-secondary);
@@ -516,7 +517,7 @@ dd {
 }
 .asset-card-actions {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 .asset-card-actions select {
@@ -538,6 +539,147 @@ dd {
   margin: 0;
   padding: 0;
   border: 0;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+.pagination span {
+  color: var(--oa-ink-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.contact-list {
+  display: grid;
+  gap: 0.65rem;
+}
+.contact-list article {
+  position: relative;
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.7rem;
+  border: 1px solid var(--oa-line-soft);
+  border-radius: 0.55rem;
+  background: var(--oa-canvas-soft);
+  font-size: 0.72rem;
+}
+.contact-list article > span,
+.contact-list article > small {
+  color: var(--oa-ink-muted);
+}
+.contact-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.contact-list .danger-text {
+  justify-self: start;
+  padding: 0;
+  color: var(--oa-danger);
+  font-size: 0.68rem;
+}
+.contact-empty {
+  margin: 0;
+  color: var(--oa-ink-muted);
+  font-size: 0.75rem;
+}
+.contacts-modal {
+  width: min(52rem, 100%);
+}
+.contacts-modal-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1.25rem;
+}
+.contacts-modal-body h3 {
+  margin: 0 0 0.7rem;
+  font-size: 0.9rem;
+}
+.new-contact {
+  padding-left: 1rem;
+  border-left: 1px solid var(--oa-line);
+}
+.contact-picker {
+  max-height: 22rem;
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+  overflow: auto;
+}
+.contact-picker article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--oa-line-soft);
+  border-radius: 0.5rem;
+}
+.contact-picker article > span {
+  min-width: 0;
+  display: grid;
+}
+.contact-picker small {
+  overflow: hidden;
+  color: var(--oa-ink-muted);
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contact-picker > p {
+  color: var(--oa-ink-muted);
+  font-size: 0.75rem;
+}
+.job-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+.job-list > a {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--oa-line);
+  border-radius: 0.6rem;
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.job-list > a:hover {
+  border-color: var(--oa-teal-500);
+  box-shadow: var(--oa-shadow-md);
+}
+.job-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+.job-heading > span:first-child {
+  display: grid;
+}
+.job-heading small,
+.job-open {
+  color: var(--oa-ink-muted);
+  font-size: 0.67rem;
+}
+.job-list dl {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin: 0;
+}
+.job-open {
+  color: var(--oa-teal-600);
+  font-weight: 750;
 }
 .report-list,
 .reminder-list {
@@ -594,6 +736,9 @@ dd {
   .overview-grid {
     grid-template-columns: 1fr;
   }
+  .job-list {
+    grid-template-columns: 1fr;
+  }
   .info-card {
     grid-row: auto;
   }
@@ -639,6 +784,14 @@ dd {
   .schedule-nudge .button {
     grid-column: 2;
     width: 100%;
+  }
+  .contacts-modal-body {
+    grid-template-columns: 1fr;
+  }
+  .new-contact {
+    padding: 1rem 0 0;
+    border-top: 1px solid var(--oa-line);
+    border-left: 0;
   }
 }
 @media (max-width: 38rem) {

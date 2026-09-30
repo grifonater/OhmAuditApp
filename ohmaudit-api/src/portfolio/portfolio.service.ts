@@ -358,10 +358,29 @@ export class PortfolioService {
       where: { id: siteId, organisationId },
       include: {
         customer: true,
-        contacts: true,
+        siteContacts: {
+          where: { contact: { organisationId } },
+          include: { contact: true },
+          orderBy: [{ primary: 'desc' }, { contact: { name: 'asc' } }],
+        },
         assets: {
-          where: { status: { notIn: ['PROPOSED', 'REMOVED'] } },
+          where: { status: { not: 'REMOVED' } },
           orderBy: { displayName: 'asc' },
+        },
+        visits: {
+          where: { archivedAt: null },
+          select: {
+            id: true,
+            reference: true,
+            title: true,
+            status: true,
+            scheduledStart: true,
+            scheduledEnd: true,
+            guestEngineerName: true,
+            assignedUser: { select: { displayName: true } },
+            _count: { select: { tasks: true } },
+          },
+          orderBy: [{ scheduledStart: 'desc' }, { id: 'desc' }],
         },
       },
     });
@@ -399,7 +418,22 @@ export class PortfolioService {
         orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
       }),
     ]);
-    return { ...site, media, reports: this.groupVisitReports(documents) };
+    const { siteContacts, visits, ...siteFields } = site;
+    return {
+      ...siteFields,
+      contacts: siteContacts.map(({ contact, primary, createdAt }) => ({
+        ...contact,
+        primary,
+        associationCreatedAt: createdAt,
+      })),
+      jobs: visits.map(({ assignedUser, guestEngineerName, _count, ...visit }) => ({
+        ...visit,
+        assignedEngineerName: assignedUser?.displayName ?? guestEngineerName,
+        taskCount: _count.tasks,
+      })),
+      media,
+      reports: this.groupVisitReports(documents),
+    };
   }
 
   async updateSite(
@@ -620,6 +654,157 @@ export class PortfolioService {
     }
   }
 
+  async getAsset(organisationId: string, assetId: string) {
+    const asset = await this.prisma.asset.findFirst({
+      where: { id: assetId, organisationId },
+      include: {
+        customer: { select: { id: true, name: true, reference: true, status: true } },
+        site: {
+          select: {
+            id: true,
+            name: true,
+            reference: true,
+            status: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            county: true,
+            postcode: true,
+            countryCode: true,
+          },
+        },
+        assetModel: true,
+        replacementAsset: {
+          select: {
+            id: true,
+            assetReference: true,
+            displayName: true,
+            assetType: true,
+            status: true,
+          },
+        },
+        replacedAssets: {
+          where: { organisationId },
+          select: {
+            id: true,
+            assetReference: true,
+            displayName: true,
+            assetType: true,
+            status: true,
+          },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        },
+        createdDuringVisit: {
+          select: {
+            id: true,
+            reference: true,
+            title: true,
+            status: true,
+            scheduledStart: true,
+            scheduledEnd: true,
+          },
+        },
+        inspections: {
+          where: { organisationId },
+          select: {
+            id: true,
+            visitId: true,
+            visitTaskId: true,
+            moduleKey: true,
+            inspectionType: true,
+            status: true,
+            currentRevisionNumber: true,
+            effectiveDate: true,
+            submittedAt: true,
+            reviewedAt: true,
+            approvedAt: true,
+            createdAt: true,
+            updatedAt: true,
+            visit: {
+              select: {
+                id: true,
+                reference: true,
+                title: true,
+                status: true,
+                scheduledStart: true,
+                scheduledEnd: true,
+              },
+            },
+            revisions: {
+              where: { organisationId },
+              select: {
+                id: true,
+                revisionNumber: true,
+                createdAt: true,
+                createdByUserId: true,
+                media: {
+                  where: { organisationId },
+                  include: { media: true },
+                  orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+                },
+              },
+              orderBy: [{ revisionNumber: 'desc' }, { id: 'desc' }],
+            },
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        },
+        defects: {
+          where: { organisationId },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        },
+      },
+    });
+    if (asset === null) throw new DomainError('ASSET_NOT_FOUND', 'The asset was not found.', 404);
+
+    const revisionIds = asset.inspections.flatMap((inspection) =>
+      inspection.revisions.map((revision) => revision.id),
+    );
+    const [media, documents] = await Promise.all([
+      this.prisma.media.findMany({
+        where: { organisationId, entityType: 'Asset', entityId: assetId, status: 'AVAILABLE' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      }),
+      this.prisma.document.findMany({
+        where: {
+          organisationId,
+          status: { not: 'ARCHIVED' },
+          OR: [
+            { entityType: 'Asset', entityId: assetId },
+            ...(revisionIds.length === 0 ? [] : [{ inspectionRevisionId: { in: revisionIds } }]),
+          ],
+        },
+        select: {
+          id: true,
+          entityType: true,
+          entityId: true,
+          title: true,
+          category: true,
+          mediaId: true,
+          status: true,
+          issuedAt: true,
+          expiresAt: true,
+          createdAt: true,
+          updatedAt: true,
+          inspectionRevisionId: true,
+          templateKey: true,
+          templateVersion: true,
+          reportReference: true,
+          overallOutcome: true,
+          inspectionRevision: {
+            select: {
+              revisionNumber: true,
+              inspection: {
+                select: { id: true, moduleKey: true, inspectionType: true, status: true },
+              },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      }),
+    ]);
+    return { ...asset, media, documents };
+  }
+
   async addContact(
     organisationId: string,
     input: {
@@ -633,33 +818,143 @@ export class PortfolioService {
       notes?: string | undefined;
     },
   ) {
-    if (input.customerId === undefined && input.siteId === undefined)
-      throw new DomainError('CONTACT_OWNER_REQUIRED', 'Choose a customer or site.', 422);
-    if (
-      input.customerId !== undefined &&
-      (await this.prisma.customer.findFirst({
-        where: { id: input.customerId, organisationId },
-      })) === null
-    )
+    const [customer, site] = await Promise.all([
+      input.customerId === undefined
+        ? Promise.resolve(null)
+        : this.prisma.customer.findFirst({ where: { id: input.customerId, organisationId } }),
+      input.siteId === undefined
+        ? Promise.resolve(null)
+        : this.prisma.site.findFirst({ where: { id: input.siteId, organisationId } }),
+    ]);
+    if (input.customerId !== undefined && customer === null)
       throw new DomainError('CUSTOMER_NOT_FOUND', 'The customer was not found.', 404);
-    if (
-      input.siteId !== undefined &&
-      (await this.prisma.site.findFirst({ where: { id: input.siteId, organisationId } })) === null
-    )
+    if (input.siteId !== undefined && site === null)
       throw new DomainError('SITE_NOT_FOUND', 'The site was not found.', 404);
-    return this.prisma.contact.create({
+    if (customer !== null && site !== null && customer.id !== site.customerId)
+      throw new DomainError(
+        'CONTACT_CUSTOMER_MISMATCH',
+        'The contact customer does not own the selected site.',
+        422,
+      );
+    const contact = await this.prisma.contact.create({
       data: {
         organisationId,
         name: input.name,
-        ...(input.customerId === undefined ? {} : { customerId: input.customerId }),
-        ...(input.siteId === undefined ? {} : { siteId: input.siteId }),
+        ...(customer === null && site === null
+          ? {}
+          : { customerId: customer === null ? site!.customerId : customer.id }),
         ...(input.role === undefined ? {} : { role: input.role }),
         ...(input.email === undefined ? {} : { email: input.email }),
         ...(input.telephone === undefined ? {} : { telephone: input.telephone }),
         ...(input.mobile === undefined ? {} : { mobile: input.mobile }),
         ...(input.notes === undefined ? {} : { notes: input.notes }),
+        ...(site === null ? {} : { siteContacts: { create: { siteId: site.id } } }),
+      },
+      include: {
+        siteContacts: { include: { site: { select: { id: true, name: true, reference: true } } } },
       },
     });
+    const { siteContacts, ...contactFields } = contact;
+    return {
+      ...contactFields,
+      sites: siteContacts.map(({ site: linkedSite, primary, createdAt }) => ({
+        ...linkedSite,
+        primary,
+        createdAt,
+      })),
+    };
+  }
+
+  async listContacts(organisationId: string, query: string) {
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        organisationId,
+        ...(query === ''
+          ? {}
+          : {
+              OR: ['name', 'role', 'email', 'telephone', 'mobile'].map((field) => ({
+                [field]: { contains: query, mode: 'insensitive' as const },
+              })),
+            }),
+      },
+      include: {
+        customer: { select: { id: true, name: true, reference: true } },
+        siteContacts: {
+          where: { site: { organisationId } },
+          include: {
+            site: {
+              select: { id: true, customerId: true, name: true, reference: true, status: true },
+            },
+          },
+          orderBy: [{ primary: 'desc' }, { site: { name: 'asc' } }],
+        },
+      },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+    return contacts.map(({ siteContacts, ...contact }) => ({
+      ...contact,
+      sites: siteContacts.map(({ site, primary, createdAt }) => ({ ...site, primary, createdAt })),
+    }));
+  }
+
+  async linkContact(organisationId: string, siteId: string, contactId: string) {
+    const [site, contact] = await Promise.all([
+      this.prisma.site.findFirst({ where: { id: siteId, organisationId } }),
+      this.prisma.contact.findFirst({ where: { id: contactId, organisationId } }),
+    ]);
+    if (site === null) throw new DomainError('SITE_NOT_FOUND', 'The site was not found.', 404);
+    if (contact === null)
+      throw new DomainError('CONTACT_NOT_FOUND', 'The contact was not found.', 404);
+    const existing = await this.prisma.siteContact.findUnique({
+      where: { siteId_contactId: { siteId, contactId } },
+    });
+    if (existing !== null)
+      throw new DomainError(
+        'SITE_CONTACT_EXISTS',
+        'The contact is already linked to the site.',
+        409,
+      );
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        if (contact.customerId === null)
+          await transaction.contact.update({
+            where: { id: contactId },
+            data: { customerId: site.customerId },
+          });
+        return transaction.siteContact.create({
+          data: { siteId, contactId },
+          include: { contact: true },
+        });
+      });
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error))
+        throw new DomainError(
+          'SITE_CONTACT_EXISTS',
+          'The contact is already linked to the site.',
+          409,
+        );
+      throw error;
+    }
+  }
+
+  async unlinkContact(organisationId: string, siteId: string, contactId: string) {
+    const [site, contact] = await Promise.all([
+      this.prisma.site.findFirst({ where: { id: siteId, organisationId }, select: { id: true } }),
+      this.prisma.contact.findFirst({
+        where: { id: contactId, organisationId },
+        select: { id: true },
+      }),
+    ]);
+    if (site === null) throw new DomainError('SITE_NOT_FOUND', 'The site was not found.', 404);
+    if (contact === null)
+      throw new DomainError('CONTACT_NOT_FOUND', 'The contact was not found.', 404);
+    const deleted = await this.prisma.siteContact.deleteMany({ where: { siteId, contactId } });
+    if (deleted.count === 0)
+      throw new DomainError(
+        'SITE_CONTACT_NOT_FOUND',
+        'The contact is not linked to the site.',
+        404,
+      );
   }
 
   createTag(organisationId: string, input: { name: string; colour: string }) {

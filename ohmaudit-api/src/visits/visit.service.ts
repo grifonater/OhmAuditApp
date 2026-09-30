@@ -268,7 +268,14 @@ export class VisitService {
       where: { id: visitId, organisationId },
       include: {
         customer: true,
-        site: { include: { contacts: true } },
+        site: {
+          include: {
+            siteContacts: {
+              where: { contact: { organisationId } },
+              include: { contact: true },
+            },
+          },
+        },
         jobCategory: true,
         assignedUser: { select: { id: true, displayName: true, email: true } },
         createdByUser: { select: { id: true, displayName: true, email: true } },
@@ -305,8 +312,17 @@ export class VisitService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    const { siteContacts, ...site } = visit.site;
     return {
       ...visit,
+      site: {
+        ...site,
+        contacts: siteContacts.map(({ contact, primary, createdAt }) => ({
+          ...contact,
+          primary,
+          associationCreatedAt: createdAt,
+        })),
+      },
       tasks: visit.tasks.map((task) => ({
         ...task,
         inspection:
@@ -335,7 +351,11 @@ export class VisitService {
         customer: true,
         site: {
           include: {
-            contacts: { orderBy: [{ primary: 'desc' }, { name: 'asc' }] },
+            siteContacts: {
+              where: { contact: { organisationId } },
+              include: { contact: true },
+              orderBy: [{ primary: 'desc' }, { contact: { name: 'asc' } }],
+            },
           },
         },
         jobCategory: true,
@@ -366,7 +386,18 @@ export class VisitService {
       },
     });
     if (visit === null) throw new DomainError('VISIT_NOT_FOUND', 'The job was not found.', 404);
-    return visit;
+    const { siteContacts, ...site } = visit.site;
+    return {
+      ...visit,
+      site: {
+        ...site,
+        contacts: siteContacts.map(({ contact, primary, createdAt }) => ({
+          ...contact,
+          primary,
+          associationCreatedAt: createdAt,
+        })),
+      },
+    };
   }
 
   async update(

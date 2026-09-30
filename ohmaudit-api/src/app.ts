@@ -2708,6 +2708,40 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       ),
     });
   });
+  app.post('/api/v1/sites/:siteId/contacts/:contactId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'sites.manage',
+    );
+    return context.json(
+      {
+        siteContact: await new PortfolioService(prismaFor(environment)).linkContact(
+          organisationId,
+          z.uuid().parse(context.req.param('siteId')),
+          z.uuid().parse(context.req.param('contactId')),
+        ),
+      },
+      201,
+    );
+  });
+  app.delete('/api/v1/sites/:siteId/contacts/:contactId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'sites.manage',
+    );
+    await new PortfolioService(prismaFor(environment)).unlinkContact(
+      organisationId,
+      z.uuid().parse(context.req.param('siteId')),
+      z.uuid().parse(context.req.param('contactId')),
+    );
+    return context.body(null, 204);
+  });
   app.patch('/api/v1/sites/:siteId', async (context) => {
     const environment = parseEnvironment(context.env);
     const organisationId = context.req.query('organisationId') ?? '';
@@ -2756,6 +2790,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       },
       201,
     );
+  });
+  app.get('/api/v1/assets/:assetId', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    await identityService(environment, options).requireMembership(
+      context.get('actor'),
+      organisationId,
+      'assets.read',
+    );
+    return context.json({
+      asset: await new PortfolioService(prismaFor(environment)).getAsset(
+        organisationId,
+        z.uuid().parse(context.req.param('assetId')),
+      ),
+    });
   });
   app.patch('/api/v1/assets/:assetId/lifecycle', async (context) => {
     const environment = parseEnvironment(context.env);
@@ -2828,7 +2877,7 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
     await identityService(environment, options).requireMembership(
       context.get('actor'),
       input.organisationId,
-      'customers.manage',
+      input.siteId === undefined ? 'customers.manage' : 'sites.manage',
     );
     const { organisationId, ...contact } = input;
     return context.json(
@@ -2840,6 +2889,21 @@ export function createApp(options: AppOptions = {}): OpenAPIHono<AppEnvironment>
       },
       201,
     );
+  });
+  app.get('/api/v1/contacts', async (context) => {
+    const environment = parseEnvironment(context.env);
+    const organisationId = context.req.query('organisationId') ?? '';
+    await identityService(environment, options).requireAnyCapability(
+      context.get('actor'),
+      organisationId,
+      ['customers.read', 'sites.manage'],
+    );
+    return context.json({
+      contacts: await new PortfolioService(prismaFor(environment)).listContacts(
+        organisationId,
+        context.req.query('query')?.trim() ?? '',
+      ),
+    });
   });
   app.get('/api/v1/tags', async (context) => {
     const environment = parseEnvironment(context.env);

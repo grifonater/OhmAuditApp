@@ -256,9 +256,12 @@ describe('authoritative visit finding upsert', () => {
   });
 
   it('requests findings in normal and guest visit payloads', async () => {
-    const visitFindFirst = vi
-      .fn()
-      .mockResolvedValue({ id: visitId, tasks: [], findings: [finding()] });
+    const visitFindFirst = vi.fn().mockResolvedValue({
+      id: visitId,
+      site: { id: 'site-a', siteContacts: [] },
+      tasks: [],
+      findings: [finding()],
+    });
     const guestFindUnique = vi.fn().mockResolvedValue({
       id: 'access-token',
       revokedAt: null,

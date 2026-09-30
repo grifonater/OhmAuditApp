@@ -189,7 +189,7 @@ model User {
   ramsReviewed            Rams[]                   @relation("RamsReviewedBy")
   ramsApproved            Rams[]                   @relation("RamsApprovedBy")
   ramsRevisionsCreated    RamsRevision[]           @relation("RamsRevisionCreatedBy")
-  emailAuditsCreated      EmailAudit[]              @relation("EmailAuditActor")
+  emailAuditsCreated      EmailAudit[]             @relation("EmailAuditActor")
 
   @@map("users")
 }
@@ -435,7 +435,7 @@ model Site {
   organisation                   Organisation   @relation(fields: [organisationId], references: [id])
   customer                       Customer       @relation(fields: [customerId], references: [id])
   assets                         Asset[]
-  contacts                       Contact[]
+  siteContacts                   SiteContact[]
   visits                         Visit[]
   inspections                    Inspection[]
   scheduleRules                  ScheduleRule[]
@@ -447,26 +447,37 @@ model Site {
 }
 
 model Contact {
-  id             String       @id @default(uuid()) @db.Uuid
-  organisationId String       @map("organisation_id") @db.Uuid
-  customerId     String?      @map("customer_id") @db.Uuid
-  siteId         String?      @map("site_id") @db.Uuid
+  id             String        @id @default(uuid()) @db.Uuid
+  organisationId String        @map("organisation_id") @db.Uuid
+  customerId     String?       @map("customer_id") @db.Uuid
   name           String
   role           String?
   email          String?
   telephone      String?
   mobile         String?
-  primary        Boolean      @default(false)
+  primary        Boolean       @default(false)
   notes          String?
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
-  organisation   Organisation @relation(fields: [organisationId], references: [id])
-  customer       Customer?    @relation(fields: [customerId], references: [id])
-  site           Site?        @relation(fields: [siteId], references: [id])
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  organisation   Organisation  @relation(fields: [organisationId], references: [id])
+  customer       Customer?     @relation(fields: [customerId], references: [id])
+  siteContacts   SiteContact[]
 
   @@index([organisationId, customerId])
-  @@index([organisationId, siteId])
   @@map("contacts")
+}
+
+model SiteContact {
+  siteId    String   @map("site_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  primary   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([siteId, contactId])
+  @@index([contactId])
+  @@map("site_contacts")
 }
 
 model AssetModel {
